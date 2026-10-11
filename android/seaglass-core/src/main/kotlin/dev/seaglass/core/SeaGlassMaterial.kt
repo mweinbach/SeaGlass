@@ -54,6 +54,45 @@ data class SeaGlassMaterial(
     }
 
     /**
+     * Evaluates the unified **Sand-Frosted Continuum** (`0f..1f`) for this material:
+     * - `0.0f`: **Completely Clear Untreated Glass** (`coarseness == 0f` and `transparency == 1f`).
+     *   Zero sand-grain surface treatment and near-zero subsurface diffusion—pure optical refraction
+     *   and Beer-Lambert body transmission.
+     * - `0.0f..1.0f`: Progressive ocean sand abrasion over time. Develops an isotropic sand-frosted
+     *   micro-facet finish while coupling subsurface diffusion and frosted body scatter with
+     *   continuous edge/corner refraction.
+     * - `1.0f`: **Heavily Sand-Frosted Opaque Glass** (`coarseness == 1f` / `transparency == 0f`).
+     *   Effectively opaque to sharp background details via deep sand-frosted diffusion and body scatter,
+     *   yet still behaves as physical glass (refracting and diffusing ambient light and catching
+     *   rough-Fresnel rim light around its corners and edges).
+     */
+    val effectiveSandWear: Float
+        get() {
+            val frostOpacity = (1f - transparency).coerceIn(0f, 1f)
+            val clearGate = (frostOpacity * 4.5f + coarseness * 3.5f).coerceIn(0f, 1f)
+            return ((coarseness * 0.62f + frostOpacity * 0.58f) * clearGate).coerceIn(0f, 1f)
+        }
+
+    /**
+     * Generates a [SeaGlassMaterial] at any point along the continuous **Sand-Frosted Coarseness
+     * Continuum** (`sandWear` $\in [0, 1]$):
+     * - `sandWear = 0.0f`: Completely clear, untreated optical glass (no sand texture, clear refraction).
+     * - `sandWear = 0.5f`: Classic ocean-tumbled sand-frosted sea glass.
+     * - `sandWear = 1.0f`: Heavily sand-abraded, effectively opaque sand-frosted glass that still refracts
+     *   and diffuses ambient light through its body and corners.
+     */
+    fun withSandWear(sandWear: Float): SeaGlassMaterial {
+        val w = sandWear.coerceIn(0f, 1f)
+        return copy(
+            coarseness = w,
+            transparency = (1f - w * 0.92f).coerceIn(0.04f, 1.0f),
+            frostRadiusDp = (1.5f + w * 42f).coerceAtLeast(0f),
+            rimChalkiness = (0.32f + w * 0.60f).coerceIn(0f, 1f),
+            chromaticDispersion = (chromaticDispersion * (1f - 0.55f * w)).coerceIn(0f, 1f)
+        )
+    }
+
+    /**
      * Returns a physically compressed state of this material for touch/press interactions:
      * pressing the glass increases refractive rim light and volumetric tint saturation.
      */

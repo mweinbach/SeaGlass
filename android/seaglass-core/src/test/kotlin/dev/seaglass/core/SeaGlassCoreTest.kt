@@ -399,4 +399,138 @@ class SeaGlassCoreTest {
         assertTrue("Horizontal gap (${podLayout.horizontalGapPx}) must be >= 32px", podLayout.horizontalGapPx >= 31.9f)
         assertTrue("Vertical gap (${podLayout.verticalGapPx}) must be >= 28px", podLayout.verticalGapPx >= 27.9f)
     }
+
+    @Test
+    fun cornerAdaptationRespectsDeveloperMaskProximityDistanceAndSymmetry() {
+        val bezel = SeaGlassCornerRadiiPx.uniform(140f)
+        val baseRadiusPx = 64f
+
+        // 1. Outside proximityThresholdDp (inset = 90px > influenceDistancePx = 70px):
+        // Element must strictly keep baseCornerRadiusPx with zero adaptation.
+        val outsideThreshold = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 90f,
+            elementTopPx = 90f,
+            elementRightPx = 990f,
+            elementBottomPx = 450f,
+            containerWidthPx = 1080f,
+            containerHeightPx = 2400f,
+            containerCornersPx = bezel,
+            baseCornerRadiusPx = baseRadiusPx,
+            influenceDistancePx = 70f,
+            mode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY
+        )
+        assertEquals(baseRadiusPx, outsideThreshold.topLeftPx, 0.01f)
+        assertEquals(baseRadiusPx, outsideThreshold.topRightPx, 0.01f)
+        assertEquals(baseRadiusPx, outsideThreshold.bottomLeftPx, 0.01f)
+        assertEquals(baseRadiusPx, outsideThreshold.bottomRightPx, 0.01f)
+
+        // 2. Corner Mask (BOTTOM_ONLY): even when placed near top-left and bottom-left corners,
+        // only the bottom corners adapt while top corners remain locked at baseRadiusPx.
+        val bottomOnlyRadii = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 10f,
+            elementTopPx = 10f,
+            elementRightPx = 1070f,
+            elementBottomPx = 2390f,
+            containerWidthPx = 1080f,
+            containerHeightPx = 2400f,
+            containerCornersPx = bezel,
+            baseCornerRadiusPx = baseRadiusPx,
+            influenceDistancePx = 120f,
+            mode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
+            cornerMask = SeaGlassCornerMask.BOTTOM_ONLY,
+            allowAsymmetricCorners = true
+        )
+        assertEquals("Top-Left must stay fixed when mask is BOTTOM_ONLY", baseRadiusPx, bottomOnlyRadii.topLeftPx, 0.01f)
+        assertEquals("Top-Right must stay fixed when mask is BOTTOM_ONLY", baseRadiusPx, bottomOnlyRadii.topRightPx, 0.01f)
+        assertTrue(
+            "Bottom-Left (${bottomOnlyRadii.bottomLeftPx}) must expand to match bezel",
+            bottomOnlyRadii.bottomLeftPx > baseRadiusPx + 35f
+        )
+
+        // 3. Monotonic non-pinching guarantee: at intermediate distance where R_outer - inset < baseRadiusPx,
+        // CONCENTRIC_PROXIMITY must never shrink the corner below baseRadiusPx.
+        val midDistanceRadii = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 95f,
+            elementTopPx = 95f,
+            elementRightPx = 985f,
+            elementBottomPx = 600f,
+            containerWidthPx = 1080f,
+            containerHeightPx = 2400f,
+            containerCornersPx = bezel,
+            baseCornerRadiusPx = baseRadiusPx,
+            influenceDistancePx = 180f,
+            mode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY
+        )
+        assertTrue(
+            "Intermediate-distance corner (${midDistanceRadii.topLeftPx}) must never shrink below baseRadiusPx ($baseRadiusPx)",
+            midDistanceRadii.topLeftPx >= baseRadiusPx - 0.01f
+        )
+
+        // 4. allowAsymmetricCorners = false keeps all 4 corners uniform on a bottom-anchored card
+        val symmetricCard = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 12f,
+            elementTopPx = 1800f,
+            elementRightPx = 1068f,
+            elementBottomPx = 2388f,
+            containerWidthPx = 1080f,
+            containerHeightPx = 2400f,
+            containerCornersPx = bezel,
+            baseCornerRadiusPx = baseRadiusPx,
+            config = SeaGlassCornerAdaptationConfig.concentricProximity(
+                proximityThresholdDp = 40f,
+                allowAsymmetricCorners = false
+            ),
+            density = 2.75f
+        )
+        assertTrue("Uniform card must not be asymmetric", !symmetricCard.isAsymmetric)
+        assertTrue(
+            "Uniform card near bottom bezel must match concentric radius across all 4 corners (${symmetricCard.topLeftPx})",
+            symmetricCard.topLeftPx > baseRadiusPx + 20f
+        )
+    }
+
+    @Test
+    fun sandTumbledCoarsenessContinuumSpansClearToOpaqueGlassWithoutWhiteCenterBleach() {
+        val base = SeaGlassPalette.SeafoamMint.primaryGlass
+
+        val clearGlass = base.withSandWear(0.0f)
+        val midVelvet = base.withSandWear(0.5f)
+        val opaqueGlass = base.withSandWear(1.0f)
+
+        assertEquals(0.0f, clearGlass.coarseness, 1e-4f)
+        assertEquals(1.0f, clearGlass.transparency, 1e-4f)
+        assertTrue("Untreated clear glass must have near-zero effectiveSandWear (${clearGlass.effectiveSandWear})", clearGlass.effectiveSandWear <= 0.02f)
+
+        assertTrue(
+            "Mid velvet glass must have intermediate sandWear (${midVelvet.effectiveSandWear})",
+            midVelvet.effectiveSandWear in 0.35f..0.75f
+        )
+        assertTrue(
+            "Opaque sand-tumbled glass must reach high sandWear (${opaqueGlass.effectiveSandWear})",
+            opaqueGlass.effectiveSandWear >= 0.90f
+        )
+
+        // Verify increasing depth (normalizedThickness) deepens tint absorption rather than bleaching toward white
+        val neutralBackdrop = 0xFFE6EEF2.toInt()
+        val shallowArgb = SeaGlassColorMath.computeBeerLambertTransmission(
+            backdropArgb = neutralBackdrop,
+            tintArgb = base.tintColorArgb,
+            tintDensity = 0.65f,
+            coarseness = 0.45f,
+            normalizedThickness = 0.4f
+        )
+        val deepArgb = SeaGlassColorMath.computeBeerLambertTransmission(
+            backdropArgb = neutralBackdrop,
+            tintArgb = base.tintColorArgb,
+            tintDensity = 0.65f,
+            coarseness = 0.45f,
+            normalizedThickness = 1.8f
+        )
+        val shallowLab = SeaGlassColorMath.argbToOklab(shallowArgb)
+        val deepLab = SeaGlassColorMath.argbToOklab(deepArgb)
+        assertTrue(
+            "Greater glass depth must not bleach lightness toward white (deepL=${deepLab.l} <= shallowL=${shallowLab.l})",
+            deepLab.l <= shallowLab.l
+        )
+    }
 }

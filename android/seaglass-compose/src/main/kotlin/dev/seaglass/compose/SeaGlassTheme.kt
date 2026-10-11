@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassCornerAdaptationConfig
 import dev.seaglass.core.SeaGlassCornerAdaptationSolver
 import dev.seaglass.core.SeaGlassCornerDetectionSource
 import dev.seaglass.core.SeaGlassCornerRadiiPx
@@ -77,6 +78,14 @@ val LocalSeaGlassDeviceCornerSpec = staticCompositionLocalOf {
     )
 }
 val LocalSeaGlassContainerCornerScope = staticCompositionLocalOf<SeaGlassContainerCornerScope?> { null }
+val LocalSeaGlassCornerAdaptationConfig = staticCompositionLocalOf {
+    SeaGlassCornerAdaptationConfig.concentricProximity(
+        proximityThresholdDp = SeaGlassCornerAdaptationConfig.DEFAULT_PROXIMITY_THRESHOLD_DP,
+        fullMatchDistanceDp = SeaGlassCornerAdaptationConfig.DEFAULT_FULL_MATCH_DISTANCE_DP,
+        allowAsymmetricCorners = false,
+        adaptToParentContainer = false
+    )
+}
 
 /**
  * Smoothly animates a [SeaGlassMaterial] between states using Material 3 Expressive dual-spring
@@ -180,6 +189,7 @@ fun SeaGlassTheme(
     tiltState: SeaGlassTiltState = rememberSeaGlassTiltState(),
     tierOverride: SeaGlassDeviceTier? = null,
     deviceCornerProfile: SeaGlassDeviceHardwareProfile = SeaGlassDeviceHardwareProfile.AUTO_DETECT,
+    cornerAdaptationConfig: SeaGlassCornerAdaptationConfig = LocalSeaGlassCornerAdaptationConfig.current,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -229,7 +239,8 @@ fun SeaGlassTheme(
         LocalSeaGlassTiltState provides tiltState,
         LocalSeaGlassTierOverride provides tierOverride,
         LocalSeaGlassDeviceCornerProfile provides deviceCornerProfile,
-        LocalSeaGlassDeviceCornerSpec provides detectedCornerSpec
+        LocalSeaGlassDeviceCornerSpec provides detectedCornerSpec,
+        LocalSeaGlassCornerAdaptationConfig provides cornerAdaptationConfig
     ) {
         MaterialTheme(
             colorScheme = m3ColorScheme,

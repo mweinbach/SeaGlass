@@ -295,7 +295,7 @@ object SeaGlassShaderCompiler {
                     return;
                 }
 
-                // Analytical SDF gradient & tumbled bevel normal
+                // Analytical SDF gradient & smooth tumbled bevel normal
                 float eps = 0.75;
                 vec2 rawGrad = vec2(
                     sgEvaluateDistanceOnly(fragCoord + vec2(eps, 0.0)) - sgEvaluateDistanceOnly(fragCoord - vec2(eps, 0.0)),
@@ -303,22 +303,24 @@ object SeaGlassShaderCompiler {
                 );
                 vec2 grad = rawGrad / max(length(rawGrad), 1e-4);
 
-                float bevelWidth = max(6.0, thicknessPx * 1.25);
+                float bevelWidth = max(12.0, thicknessPx * 1.50);
                 float tau = clamp(1.0 - smoothstep(0.0, bevelWidth, -d), 0.0, 1.0);
+                float meniscus = tau * tau * (3.0 - 2.0 * tau);
 
-                float coarseness = uOpticsPrimary.y;
+                // Coarseness continuum: 0.0 = smooth untreated clear glass, 1.0 = velvet sand-tumbled glass
+                float coarseness = clamp(uOpticsPrimary.y, 0.0, 1.0);
                 vec2 sandNoise = sgSandMicroFacet(fragCoord - uNodeBounds[0].xy);
-                float gritScale = coarseness * (0.08 + 0.14 * tau);
+                float gritScale = coarseness * (0.09 + 0.12 * meniscus);
 
                 vec3 normal = normalize(vec3(
-                    grad * tau * 0.85 + sandNoise * gritScale,
-                    sqrt(max(0.06, 1.0 - tau * tau))
+                    grad * meniscus * 0.82 + sandNoise * gritScale,
+                    sqrt(max(0.06, 1.0 - meniscus * meniscus * 0.85))
                 ));
 
-                // Softened edge refraction & chromatic dispersion
+                // Continuous edge & body refraction + sand-diffused chromatic dispersion
                 float ior = uOpticsPrimary.z;
-                float dispersion = uOpticsPrimary.w * 0.18;
-                float refractStrength = (ior - 1.0) * thicknessPx * (1.0 - 0.55 * coarseness);
+                float dispersion = uOpticsPrimary.w * 0.14 * (1.0 - 0.72 * coarseness);
+                float refractStrength = (ior - 1.0) * thicknessPx * (1.0 - 0.50 * coarseness);
                 vec2 uvOffset = (-normal.xy * refractStrength) / max(uResolutionAndOrigin.xy, vec2(1.0));
 
                 vec3 bgSrgb = vec3(
@@ -328,36 +330,36 @@ object SeaGlassShaderCompiler {
                 );
                 vec3 bgLinear = max(sgSrgbToLinear(bgSrgb), vec3(0.001));
 
-                // Beer-Lambert volumetric absorption in perceptual Oklab space
-                float tintDensity = uOpticsPrimary.x;
-                float opticalDepth = tintDensity * (0.65 + 0.35 * sqrt(max(0.0, 1.0 - tau * tau)));
-                vec3 safeTint = max(linearTint, vec3(0.04));
-                vec3 transmittedLinear = bgLinear * exp(log(safeTint) * (opticalDepth * 1.35));
+                // Beer-Lambert volumetric absorption & velvet subsurface scatter in Oklab space
+                // (No center-to-white bleaching as depth or coarseness increases!)
+                float tintDensity = clamp(uOpticsPrimary.x, 0.0, 1.0);
+                float opticalDepth = tintDensity * (0.72 + 0.28 * sqrt(max(0.0, 1.0 - meniscus * 0.55)));
+                vec3 safeTint = clamp(linearTint, vec3(0.04), vec3(0.98));
+                vec3 transmittedLinear = bgLinear * exp(log(safeTint) * (opticalDepth * 1.30));
 
                 vec3 labTransmitted = sgLinearSrgbToOklab(transmittedLinear);
                 vec3 labTint = sgLinearSrgbToOklab(safeTint);
-                float frostScatter = clamp(tintDensity * 0.46 + coarseness * 0.30, 0.0, 0.82);
-                float chalkyLift = coarseness * 0.15 * (1.0 - labTransmitted.x * 0.5);
+                float velvetScatter = clamp(tintDensity * 0.34 + coarseness * 0.58, 0.0, 0.92);
 
                 vec3 labBody = vec3(
-                    clamp(mix(labTransmitted.x, labTint.x, frostScatter * 0.58) + chalkyLift, 0.08, 0.96),
-                    mix(labTransmitted.yz, labTint.yz, frostScatter)
+                    clamp(mix(labTransmitted.x, labTint.x, velvetScatter * 0.64), 0.08, 0.95),
+                    mix(labTransmitted.yz, labTint.yz, velvetScatter)
                 );
                 vec3 bodyLinear = sgOklabToLinearSrgb(labBody);
 
-                // Chalky Oren-Nayar / rough-Fresnel rim & inner caustic lighting
+                // Smooth Oren-Nayar / rough-Fresnel velvet rim & subtle internal bevel refraction
                 vec3 lightDir = uLightAndMeta.xyz;
                 float rimChalkiness = uOpticsSecondary.x;
-                float fresnelRim = tau * sqrt(max(tau, 0.0)) * (0.35 + 0.65 * rimChalkiness);
-                float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * tau;
-                float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * tau * (1.0 - tau) * 2.2;
-                float grainSparkle = coarseness * sandNoise.x * 0.035;
+                float fresnelRim = meniscus * sqrt(max(meniscus, 0.0)) * (0.28 + 0.52 * rimChalkiness);
+                float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * meniscus;
+                float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.65) * 1.6;
+                float velvetMicroGrain = coarseness * sandNoise.x * 0.025;
 
-                vec3 rimColor = mix(safeTint, vec3(0.98, 0.99, 1.0), 0.72 + 0.20 * coarseness);
+                vec3 rimColor = mix(safeTint, vec3(0.96, 0.98, 1.0), 0.58 + 0.22 * coarseness);
                 vec3 finalLinear = bodyLinear
-                    + rimColor * (fresnelRim * 0.26 + keyHighlight * 0.34)
-                    + safeTint * (leewardCaustic * 0.22)
-                    + vec3(grainSparkle);
+                    + rimColor * (fresnelRim * 0.20 + keyHighlight * 0.26)
+                    + safeTint * (leewardCaustic * 0.18)
+                    + vec3(velvetMicroGrain);
 
                 vec3 finalSrgb = sgLinearToSrgb(finalLinear);
                 fragColor = vec4(finalSrgb * edgeAlpha, edgeAlpha);
@@ -472,21 +474,22 @@ object SeaGlassShaderCompiler {
                 );
                 vec2 grad = rawGrad / max(length(rawGrad), 1e-4);
 
-                float bevelWidth = max(6.0, thicknessPx * 1.25);
+                float bevelWidth = max(12.0, thicknessPx * 1.50);
                 float tau = clamp(1.0 - smoothstep(0.0, bevelWidth, -d), 0.0, 1.0);
+                float meniscus = tau * tau * (3.0 - 2.0 * tau);
 
-                float coarseness = uOpticsPrimary.y;
+                float coarseness = clamp(uOpticsPrimary.y, 0.0, 1.0);
                 vec2 sandNoise = sgSandMicroFacet(fragCoord - uNodeBounds[0].xy);
-                float gritScale = coarseness * (0.08 + 0.14 * tau);
+                float gritScale = coarseness * (0.09 + 0.12 * meniscus);
 
                 vec3 normal = normalize(vec3(
-                    grad * tau * 0.85 + sandNoise * gritScale,
-                    sqrt(max(0.06, 1.0 - tau * tau))
+                    grad * meniscus * 0.82 + sandNoise * gritScale,
+                    sqrt(max(0.06, 1.0 - meniscus * meniscus * 0.85))
                 ));
 
                 float ior = uOpticsPrimary.z;
-                float dispersion = uOpticsPrimary.w * 0.18;
-                float refractStrength = (ior - 1.0) * thicknessPx * (1.0 - 0.55 * coarseness);
+                float dispersion = uOpticsPrimary.w * 0.14 * (1.0 - 0.72 * coarseness);
+                float refractStrength = (ior - 1.0) * thicknessPx * (1.0 - 0.50 * coarseness);
                 vec2 uvOffset = (-normal.xy * refractStrength) / max(uResolutionAndOrigin.xy, vec2(1.0));
 
                 vec3 bgSrgb = vec3(
@@ -496,34 +499,33 @@ object SeaGlassShaderCompiler {
                 );
                 vec3 bgLinear = max(sgSrgbToLinear(bgSrgb), vec3(0.001));
 
-                float tintDensity = uOpticsPrimary.x;
-                float opticalDepth = tintDensity * (0.65 + 0.35 * sqrt(max(0.0, 1.0 - tau * tau)));
-                vec3 safeTint = max(linearTint, vec3(0.04));
-                vec3 transmittedLinear = bgLinear * exp(log(safeTint) * (opticalDepth * 1.35));
+                float tintDensity = clamp(uOpticsPrimary.x, 0.0, 1.0);
+                float opticalDepth = tintDensity * (0.72 + 0.28 * sqrt(max(0.0, 1.0 - meniscus * 0.55)));
+                vec3 safeTint = clamp(linearTint, vec3(0.04), vec3(0.98));
+                vec3 transmittedLinear = bgLinear * exp(log(safeTint) * (opticalDepth * 1.30));
 
                 vec3 labTransmitted = sgLinearSrgbToOklab(transmittedLinear);
                 vec3 labTint = sgLinearSrgbToOklab(safeTint);
-                float frostScatter = clamp(tintDensity * 0.46 + coarseness * 0.30, 0.0, 0.82);
-                float chalkyLift = coarseness * 0.15 * (1.0 - labTransmitted.x * 0.5);
+                float velvetScatter = clamp(tintDensity * 0.34 + coarseness * 0.58, 0.0, 0.92);
 
                 vec3 labBody = vec3(
-                    clamp(mix(labTransmitted.x, labTint.x, frostScatter * 0.58) + chalkyLift, 0.08, 0.96),
-                    mix(labTransmitted.yz, labTint.yz, frostScatter)
+                    clamp(mix(labTransmitted.x, labTint.x, velvetScatter * 0.64), 0.08, 0.95),
+                    mix(labTransmitted.yz, labTint.yz, velvetScatter)
                 );
                 vec3 bodyLinear = sgOklabToLinearSrgb(labBody);
 
                 vec3 lightDir = uLightAndMeta.xyz;
                 float rimChalkiness = uOpticsSecondary.x;
-                float fresnelRim = tau * sqrt(max(tau, 0.0)) * (0.35 + 0.65 * rimChalkiness);
-                float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * tau;
-                float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * tau * (1.0 - tau) * 2.2;
-                float grainSparkle = coarseness * sandNoise.x * 0.035;
+                float fresnelRim = meniscus * sqrt(max(meniscus, 0.0)) * (0.28 + 0.52 * rimChalkiness);
+                float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * meniscus;
+                float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.65) * 1.6;
+                float velvetMicroGrain = coarseness * sandNoise.x * 0.025;
 
-                vec3 rimColor = mix(safeTint, vec3(0.98, 0.99, 1.0), 0.72 + 0.20 * coarseness);
+                vec3 rimColor = mix(safeTint, vec3(0.96, 0.98, 1.0), 0.58 + 0.22 * coarseness);
                 vec3 finalLinear = bodyLinear
-                    + rimColor * (fresnelRim * 0.26 + keyHighlight * 0.34)
-                    + safeTint * (leewardCaustic * 0.22)
-                    + vec3(grainSparkle);
+                    + rimColor * (fresnelRim * 0.20 + keyHighlight * 0.26)
+                    + safeTint * (leewardCaustic * 0.18)
+                    + vec3(velvetMicroGrain);
 
                 vec3 finalSrgb = sgLinearToSrgb(finalLinear);
                 fragColor = vec4(finalSrgb * edgeAlpha, edgeAlpha);
@@ -695,34 +697,33 @@ object SeaGlassShaderCompiler {
                 );
                 float2 grad = rawGrad / max(length(rawGrad), 1e-4);
 
-                float bevelWidth = max(14.0, thicknessPx * 1.65);
+                float bevelWidth = max(12.0, thicknessPx * 1.50);
                 float tau = clamp(1.0 - smoothstep(0.0, bevelWidth, -d), 0.0, 1.0);
-                // Meniscus lens curve: steep at outer edge, smooth transition into interior
+                // Smooth bevel curve: continuous from outer edge into interior
                 float meniscus = tau * tau * (3.0 - 2.0 * tau);
 
-                float coarseness = uOpticsPrimary.y;
+                float coarseness = clamp(uOpticsPrimary.y, 0.0, 1.0);
                 float2 sandNoise = sgSandMicroFacet(fragCoord - uNode0Bounds.xy);
-                float gritScale = coarseness * (0.12 + 0.18 * meniscus);
+                float gritScale = coarseness * (0.09 + 0.12 * meniscus);
 
                 float3 normal = normalize(float3(
-                    grad * meniscus * 0.92 + sandNoise * gritScale,
-                    sqrt(max(0.04, 1.0 - meniscus * meniscus * 0.88))
+                    grad * meniscus * 0.82 + sandNoise * gritScale,
+                    sqrt(max(0.06, 1.0 - meniscus * meniscus * 0.85))
                 ));
 
-                // Liquid Glass 3D Meniscus Lens Refraction + Sanded Micro-Facet Scatter
+                // Continuous edge & body refraction + sand-diffused chromatic dispersion
                 float ior = uOpticsPrimary.z;
-                float dispersion = uOpticsPrimary.w * 0.32 + 0.08;
-                // Strong lens bending along the 3D curved meniscus rim + micro-facet scatter in interior
-                float lensRefractPx = (ior - 1.0) * thicknessPx * (2.6 - 0.95 * coarseness);
-                float2 pxOffset = -grad * (meniscus * lensRefractPx) - sandNoise * (coarseness * 6.5);
+                float dispersion = uOpticsPrimary.w * 0.14 * (1.0 - 0.72 * coarseness);
+                float lensRefractPx = (ior - 1.0) * thicknessPx * (1.85 - 0.85 * coarseness);
+                float2 pxOffset = -grad * (meniscus * lensRefractPx) - sandNoise * (coarseness * 4.5);
 
                 float2 maxCoord = max(uResolutionAndOrigin.xy - float2(1.0), float2(1.0));
                 float2 coordR = clamp(fragCoord + pxOffset * (1.0 + dispersion), float2(0.0), maxCoord);
                 float2 coordG = clamp(fragCoord + pxOffset, float2(0.0), maxCoord);
                 float2 coordB = clamp(fragCoord + pxOffset * (1.0 - dispersion), float2(0.0), maxCoord);
 
-                // Additional cross-tap micro-facet scatter for velvety sea-glass diffusion
-                float scatterRadius = coarseness * 5.0 * (1.0 - meniscus * 0.45);
+                // Cross-tap micro-facet scatter for velvety sea-glass diffusion (0 at clear glass!)
+                float scatterRadius = coarseness * 5.5;
                 half4 sampleR = backdrop.eval(coordR);
                 half4 sampleG0 = backdrop.eval(coordG);
                 half4 sampleG1 = backdrop.eval(clamp(coordG + float2(scatterRadius, -scatterRadius), float2(0.0), maxCoord));
@@ -736,41 +737,34 @@ object SeaGlassShaderCompiler {
                 );
                 float3 bgLinear = bgSrgb * bgSrgb;
 
-                float tintDensity = uOpticsPrimary.x;
-                float opticalDepth = tintDensity * (0.52 + 0.48 * sqrt(max(0.0, 1.0 - meniscus * 0.65)));
+                float tintDensity = clamp(uOpticsPrimary.x, 0.0, 1.0);
+                float opticalDepth = tintDensity * (0.72 + 0.28 * sqrt(max(0.0, 1.0 - meniscus * 0.55)));
                 float3 safeTint = clamp(linearTint, float3(0.04), float3(0.98));
-                float3 transmittedLinear = bgLinear * exp(log(safeTint) * (opticalDepth * 1.15));
+                float3 transmittedLinear = bgLinear * exp(log(safeTint) * (opticalDepth * 1.30));
 
-                // Mix transmitted backdrop with sea-glass pastel body scatter & sand-frost lift
-                float frostScatter = clamp(tintDensity * 0.38 + coarseness * 0.26, 0.0, 0.72);
-                float chalkyLift = coarseness * 0.13;
-                float3 bodyLinear = mix(transmittedLinear, safeTint, frostScatter) + float3(chalkyLift * 0.42);
+                // Perceptual Oklab velvet subsurface scatter (no center-to-white bleaching!)
+                float3 labTransmitted = sgLinearSrgbToOklab(transmittedLinear);
+                float3 labTint = sgLinearSrgbToOklab(safeTint);
+                float velvetScatter = clamp(tintDensity * 0.34 + coarseness * 0.58, 0.0, 0.92);
+                float3 labBody = float3(
+                    clamp(mix(labTransmitted.x, labTint.x, velvetScatter * 0.64), 0.08, 0.95),
+                    mix(labTransmitted.yz, labTint.yz, velvetScatter)
+                );
+                float3 bodyLinear = sgOklabToLinearSrgb(labBody);
 
-                // 4-Component Liquid + Sea Glass 3D Meniscus Lighting:
-                // 1) Crisp windward frosted specular-chalk rim (top-left light)
-                // 2) 3D Meniscus inner refraction groove (gives physical liquid glass thickness)
-                // 3) Leeward internal refracted caustic arc (bottom-right glowing edge)
-                // 4) Tactile sand-tumbled micro-grain texture
+                // Smooth Oren-Nayar / rough-Fresnel velvet rim & subtle internal bevel refraction
                 float3 lightDir = uLightAndMeta.xyz;
                 float rimChalkiness = uOpticsSecondary.x;
-                float outerRim = smoothstep(0.62, 0.99, tau) * (0.50 + 0.50 * rimChalkiness);
-                float meniscusGroove = smoothstep(0.16, 0.54, tau) * (1.0 - smoothstep(0.54, 0.86, tau));
-                float windwardDot = max(0.0, dot(grad, lightDir.xy));
-                float leewardDot = max(0.0, dot(grad, -lightDir.xy));
+                float fresnelRim = meniscus * sqrt(max(meniscus, 0.0)) * (0.28 + 0.52 * rimChalkiness);
+                float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * meniscus;
+                float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.65) * 1.6;
+                float velvetMicroGrain = coarseness * (sandNoise.x * 0.55 + sandNoise.y * 0.45) * 0.025;
 
-                float keyHighlight = windwardDot * sqrt(windwardDot) * smoothstep(0.32, 0.99, tau);
-                float leewardCaustic = leewardDot * sqrt(leewardDot) * smoothstep(0.18, 0.88, tau) * (1.0 - smoothstep(0.88, 1.0, tau)) * 2.4;
-                float grainTexture = coarseness * (sandNoise.x * 0.55 + sandNoise.y * 0.45) * 0.075;
-
-                // Subtle refractive depth darkening inside the meniscus groove makes the rim pop in 3D
-                bodyLinear *= (1.0 - meniscusGroove * 0.22);
-
-                float3 rimColor = mix(safeTint, float3(0.99, 0.995, 1.0), 0.80 + 0.16 * coarseness);
-                float3 causticColor = mix(safeTint, float3(1.0), 0.38);
+                float3 rimColor = mix(safeTint, float3(0.96, 0.98, 1.0), 0.58 + 0.22 * coarseness);
                 float3 finalLinear = bodyLinear
-                    + rimColor * (outerRim * 0.42 + keyHighlight * 0.58)
-                    + causticColor * (leewardCaustic * 0.46)
-                    + float3(grainTexture);
+                    + rimColor * (fresnelRim * 0.20 + keyHighlight * 0.26)
+                    + safeTint * (leewardCaustic * 0.18)
+                    + float3(velvetMicroGrain);
 
                 float3 finalSrgb = sqrt(clamp(finalLinear, float3(0.0), float3(1.0)));
                 return half4(half3(finalSrgb * edgeAlpha), half(edgeAlpha));
@@ -890,63 +884,53 @@ object SeaGlassShaderCompiler {
                 );
                 float2 grad = rawGrad / max(length(rawGrad), 1e-4);
 
-                float bevelWidth = max(16.0, thicknessPx * 1.75);
+                float bevelWidth = max(14.0, thicknessPx * 1.60);
                 float tau = clamp(1.0 - smoothstep(0.0, bevelWidth, -d), 0.0, 1.0);
                 float meniscus = tau * tau * (3.0 - 2.0 * tau);
 
-                float tintDensity = uOpticsPrimary.x;
-                float coarseness = uOpticsPrimary.y;
+                float tintDensity = clamp(uOpticsPrimary.x, 0.0, 1.0);
+                float coarseness = clamp(uOpticsPrimary.y, 0.0, 1.0);
                 float rimChalkiness = uOpticsSecondary.x;
                 float2 sandNoise = sgSandMicroFacet(fragCoord - uNode0Bounds.xy);
 
                 float3 tintSrgb = sqrt(clamp(linearTint, float3(0.0), float3(1.0)));
-                float3 chalkWhite = float3(0.98, 0.995, 1.0);
-                float3 deepSlate = tintSrgb * 0.22;
+                float3 chalkWhite = float3(0.96, 0.985, 1.0);
 
                 // Directional lighting vectors (top-left windward key light, bottom-right leeward caustic)
                 float2 lightXY = normalize(uLightAndMeta.xy + float2(1e-4));
                 float windwardDot = max(0.0, dot(grad, lightXY));
                 float leewardDot = max(0.0, dot(grad, -lightXY));
 
-                // 1) Outer specular-chalk meniscus rim (top-left windward + omnidirectional Fresnel edge)
-                float outerFresnel = smoothstep(0.72, 0.99, tau) * (0.45 + 0.55 * rimChalkiness);
-                float windwardHighlight = windwardDot * sqrt(windwardDot) * smoothstep(0.36, 0.99, tau) * (0.65 + 0.35 * rimChalkiness);
-                float rimIntensity = clamp(outerFresnel * 0.65 + windwardHighlight * 0.95, 0.0, 1.0);
+                // 1) Smooth Oren-Nayar / rough-Fresnel velvet rim
+                float outerFresnel = meniscus * sqrt(max(meniscus, 0.0)) * (0.35 + 0.55 * rimChalkiness);
+                float windwardHighlight = windwardDot * meniscus * (0.50 + 0.40 * rimChalkiness);
+                float rimIntensity = clamp(outerFresnel * 0.48 + windwardHighlight * 0.68, 0.0, 1.0);
 
-                // 2) 3D Liquid Glass inner meniscus refraction groove (gives physical lens depth)
-                float grooveBand = smoothstep(0.14, 0.46, tau) * (1.0 - smoothstep(0.46, 0.80, tau));
-                float grooveStrength = grooveBand * (0.26 + 0.16 * (1.0 - coarseness));
+                // 2) Leeward internal refracted caustic glow (concentrated pastel arc inside bottom-right bevel)
+                float causticBand = meniscus * (1.0 - meniscus * 0.65);
+                float leewardCaustic = leewardDot * causticBand * 1.25;
 
-                // 3) Leeward internal refracted caustic glow (concentrated pastel arc inside bottom-right bevel)
-                float causticBand = smoothstep(0.20, 0.68, tau) * (1.0 - smoothstep(0.68, 0.95, tau));
-                float leewardCaustic = leewardDot * causticBand * 1.45;
-
-                // 4) Tactile sand-tumbled micro-coarseness frost (crystalline highs + etched micro-pits)
+                // 3) Isotropic sand-tumbled velvet micro-coarseness (0 at coarseness == 0!)
                 float grainHigh = max(0.0, sandNoise.x * 0.6 + sandNoise.y * 0.4);
-                float grainLow = max(0.0, -sandNoise.x * 0.5 - sandNoise.y * 0.5);
-                float sandSparkle = coarseness * grainHigh * (0.22 + 0.25 * meniscus);
-                float sandPit = coarseness * grainLow * 0.14;
+                float sandVelvet = coarseness * grainHigh * (0.16 + 0.16 * meniscus);
 
-                // Compose volumetric sea-glass body + 3D meniscus lighting
-                // Keep interior translucent so the refracted/frosted backdrop shines through!
-                float baseBodyAlpha = clamp(0.18 + tintDensity * 0.34 + coarseness * 0.12, 0.14, 0.58);
+                // Compose volumetric sea-glass body + smooth bevel lighting across clear -> opaque continuum
+                float baseBodyAlpha = clamp(tintDensity * 0.24 + coarseness * 0.58, 0.02, 0.88);
                 float totalAlpha = clamp(
                     baseBodyAlpha
-                    + grooveStrength * 0.35
-                    + leewardCaustic * 0.42
-                    + rimIntensity * 0.78
-                    + sandSparkle * 0.45,
-                    0.16,
-                    0.96
+                    + leewardCaustic * 0.26
+                    + rimIntensity * 0.52
+                    + sandVelvet * 0.32,
+                    0.02,
+                    0.94
                 ) * edgeAlpha;
 
-                // Blend color across the 4 optical zones
-                float3 color = mix(tintSrgb, chalkWhite, clamp(coarseness * 0.22 + sandSparkle * 0.85, 0.0, 0.75));
-                color = mix(color, deepSlate, clamp(grooveStrength + sandPit, 0.0, 0.55));
-                float3 causticColor = mix(tintSrgb, chalkWhite, 0.28);
-                color = mix(color, causticColor, clamp(leewardCaustic * 0.75, 0.0, 0.85));
-                float3 rimColor = mix(tintSrgb, chalkWhite, clamp(0.76 + coarseness * 0.18, 0.0, 0.96));
-                color = mix(color, rimColor, clamp(rimIntensity, 0.0, 0.95));
+                // Preserve true glass tint in the interior (never bleach center to white!)
+                float3 color = tintSrgb;
+                float3 causticColor = mix(tintSrgb, chalkWhite, 0.24);
+                color = mix(color, causticColor, clamp(leewardCaustic * 0.65, 0.0, 0.75));
+                float3 rimColor = mix(tintSrgb, chalkWhite, clamp(0.62 + coarseness * 0.20, 0.0, 0.90));
+                color = mix(color, rimColor, clamp(rimIntensity * 0.85, 0.0, 0.90));
 
                 return half4(half3(color * totalAlpha), half(totalAlpha));
             }

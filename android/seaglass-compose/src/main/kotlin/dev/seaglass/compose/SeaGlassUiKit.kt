@@ -82,8 +82,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassCornerAdaptationConfig
 import dev.seaglass.core.SeaGlassCornerAdaptationMode
 import dev.seaglass.core.SeaGlassCornerAdaptationSolver
+import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassCornerRadiiPx
 import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassMaterial
@@ -2622,6 +2624,9 @@ fun SeaGlassCornerEmbeddedPod(
     onClick: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
     contentAlignment: Alignment = Alignment.Center,
+    cornerAdaptationMode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED,
+    cornerMask: SeaGlassCornerMask = SeaGlassCornerMask.ALL,
+    cornerProximityThresholdDp: Float = 48f,
     content: @Composable BoxScope.() -> Unit
 ) {
     SeaGlassSurface(
@@ -2630,7 +2635,11 @@ fun SeaGlassCornerEmbeddedPod(
         onClick = onClick,
         contentPadding = contentPadding,
         contentAlignment = contentAlignment,
-        cornerAdaptationMode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED,
+        cornerAdaptationMode = cornerAdaptationMode,
+        cornerMask = cornerMask,
+        cornerProximityThresholdDp = cornerProximityThresholdDp,
+        allowAsymmetricCorners = true,
+        adaptToParentContainer = true,
         modifier = modifier,
         content = content
     )
@@ -2641,8 +2650,8 @@ fun SeaGlassCornerEmbeddedPod(
  *
  * Demonstrates live hardware display corner detection (`WindowInsets.getRoundedCorner` ->
  * `Display.getRoundedCorner` -> `SystemUI dimen/rounded_corner_radius` -> `Build.MODEL` catalog)
- * and shows how SeaGlass elements embedded in or approaching device/page corners automatically
- * morph each individual corner `(TL, TR, BR, BL)` concentrically ($R_{\text{inner}} = R_{\text{outer}} - d$).
+ * and lets developers choose **where**, **when**, and **how close** (`proximityThresholdDp`)
+ * to a device/page corner an element must be before its corners match concentrically.
  */
 @Composable
 fun SeaGlassAdaptiveCornerLabCard(
@@ -2657,18 +2666,33 @@ fun SeaGlassAdaptiveCornerLabCard(
     val density = LocalDensity.current
     val deviceCornerSpec = LocalSeaGlassDeviceCornerSpec.current
 
-    // 0 = Flush Corner Embed (3dp inset), 1 = Concentric Padded (12dp inset), 2 = Page Interior (24dp inset)
+    // 0 = Flush Corner Embed (3dp inset), 1 = Concentric Padded (14dp inset), 2 = Page Interior (30dp inset)
     var insetPresetIndex by remember { mutableIntStateOf(0) }
     val targetInsetDp = when (insetPresetIndex) {
         0 -> 3f
-        1 -> 12f
-        else -> 24f
+        1 -> 14f
+        else -> 30f
     }
     val animatedInsetDp by animateFloatAsState(
         targetValue = targetInsetDp,
         animationSpec = spring(dampingRatio = 0.64f, stiffness = 380f),
         label = "cornerLabInset"
     )
+
+    // Developer controls for WHERE (Corner Mask) and HOW CLOSE (Proximity Threshold in dp)
+    var maskIndex by remember { mutableIntStateOf(0) }
+    val activeMask = when (maskIndex) {
+        0 -> SeaGlassCornerMask.ALL
+        1 -> SeaGlassCornerMask.BOTTOM_ONLY
+        2 -> SeaGlassCornerMask.TOP_ONLY
+        else -> SeaGlassCornerMask.NONE
+    }
+    val activeMode = if (maskIndex == 3) {
+        SeaGlassCornerAdaptationMode.FIXED
+    } else {
+        SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+    }
+    var proximityThresholdDp by remember { mutableFloatStateOf(36f) }
 
     val tlBezelDp = deviceCornerSpec.topLeftDp.roundToInt()
     val trBezelDp = deviceCornerSpec.topRightDp.roundToInt()
@@ -2695,7 +2719,7 @@ fun SeaGlassAdaptiveCornerLabCard(
                     color = LocalContentColor.current.copy(alpha = 0.76f)
                 )
                 Text(
-                    text = "Concentric Bezel & Page Corner Matching",
+                    text = "Where, When & Proximity Distance Control",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black)
                 )
             }
@@ -2707,7 +2731,7 @@ fun SeaGlassAdaptiveCornerLabCard(
         }
 
         Text(
-            text = "Source: ${deviceCornerSpec.source.label} · Outer Bezel: TL ${tlBezelDp}dp · TR ${trBezelDp}dp · BR ${brBezelDp}dp · BL ${blBezelDp}dp",
+            text = "Source: ${deviceCornerSpec.source.label} · Bezel: TL ${tlBezelDp}dp · TR ${trBezelDp}dp · BR ${brBezelDp}dp · BL ${blBezelDp}dp · Match ≤ ${proximityThresholdDp.roundToInt()}dp",
             style = MaterialTheme.typography.labelSmall,
             color = LocalContentColor.current.copy(alpha = 0.84f)
         )
@@ -2762,15 +2786,60 @@ fun SeaGlassAdaptiveCornerLabCard(
             }
         }
 
-        // Proximity / Inset Mode Selector
+        // Where / When Corner Mask Selector ("All", "Bottom", "Top", "Fixed")
         SeaGlassSegmentedButtonRow(
-            options = listOf("Flush (3dp)", "Inset (12dp)", "Page (24dp)"),
-            selectedIndex = insetPresetIndex,
-            onSelect = { insetPresetIndex = it },
+            options = listOf("All Corners", "Bottom Only", "Top Only", "Fixed"),
+            selectedIndex = maskIndex,
+            onSelect = { maskIndex = it },
             stageState = stageState,
             containerMaterial = surfaceMaterial,
-            indicatorMaterial = primaryMaterial
+            indicatorMaterial = tertiaryMaterial
         )
+
+        // Proximity / Inset Mode Selector + Match Distance Presets
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SeaGlassSegmentedButtonRow(
+                options = listOf("Flush (3dp)", "Inset (14dp)", "Far (30dp)"),
+                selectedIndex = insetPresetIndex,
+                onSelect = { insetPresetIndex = it },
+                stageState = stageState,
+                containerMaterial = surfaceMaterial,
+                indicatorMaterial = primaryMaterial,
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .height(46.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(LocalContentColor.current.copy(alpha = 0.12f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {
+                            proximityThresholdDp = when {
+                                proximityThresholdDp < 20f -> 36f
+                                proximityThresholdDp < 50f -> 72f
+                                else -> 14f
+                            }
+                        }
+                    )
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(
+                    text = "≤${proximityThresholdDp.roundToInt()}dp ↻",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Black,
+                        fontSize = 11.sp
+                    ),
+                    color = LocalContentColor.current
+                )
+            }
+        }
 
         // Live Simulated Device / Page Bezel Frame with 4 Corner-Adaptive Glass Pods
         var frameSize by remember { mutableStateOf(IntSize(900, 520)) }
@@ -2820,6 +2889,7 @@ fun SeaGlassAdaptiveCornerLabCard(
             val dockHPx = solvedLayout.bottomDockHeightPx
             val insetPx = solvedLayout.effectiveInsetPx
             val basePodCornerPx = with(density) { 18.dp.toPx() }
+            val thresholdPx = with(density) { proximityThresholdDp.dp.toPx() }
 
             Box(
                 modifier = Modifier
@@ -2845,8 +2915,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                     containerCornersPx = bezelRadiiPx,
                     baseCornerRadiusPx = basePodCornerPx,
                     minCornerFloorPx = with(density) { 8.dp.toPx() },
-                    influenceDistancePx = with(density) { 96.dp.toPx() },
-                    mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+                    influenceDistancePx = thresholdPx,
+                    mode = activeMode,
+                    cornerMask = activeMask
                 )
                 val trPodSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
                     elementLeftPx = (frameSize.width - insetPx - podWPx).coerceAtLeast(0f),
@@ -2858,8 +2929,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                     containerCornersPx = bezelRadiiPx,
                     baseCornerRadiusPx = basePodCornerPx,
                     minCornerFloorPx = with(density) { 8.dp.toPx() },
-                    influenceDistancePx = with(density) { 96.dp.toPx() },
-                    mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+                    influenceDistancePx = thresholdPx,
+                    mode = activeMode,
+                    cornerMask = activeMask
                 )
                 val dockSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
                     elementLeftPx = insetPx,
@@ -2871,8 +2943,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                     containerCornersPx = bezelRadiiPx,
                     baseCornerRadiusPx = basePodCornerPx,
                     minCornerFloorPx = with(density) { 8.dp.toPx() },
-                    influenceDistancePx = with(density) { 96.dp.toPx() },
-                    mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+                    influenceDistancePx = thresholdPx,
+                    mode = activeMode,
+                    cornerMask = activeMask
                 )
 
                 val tlOuterDp = (tlPodSolved.topLeftPx / density.density).roundToInt()
@@ -2888,6 +2961,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                     material = primaryMaterial.copy(cornerRadiusDp = 18f, thicknessDp = 18f),
                     onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    cornerAdaptationMode = activeMode,
+                    cornerMask = activeMask,
+                    cornerProximityThresholdDp = proximityThresholdDp,
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .size(width = podW, height = podH)
@@ -2916,6 +2992,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                     material = tertiaryMaterial.copy(cornerRadiusDp = 18f, thicknessDp = 18f),
                     onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    cornerAdaptationMode = activeMode,
+                    cornerMask = activeMask,
+                    cornerProximityThresholdDp = proximityThresholdDp,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .size(width = podW, height = podH)
@@ -2944,6 +3023,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                     material = primaryMaterial.copy(cornerRadiusDp = 22f, thicknessDp = 18f),
                     onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    cornerAdaptationMode = activeMode,
+                    cornerMask = activeMask,
+                    cornerProximityThresholdDp = proximityThresholdDp,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()

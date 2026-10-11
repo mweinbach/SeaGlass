@@ -117,10 +117,10 @@ Instead, SeaGlass models **volumetric absorption** in Björn Ottosson's perceptu
    $$
    \ell(d) = \text{tintDensity} \cdot (0.65 + 0.35 \cdot \sqrt{1 - \tau(d)^2})
    $$
-3. Apply Beer-Lambert spectral absorption coefficient $\boldsymbol{\sigma} = -\ln(\max(\mathbf{C}_{\text{tint,linear}}, 0.04))$ scaled by $\ell(d)$, blended with perceptual Oklab chroma shift $(a_{\text{tint}}, b_{\text{tint}})$ and a diffuse milky scatter floor proportional to $\text{coarseness}$:
-   - High-luminance background features are softly diffused and shifted toward the sea-glass hue.
-   - Midtones absorb the rich pastel chroma of the glass.
-   - Sanded coarseness adds a subtle isotropic chalky veil (`milkiness = coarseness * 0.16`) that prevents dark backgrounds from turning the glass pitch black.
+3. Apply Beer-Lambert spectral absorption coefficient $\boldsymbol{\sigma} = -\ln(\max(\mathbf{C}_{\text{tint,linear}}, 0.04))$ scaled by $\ell(d)$, blended with perceptual Oklab chroma shift $(a_{\text{tint}}, b_{\text{tint}})$ and a sand-frosted subsurface scatter proportional to the sand-erosion continuum (`coarseness` / `effectiveSandWear`):
+   - **Untreated Clear Glass (`coarseness = 0, transparency = 1`)**: Zero sand-grain surface treatment and near-zero subsurface diffusion—pure optical refraction and Beer-Lambert transmission.
+   - **Sand-Frosted Continuum (`0 < coarseness < 1`)**: Progressive ocean sand abrasion develops an isotropic sand-frosted micro-facet finish while coupling subsurface diffusion across both the interior and the curved bevel so edges and corners never exhibit a harsh unblurred seam.
+   - **Effectively Opaque Sand-Frosted Glass (`coarseness = 1, transparency = 0`)**: Deep sand-frosted subsurface diffusion and Oklab body scatter render the slab effectively opaque to sharp background details while still refracting and diffusing ambient light and maintaining uniform chroma (never bleaching the center toward white with depth).
 
 ---
 

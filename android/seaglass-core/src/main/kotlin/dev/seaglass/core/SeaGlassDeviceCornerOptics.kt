@@ -131,6 +131,168 @@ enum class SeaGlassCornerAdaptationMode {
 }
 
 /**
+ * Per-corner mask specifying **where** adaptive corner radius matching is allowed on an element.
+ *
+ * Developers can enable adaptation on all 4 corners ([ALL]), disable it ([NONE]), restrict it
+ * to a specific edge ([TOP_ONLY], [BOTTOM_ONLY], [LEFT_ONLY], [RIGHT_ONLY]), or toggle
+ * individual corners (`topLeft`, `topRight`, `bottomRight`, `bottomLeft`).
+ */
+data class SeaGlassCornerMask(
+    val topLeft: Boolean = true,
+    val topRight: Boolean = true,
+    val bottomRight: Boolean = true,
+    val bottomLeft: Boolean = true
+) {
+    val isNone: Boolean
+        get() = !topLeft && !topRight && !bottomRight && !bottomLeft
+
+    val isAll: Boolean
+        get() = topLeft && topRight && bottomRight && bottomLeft
+
+    companion object {
+        val ALL = SeaGlassCornerMask(
+            topLeft = true,
+            topRight = true,
+            bottomRight = true,
+            bottomLeft = true
+        )
+        val NONE = SeaGlassCornerMask(
+            topLeft = false,
+            topRight = false,
+            bottomRight = false,
+            bottomLeft = false
+        )
+        val TOP_ONLY = SeaGlassCornerMask(
+            topLeft = true,
+            topRight = true,
+            bottomRight = false,
+            bottomLeft = false
+        )
+        val BOTTOM_ONLY = SeaGlassCornerMask(
+            topLeft = false,
+            topRight = false,
+            bottomRight = true,
+            bottomLeft = true
+        )
+        val LEFT_ONLY = SeaGlassCornerMask(
+            topLeft = true,
+            topRight = false,
+            bottomRight = false,
+            bottomLeft = true
+        )
+        val RIGHT_ONLY = SeaGlassCornerMask(
+            topLeft = false,
+            topRight = true,
+            bottomRight = true,
+            bottomLeft = false
+        )
+
+        fun only(
+            topLeft: Boolean = false,
+            topRight: Boolean = false,
+            bottomRight: Boolean = false,
+            bottomLeft: Boolean = false
+        ) = SeaGlassCornerMask(
+            topLeft = topLeft,
+            topRight = topRight,
+            bottomRight = bottomRight,
+            bottomLeft = bottomLeft
+        )
+    }
+}
+
+/**
+ * Developer configuration controlling **when**, **where**, and **how close** to a physical
+ * device corner (or parent container corner) a SeaGlass element must be before its corner
+ * radius adapts.
+ *
+ * @property mode Adaptation strategy ([SeaGlassCornerAdaptationMode.FIXED] disables adaptation;
+ *   [SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY] smoothly matches within [proximityThresholdDp]).
+ * @property corners Per-corner mask ([SeaGlassCornerMask]) selecting which corners may adapt.
+ * @property proximityThresholdDp Maximum radial distance (in `dp`) from a device/container corner
+ *   at which corner adaptation begins (`d >= proximityThresholdDp` keeps the base corner radius).
+ * @property fullMatchDistanceDp Inner radial distance (in `dp`) within which the corner reaches
+ *   100% of the concentric bezel target ($R_{\text{outer}} - \text{inset}$).
+ * @property strength Overall interpolation weight in `[0f..1f]`.
+ * @property allowAsymmetricCorners Whether individual corners on the same element may take on
+ *   different radii when only one edge/corner is near the bezel. When `false`, the element keeps
+ *   all enabled corners uniform so floating cards and multi-line inputs never look lopsided.
+ * @property adaptToDeviceCorners Whether to adapt relative to physical device display corners.
+ * @property adaptToParentContainer Whether nested elements also adapt relative to an enclosing
+ *   `LocalSeaGlassContainerCornerScope` card/sheet. Defaults to `false` so inner buttons/pills
+ *   keep their own shape unless opted in.
+ * @property minCornerFloorDp Minimum corner radius floor (in `dp`) when tightening near sharp bezels.
+ */
+data class SeaGlassCornerAdaptationConfig(
+    val mode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
+    val corners: SeaGlassCornerMask = SeaGlassCornerMask.ALL,
+    val proximityThresholdDp: Float = DEFAULT_PROXIMITY_THRESHOLD_DP,
+    val fullMatchDistanceDp: Float = DEFAULT_FULL_MATCH_DISTANCE_DP,
+    val strength: Float = 1.0f,
+    val allowAsymmetricCorners: Boolean = false,
+    val adaptToDeviceCorners: Boolean = true,
+    val adaptToParentContainer: Boolean = false,
+    val minCornerFloorDp: Float = 8f
+) {
+    companion object {
+        const val DEFAULT_PROXIMITY_THRESHOLD_DP = 32f
+        const val DEFAULT_FULL_MATCH_DISTANCE_DP = 6f
+
+        /** Disables corner adaptation and uses raw [SeaGlassMaterial.cornerRadiusDp]. */
+        val Disabled = SeaGlassCornerAdaptationConfig(
+            mode = SeaGlassCornerAdaptationMode.FIXED,
+            corners = SeaGlassCornerMask.NONE,
+            strength = 0f
+        )
+
+        /**
+         * Smooth concentric matching when an element comes within [proximityThresholdDp] of a
+         * device corner. By default keeps corners uniform ([allowAsymmetricCorners] = `false`)
+         * unless per-corner asymmetry is explicitly requested.
+         */
+        fun concentricProximity(
+            proximityThresholdDp: Float = DEFAULT_PROXIMITY_THRESHOLD_DP,
+            fullMatchDistanceDp: Float = DEFAULT_FULL_MATCH_DISTANCE_DP,
+            corners: SeaGlassCornerMask = SeaGlassCornerMask.ALL,
+            allowAsymmetricCorners: Boolean = false,
+            strength: Float = 1.0f,
+            adaptToDeviceCorners: Boolean = true,
+            adaptToParentContainer: Boolean = false
+        ) = SeaGlassCornerAdaptationConfig(
+            mode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
+            corners = corners,
+            proximityThresholdDp = proximityThresholdDp.coerceAtLeast(0f),
+            fullMatchDistanceDp = fullMatchDistanceDp.coerceAtLeast(0f),
+            strength = strength.coerceIn(0f, 1f),
+            allowAsymmetricCorners = allowAsymmetricCorners,
+            adaptToDeviceCorners = adaptToDeviceCorners,
+            adaptToParentContainer = adaptToParentContainer
+        )
+
+        /**
+         * Asymmetric corner embedding for corner pods and edge docks where outer bezel-facing
+         * corners lock to $R_{\text{outer}} - \text{inset}$ while inner corners stay tighter.
+         */
+        fun flushCornerEmbed(
+            proximityThresholdDp: Float = 48f,
+            fullMatchDistanceDp: Float = 8f,
+            corners: SeaGlassCornerMask = SeaGlassCornerMask.ALL,
+            adaptToParentContainer: Boolean = true,
+            strength: Float = 1.0f
+        ) = SeaGlassCornerAdaptationConfig(
+            mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED,
+            corners = corners,
+            proximityThresholdDp = proximityThresholdDp.coerceAtLeast(0f),
+            fullMatchDistanceDp = fullMatchDistanceDp.coerceAtLeast(0f),
+            strength = strength.coerceIn(0f, 1f),
+            allowAsymmetricCorners = true,
+            adaptToDeviceCorners = true,
+            adaptToParentContainer = adaptToParentContainer
+        )
+    }
+}
+
+/**
  * Per-corner radius quad in pixels (`topLeft`, `topRight`, `bottomRight`, `bottomLeft`).
  */
 data class SeaGlassCornerRadiiPx(
@@ -432,10 +594,45 @@ object SeaGlassCornerAdaptationSolver {
         containerHeightPx: Float,
         containerCornersPx: SeaGlassCornerRadiiPx,
         baseCornerRadiusPx: Float,
+        config: SeaGlassCornerAdaptationConfig,
+        density: Float = 2.75f
+    ): SeaGlassCornerRadiiPx {
+        val d = density.coerceAtLeast(0.5f)
+        return solveElementCornerRadiiPx(
+            elementLeftPx = elementLeftPx,
+            elementTopPx = elementTopPx,
+            elementRightPx = elementRightPx,
+            elementBottomPx = elementBottomPx,
+            containerWidthPx = containerWidthPx,
+            containerHeightPx = containerHeightPx,
+            containerCornersPx = containerCornersPx,
+            baseCornerRadiusPx = baseCornerRadiusPx,
+            minCornerFloorPx = config.minCornerFloorDp * d,
+            influenceDistancePx = config.proximityThresholdDp * d,
+            fullMatchDistancePx = config.fullMatchDistanceDp * d,
+            adaptationStrength = config.strength,
+            mode = config.mode,
+            cornerMask = config.corners,
+            allowAsymmetricCorners = config.allowAsymmetricCorners
+        )
+    }
+
+    fun solveElementCornerRadiiPx(
+        elementLeftPx: Float,
+        elementTopPx: Float,
+        elementRightPx: Float,
+        elementBottomPx: Float,
+        containerWidthPx: Float,
+        containerHeightPx: Float,
+        containerCornersPx: SeaGlassCornerRadiiPx,
+        baseCornerRadiusPx: Float,
         minCornerFloorPx: Float = 8f,
-        influenceDistancePx: Float = 320f,
+        influenceDistancePx: Float = 96f,
+        fullMatchDistancePx: Float = 0f,
         adaptationStrength: Float = 1.0f,
-        mode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY
+        mode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
+        cornerMask: SeaGlassCornerMask = SeaGlassCornerMask.ALL,
+        allowAsymmetricCorners: Boolean = true
     ): SeaGlassCornerRadiiPx {
         val elemW = (elementRightPx - elementLeftPx).coerceAtLeast(1f)
         val elemH = (elementBottomPx - elementTopPx).coerceAtLeast(1f)
@@ -446,8 +643,10 @@ object SeaGlassCornerAdaptationSolver {
         val clampedBase = baseCornerRadiusPx.coerceIn(0f, halfMinDimPx)
 
         if (mode == SeaGlassCornerAdaptationMode.FIXED ||
+            cornerMask.isNone ||
             containerWidthPx <= 1f ||
             containerHeightPx <= 1f ||
+            influenceDistancePx <= 0.5f ||
             adaptationStrength <= 0.001f
         ) {
             return SeaGlassCornerRadiiPx.uniform(clampedBase)
@@ -459,17 +658,26 @@ object SeaGlassCornerAdaptationSolver {
         val bottomInset = (containerHeightPx - elementBottomPx).coerceAtLeast(0f)
 
         val floorPx = min(minCornerFloorPx, halfMinDimPx)
-        val invInfluence = 1f / influenceDistancePx.coerceAtLeast(1f)
+        val matchDistPx = fullMatchDistancePx.coerceIn(0f, influenceDistancePx * 0.90f)
+        val transitionSpanPx = (influenceDistancePx - matchDistPx).coerceAtLeast(1f)
         val strength = adaptationStrength.coerceIn(0f, 1f)
 
         fun solveSingleCorner(
             dx: Float,
             dy: Float,
-            outerRadiusPx: Float
+            outerRadiusPx: Float,
+            cornerEnabled: Boolean
         ): Float {
-            if (outerRadiusPx <= 0.5f) return clampedBase
+            if (!cornerEnabled || outerRadiusPx <= 0.5f) return clampedBase
+            if (dx >= influenceDistancePx || dy >= influenceDistancePx) {
+                return if (mode == SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) {
+                    min(clampedBase, halfMinDimPx * 0.45f).coerceAtLeast(floorPx)
+                } else {
+                    clampedBase
+                }
+            }
             val dist = sqrt(dx * dx + dy * dy)
-            val rawT = (1f - dist * invInfluence).coerceIn(0f, 1f)
+            val rawT = ((influenceDistancePx - dist) / transitionSpanPx).coerceIn(0f, 1f)
             val proximityWeight = rawT * rawT * (3f - 2f * rawT) * strength
 
             if (proximityWeight <= 0.001f && mode != SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) {
@@ -477,28 +685,54 @@ object SeaGlassCornerAdaptationSolver {
             }
 
             val effectiveInset = (min(dx, dy) * 0.65f + max(dx, dy) * 0.35f)
-            val concentricTarget = (outerRadiusPx - effectiveInset)
+            val rawConcentric = (outerRadiusPx - effectiveInset)
                 .coerceIn(floorPx, maxAsymmetricCornerPx)
 
             return when (mode) {
                 SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED -> {
                     if (dist < influenceDistancePx * 0.85f) {
-                        concentricTarget
+                        rawConcentric
                     } else {
                         min(clampedBase, halfMinDimPx * 0.45f).coerceAtLeast(floorPx)
                     }
                 }
                 else -> {
-                    (clampedBase + (concentricTarget - clampedBase) * proximityWeight)
+                    // Prevent mid-distance corner pinching: when approaching a bezel rounder than
+                    // clampedBase, only expand above clampedBase (never dip below clampedBase at
+                    // intermediate distances); when approaching a sharper bezel, tighten down.
+                    val monotonicTarget = if (outerRadiusPx >= clampedBase) {
+                        max(clampedBase, rawConcentric)
+                    } else {
+                        min(clampedBase, rawConcentric)
+                    }
+                    (clampedBase + (monotonicTarget - clampedBase) * proximityWeight)
                         .coerceIn(0f, maxAsymmetricCornerPx)
                 }
             }
         }
 
-        var tl = solveSingleCorner(leftInset, topInset, containerCornersPx.topLeftPx)
-        var tr = solveSingleCorner(rightInset, topInset, containerCornersPx.topRightPx)
-        var br = solveSingleCorner(rightInset, bottomInset, containerCornersPx.bottomRightPx)
-        var bl = solveSingleCorner(leftInset, bottomInset, containerCornersPx.bottomLeftPx)
+        var tl = solveSingleCorner(leftInset, topInset, containerCornersPx.topLeftPx, cornerMask.topLeft)
+        var tr = solveSingleCorner(rightInset, topInset, containerCornersPx.topRightPx, cornerMask.topRight)
+        var br = solveSingleCorner(rightInset, bottomInset, containerCornersPx.bottomRightPx, cornerMask.bottomRight)
+        var bl = solveSingleCorner(leftInset, bottomInset, containerCornersPx.bottomLeftPx, cornerMask.bottomLeft)
+
+        if (mode == SeaGlassCornerAdaptationMode.UNIFORM_CONCENTRIC ||
+            (!allowAsymmetricCorners && mode != SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED)
+        ) {
+            val maxCorner = max(max(tl, tr), max(br, bl))
+            val minCorner = min(min(tl, tr), min(br, bl))
+            val unified = if (maxCorner > clampedBase + 0.5f) {
+                min(maxCorner, halfMinDimPx)
+            } else if (minCorner < clampedBase - 0.5f) {
+                min(minCorner, halfMinDimPx)
+            } else {
+                clampedBase
+            }
+            tl = if (cornerMask.topLeft) unified else clampedBase
+            tr = if (cornerMask.topRight) unified else clampedBase
+            br = if (cornerMask.bottomRight) unified else clampedBase
+            bl = if (cornerMask.bottomLeft) unified else clampedBase
+        }
 
         // Normalize adjacent corner sums so no pair of corners on the same edge exceeds elemW or elemH
         val edgeScale = min(
@@ -516,11 +750,6 @@ object SeaGlassCornerAdaptationSolver {
         tr *= edgeScale
         br *= edgeScale
         bl *= edgeScale
-
-        if (mode == SeaGlassCornerAdaptationMode.UNIFORM_CONCENTRIC) {
-            val avg = min((tl + tr + br + bl) * 0.25f, halfMinDimPx)
-            return SeaGlassCornerRadiiPx.uniform(avg)
-        }
 
         return SeaGlassCornerRadiiPx(
             topLeftPx = tl,

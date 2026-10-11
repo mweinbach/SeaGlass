@@ -170,7 +170,7 @@ object SeaGlassColorMath {
         val transmittedG = bgG * absorbG
         val transmittedB = bgB * absorbB
 
-        // Convert to Oklab to apply Material 3 Expressive pastel body scatter and sand-frost veil
+        // Convert to Oklab to apply Material 3 Expressive pastel body scatter and velvet diffusion
         val transmittedArgb = (0xFF shl 24) or
             (linearChannelToSrgb(transmittedR) shl 16) or
             (linearChannelToSrgb(transmittedG) shl 8) or
@@ -179,14 +179,16 @@ object SeaGlassColorMath {
         val labTransmitted = argbToOklab(transmittedArgb)
         val labTint = argbToOklab(tintArgb)
 
-        // Frosted sea glass scatters ambient light isotropically inside the micro-pitted surface
-        val frostScatterWeight = (density * 0.42f + grit * 0.28f).coerceIn(0f, 0.78f)
-        val chalkyLift = grit * 0.14f * (1f - labTransmitted.l * 0.5f)
+        // Sand-tumbled sea glass develops a velvet subsurface scatter in the glass's own Oklab tint
+        // (from 0 at untreated clear glass up to dense velvet glass at grit = 1f) without bleaching
+        // the center toward white as depth increases.
+        val velvetScatterWeight = (density * 0.34f + grit * 0.56f).coerceIn(0f, 0.90f)
+        val lightnessBlend = (velvetScatterWeight * 0.62f).coerceIn(0f, 0.78f)
 
-        val outL = (labTransmitted.l * (1f - frostScatterWeight * 0.55f) +
-            labTint.l * (frostScatterWeight * 0.55f) + chalkyLift).coerceIn(0.08f, 0.96f)
-        val outA = labTransmitted.a * (1f - frostScatterWeight) + labTint.a * frostScatterWeight
-        val outB = labTransmitted.b * (1f - frostScatterWeight) + labTint.b * frostScatterWeight
+        val outL = (labTransmitted.l * (1f - lightnessBlend) + labTint.l * lightnessBlend)
+            .coerceIn(0.08f, 0.95f)
+        val outA = labTransmitted.a * (1f - velvetScatterWeight) + labTint.a * velvetScatterWeight
+        val outB = labTransmitted.b * (1f - velvetScatterWeight) + labTint.b * velvetScatterWeight
 
         return oklabToArgb(OklabColor(l = outL, a = outA, b = outB, alpha = 1f))
     }

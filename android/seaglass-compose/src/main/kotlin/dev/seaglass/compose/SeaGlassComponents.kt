@@ -61,8 +61,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassCornerAdaptationConfig
 import dev.seaglass.core.SeaGlassCornerAdaptationMode
 import dev.seaglass.core.SeaGlassCornerAdaptationSolver
+import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSdfEngine
 import kotlin.math.max
@@ -120,7 +122,13 @@ fun SeaGlassSurface(
     onClick: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentAlignment: Alignment = Alignment.TopStart,
-    cornerAdaptationMode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
+    cornerAdaptationMode: SeaGlassCornerAdaptationMode = LocalSeaGlassCornerAdaptationConfig.current.mode,
+    cornerMask: SeaGlassCornerMask = LocalSeaGlassCornerAdaptationConfig.current.corners,
+    cornerProximityThresholdDp: Float = LocalSeaGlassCornerAdaptationConfig.current.proximityThresholdDp,
+    cornerFullMatchDistanceDp: Float = LocalSeaGlassCornerAdaptationConfig.current.fullMatchDistanceDp,
+    cornerAdaptationStrength: Float = LocalSeaGlassCornerAdaptationConfig.current.strength,
+    allowAsymmetricCorners: Boolean = LocalSeaGlassCornerAdaptationConfig.current.allowAsymmetricCorners,
+    adaptToParentContainer: Boolean = LocalSeaGlassCornerAdaptationConfig.current.adaptToParentContainer,
     content: @Composable BoxScope.() -> Unit
 ) {
     val context = LocalContext.current
@@ -194,7 +202,13 @@ fun SeaGlassSurface(
         effectiveMaterial.cornerRadiusDp,
         deviceCornerSpec,
         parentScope,
-        cornerAdaptationMode
+        cornerAdaptationMode,
+        cornerMask,
+        cornerProximityThresholdDp,
+        cornerFullMatchDistanceDp,
+        cornerAdaptationStrength,
+        allowAsymmetricCorners,
+        adaptToParentContainer
     ) {
         val wPx = surfaceSize.width.toFloat().coerceAtLeast(1f)
         val hPx = surfaceSize.height.toFloat().coerceAtLeast(1f)
@@ -217,15 +231,21 @@ fun SeaGlassSurface(
             containerCornersPx = deviceCornerSpec.toRadiiPx(),
             baseCornerRadiusPx = baseCornerPx,
             minCornerFloorPx = 8f * density.density,
-            influenceDistancePx = 136f * density.density,
-            mode = cornerAdaptationMode
+            influenceDistancePx = cornerProximityThresholdDp.coerceAtLeast(0f) * density.density,
+            fullMatchDistancePx = cornerFullMatchDistanceDp.coerceAtLeast(0f) * density.density,
+            adaptationStrength = cornerAdaptationStrength,
+            mode = cornerAdaptationMode,
+            cornerMask = cornerMask,
+            allowAsymmetricCorners = allowAsymmetricCorners
         )
 
         val solvedRadii = if (
+            (adaptToParentContainer || cornerAdaptationMode == SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) &&
             parentScope != null &&
             parentScope.widthPx > wPx + 4f &&
             parentScope.heightPx > hPx + 4f &&
-            cornerAdaptationMode != SeaGlassCornerAdaptationMode.FIXED
+            cornerAdaptationMode != SeaGlassCornerAdaptationMode.FIXED &&
+            !cornerMask.isNone
         ) {
             val relLeft = surfaceOriginInRoot.x - parentScope.originInRoot.x
             val relTop = surfaceOriginInRoot.y - parentScope.originInRoot.y
@@ -237,10 +257,14 @@ fun SeaGlassSurface(
                 containerWidthPx = parentScope.widthPx,
                 containerHeightPx = parentScope.heightPx,
                 containerCornersPx = parentScope.cornerRadiiPx,
-                baseCornerRadiusPx = deviceSolved.maxRadiusPx,
+                baseCornerRadiusPx = baseCornerPx,
                 minCornerFloorPx = 7f * density.density,
-                influenceDistancePx = 92f * density.density,
-                mode = cornerAdaptationMode
+                influenceDistancePx = cornerProximityThresholdDp.coerceAtLeast(0f) * density.density,
+                fullMatchDistancePx = cornerFullMatchDistanceDp.coerceAtLeast(0f) * density.density,
+                adaptationStrength = cornerAdaptationStrength,
+                mode = cornerAdaptationMode,
+                cornerMask = cornerMask,
+                allowAsymmetricCorners = allowAsymmetricCorners
             )
         } else {
             deviceSolved
@@ -278,37 +302,44 @@ fun SeaGlassSurface(
     }
 
     ProvideSeaGlassLegibleContent(contentColor = contentColor) {
-        CompositionLocalProvider(LocalSeaGlassContainerCornerScope provides containerScope) {
-            Box(
-                contentAlignment = contentAlignment,
-                modifier = modifier
-                    .onGloballyPositioned { coords ->
-                        surfaceOriginInRoot = coords.positionInRoot()
-                        surfaceSize = coords.size
-                    }
-                    .observeSeaGlassTouch { pos, down ->
-                        if (pos != null) lastTouchOffset = pos
-                        isPointerDown = down
-                    }
-                    .graphicsLayer {
-                        this.scaleX = scaleX
-                        this.scaleY = scaleY
-                        this.rotationX = tiltRotX
-                        this.rotationY = tiltRotY
-                        this.cameraDistance = 14f * this.density
-                    }
-                    .then(clickableModifier)
-                    .seaGlass(
-                        stageState = stageState,
-                        material = effectiveMaterial,
-                        touchPointInLocal = lastTouchOffset,
-                        touchIntensity = pressFraction,
-                        contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
-                        cornerAdaptationMode = cornerAdaptationMode
-                    )
-                    .padding(effectivePadding),
-                content = content
-            )
+        Box(
+            contentAlignment = contentAlignment,
+            modifier = modifier
+                .onGloballyPositioned { coords ->
+                    surfaceOriginInRoot = coords.positionInRoot()
+                    surfaceSize = coords.size
+                }
+                .observeSeaGlassTouch { pos, down ->
+                    if (pos != null) lastTouchOffset = pos
+                    isPointerDown = down
+                }
+                .graphicsLayer {
+                    this.scaleX = scaleX
+                    this.scaleY = scaleY
+                    this.rotationX = tiltRotX
+                    this.rotationY = tiltRotY
+                    this.cameraDistance = 14f * this.density
+                }
+                .then(clickableModifier)
+                .seaGlass(
+                    stageState = stageState,
+                    material = effectiveMaterial,
+                    touchPointInLocal = lastTouchOffset,
+                    touchIntensity = pressFraction,
+                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
+                    cornerAdaptationMode = cornerAdaptationMode,
+                    cornerMask = cornerMask,
+                    cornerProximityThresholdDp = cornerProximityThresholdDp,
+                    cornerFullMatchDistanceDp = cornerFullMatchDistanceDp,
+                    cornerAdaptationStrength = cornerAdaptationStrength,
+                    allowAsymmetricCorners = allowAsymmetricCorners,
+                    adaptToParentContainer = adaptToParentContainer
+                )
+                .padding(effectivePadding)
+        ) {
+            CompositionLocalProvider(LocalSeaGlassContainerCornerScope provides containerScope) {
+                content()
+            }
         }
     }
 }
@@ -324,6 +355,9 @@ fun SeaGlassButton(
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
     contentPadding: PaddingValues = PaddingValues(horizontal = 22.dp, vertical = 13.dp),
+    cornerAdaptationMode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.FIXED,
+    cornerMask: SeaGlassCornerMask = SeaGlassCornerMask.NONE,
+    cornerProximityThresholdDp: Float = SeaGlassCornerAdaptationConfig.DEFAULT_PROXIMITY_THRESHOLD_DP,
     content: @Composable RowScope.() -> Unit
 ) {
     val motion = LocalSeaGlassMotionScheme.current
@@ -398,7 +432,10 @@ fun SeaGlassButton(
                     material = animatedMaterial,
                     touchPointInLocal = lastTouchOffset,
                     touchIntensity = pressFraction,
-                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS
+                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
+                    cornerAdaptationMode = cornerAdaptationMode,
+                    cornerMask = cornerMask,
+                    cornerProximityThresholdDp = cornerProximityThresholdDp
                 )
                 .padding(contentPadding),
             content = content
@@ -453,6 +490,10 @@ fun SeaGlassCard(
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
     onClick: (() -> Unit)? = null,
+    cornerAdaptationMode: SeaGlassCornerAdaptationMode = LocalSeaGlassCornerAdaptationConfig.current.mode,
+    cornerMask: SeaGlassCornerMask = LocalSeaGlassCornerAdaptationConfig.current.corners,
+    cornerProximityThresholdDp: Float = LocalSeaGlassCornerAdaptationConfig.current.proximityThresholdDp,
+    allowAsymmetricCorners: Boolean = LocalSeaGlassCornerAdaptationConfig.current.allowAsymmetricCorners,
     content: @Composable ColumnScope.() -> Unit
 ) {
     SeaGlassSurface(
@@ -460,6 +501,10 @@ fun SeaGlassCard(
         material = material,
         onClick = onClick,
         contentPadding = PaddingValues(20.dp),
+        cornerAdaptationMode = cornerAdaptationMode,
+        cornerMask = cornerMask,
+        cornerProximityThresholdDp = cornerProximityThresholdDp,
+        allowAsymmetricCorners = allowAsymmetricCorners,
         modifier = modifier
     ) {
         Column(

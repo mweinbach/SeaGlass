@@ -773,33 +773,33 @@ private fun OpticsLabSection(
         }
     }
 
-    // 1-Tap Optical Finish Presets
+    // 1-Tap Optical Finish Presets across the Sand-Frosted Coarseness Continuum
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         SeaGlassPill(
-            label = "Sanded Beach",
-            selected = transparency in 0.55f..0.75f,
-            onClick = { onApplyPreset(0.64f, 0.44f, 22f, 0.68f, 16f, 1.54f, 0.80f) },
+            label = "Clear Glass",
+            selected = transparency > 0.80f && coarseness < 0.20f,
+            onClick = { onApplyPreset(0.98f, 0.00f, 1.5f, 0.48f, 18f, 1.58f, 0.32f) },
             stageState = stageState,
             selectedMaterial = primaryMaterial,
             unselectedMaterial = surfaceMaterial,
             modifier = Modifier.weight(1f)
         )
         SeaGlassPill(
-            label = "Liquid Lens",
-            selected = transparency > 0.75f,
-            onClick = { onApplyPreset(0.86f, 0.16f, 12f, 0.62f, 22f, 1.72f, 0.88f) },
+            label = "Sand Frosted",
+            selected = transparency in 0.45f..0.80f,
+            onClick = { onApplyPreset(0.64f, 0.44f, 22f, 0.64f, 16f, 1.54f, 0.26f) },
             stageState = stageState,
             selectedMaterial = primaryMaterial,
             unselectedMaterial = surfaceMaterial,
             modifier = Modifier.weight(1f)
         )
         SeaGlassPill(
-            label = "Heavy Frost",
-            selected = transparency < 0.55f,
-            onClick = { onApplyPreset(0.36f, 0.78f, 34f, 0.74f, 16f, 1.48f, 0.92f) },
+            label = "Heavy Sand",
+            selected = transparency < 0.45f,
+            onClick = { onApplyPreset(0.10f, 0.95f, 44f, 0.78f, 18f, 1.50f, 0.14f) },
             stageState = stageState,
             selectedMaterial = primaryMaterial,
             unselectedMaterial = surfaceMaterial,
@@ -807,7 +807,7 @@ private fun OpticsLabSection(
         )
     }
 
-    // Dedicated Hero "Frosted Glass Transparency Bar" Card
+    // Dedicated Hero "Sand-Frosted Coarseness & Transparency Continuum" Card
     SeaGlassSurface(
         stageState = stageState,
         material = primaryMaterial.copy(cornerRadiusDp = 26f),
@@ -821,10 +821,11 @@ private fun OpticsLabSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "FROSTED GLASS TRANSPARENCY BAR",
+                    text = "SAND-FROSTED CONTINUUM",
+                    maxLines = 1,
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.1.sp
+                        letterSpacing = 1.0.sp
                     ),
                     color = LocalContentColor.current.copy(alpha = 0.85f)
                 )
@@ -835,10 +836,12 @@ private fun OpticsLabSection(
                         .padding(horizontal = 9.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = String.format(Locale.US, "%.0f%% Transparent", transparency * 100f),
+                        text = String.format(Locale.US, "%.0f%% Clear · %.0f%% Sand", transparency * 100f, coarseness * 100f),
+                        maxLines = 1,
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Black
+                            fontWeight = FontWeight.Black,
+                            fontSize = 10.sp
                         ),
                         color = LocalContentColor.current
                     )
@@ -846,8 +849,14 @@ private fun OpticsLabSection(
             }
             Slider(
                 value = transparency,
-                onValueChange = onTransparencyChange,
-                valueRange = 0.08f..0.95f,
+                onValueChange = { newTrans ->
+                    onTransparencyChange(newTrans)
+                    // Smoothly couple sand coarseness and frost radius along the sand-erosion continuum
+                    val wear = (1f - newTrans).coerceIn(0f, 1f)
+                    onCoarsenessChange(wear)
+                    onFrostRadiusChange(1.5f + wear * 42f)
+                },
+                valueRange = 0.00f..1.00f,
                 colors = SliderDefaults.colors(
                     thumbColor = LocalContentColor.current,
                     activeTrackColor = LocalContentColor.current.copy(alpha = 0.88f),

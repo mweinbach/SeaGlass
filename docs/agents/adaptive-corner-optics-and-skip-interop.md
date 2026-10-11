@@ -36,11 +36,17 @@ Implemented in [`SeaGlassCornerAdaptationSolver.detectDeviceCorners`](../../andr
 
 ## 3. Mathematical Model for Per-Corner Concentric & Asymmetric Adaptation
 
-### 3.1 Per-Corner Concentric Target & Proximity Field
-For each corner $c \in \{\text{TL}, \text{TR}, \text{BR}, \text{BL}\}$ of an element with inset $(d_x, d_y)$ from the corresponding corner of an enclosing container (the physical device screen or a parent `LocalSeaGlassContainerCornerScope` page/card):
+### 3.1 Developer Control: Where, When & How Close (`SeaGlassCornerAdaptationConfig` & `SeaGlassCornerMask`)
+Developers control corner adaptation at the theme level (`LocalSeaGlassCornerAdaptationConfig`) or per-component (`Modifier.seaGlass`, `SeaGlassSurface`, `SeaGlassCard`, `SeaGlassCornerEmbeddedPod`, `SeaGlassSkipBridge.Surface`):
+- **When (`mode: SeaGlassCornerAdaptationMode`)**: `FIXED` (disabled, default for buttons, pills, chips, and inner controls), `CONCENTRIC_PROXIMITY`, `FLUSH_CORNER_EMBED`, or `UNIFORM_CONCENTRIC`.
+- **Where (`corners: SeaGlassCornerMask` & `allowAsymmetricCorners: Boolean`)**: Enable adaptation on `ALL`, `NONE`, `TOP_ONLY`, `BOTTOM_ONLY`, `LEFT_ONLY`, `RIGHT_ONLY`, or any custom combination of `(topLeft, topRight, bottomRight, bottomLeft)`. By default, `allowAsymmetricCorners = false` on general surfaces so floating cards and multi-line inputs never warp into lopsided shapes, and `adaptToParentContainer = false` so child buttons/pills inside a card retain their own geometry unless opted in.
+- **How Close (`proximityThresholdDp` & `fullMatchDistanceDp`)**: Corners outside `proximityThresholdDp` (default `32dp`) stay strictly at `baseCornerRadiusPx`. Within `[fullMatchDistanceDp .. proximityThresholdDp]`, the corner transitions smoothly via a $C^1$ cubic smoothstep, and in `CONCENTRIC_PROXIMITY` mode a corner approaching a larger bezel never shrinks below `baseCornerRadiusPx` at intermediate distances.
+
+### 3.2 Per-Corner Concentric Target & Proximity Field
+For each enabled corner $c \in \{\text{TL}, \text{TR}, \text{BR}, \text{BL}\}$ of an element with inset $(d_x, d_y)$ from the corresponding corner of an enclosing container (the physical device screen or an opted-in parent `LocalSeaGlassContainerCornerScope` page/card):
 
 1. **Radial Corner Distance & $C^1$ Smoothstep Proximity Weight**:
-   $$d_c = \sqrt{d_x^2 + d_y^2}, \qquad t_c = \text{clamp}\!\left(1 - \frac{d_c}{D_{\text{influence}}},\; 0,\; 1\right), \qquad \alpha_c = t_c^2(3 - 2t_c)$$
+   $$d_c = \sqrt{d_x^2 + d_y^2}, \qquad t_c = \text{clamp}\!\left(\frac{D_{\text{threshold}} - d_c}{D_{\text{threshold}} - D_{\text{fullMatch}}},\; 0,\; 1\right), \qquad \alpha_c = t_c^2(3 - 2t_c)$$
 2. **Harmonic Concentric Offset**:
    $$d_{\text{eff}} = 0.65\min(d_x, d_y) + 0.35\max(d_x, d_y), \qquad R_{\text{concentric}, c} = \max\!\big(r_{\text{floor}},\; R_{\text{outer}, c} - d_{\text{eff}}\big)$$
 3. **Asymmetric Edge-Sum Normalization (Avoiding the $0.5\,H$ Trap)**:

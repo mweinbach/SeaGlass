@@ -57,6 +57,9 @@ public struct SeaGlassSurfaceView<Content: View>: View {
     private let role: String
     private let cornerRadiusDp: Float
     private let cornerModeId: String
+    private let cornerMaskId: String
+    private let proximityThresholdDp: Float
+    private let allowAsymmetricCorners: Bool
     private let onTap: (() -> Void)?
     private let content: Content
 
@@ -64,12 +67,18 @@ public struct SeaGlassSurfaceView<Content: View>: View {
         role: String = "surface",
         cornerRadiusDp: Float = -1.0,
         cornerModeId: String = "concentric_proximity",
+        cornerMaskId: String = "all",
+        proximityThresholdDp: Float = 32.0,
+        allowAsymmetricCorners: Bool = false,
         onTap: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.role = role
         self.cornerRadiusDp = cornerRadiusDp
         self.cornerModeId = cornerModeId
+        self.cornerMaskId = cornerMaskId
+        self.proximityThresholdDp = proximityThresholdDp
+        self.allowAsymmetricCorners = allowAsymmetricCorners
         self.onTap = onTap
         self.content = content()
     }
@@ -81,6 +90,9 @@ public struct SeaGlassSurfaceView<Content: View>: View {
                 role: role,
                 cornerRadiusDp: cornerRadiusDp,
                 cornerModeId: cornerModeId,
+                cornerMaskId: cornerMaskId,
+                proximityThresholdDp: proximityThresholdDp,
+                allowAsymmetricCorners: allowAsymmetricCorners,
                 onClick: onTap
             ) {
                 content.Compose(ctx)

@@ -40,26 +40,26 @@ object SeaGlassSandGrainTexture {
 
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                // Toroidal multi-octave hash (periodic mod TILE_SIZE) so tile edges are 100% seamless
-                val hFine = hash2d(x, y, 101)
+                // Toroidal multi-octave hash (periodic mod TILE_SIZE) for an isotropic velvet finish
+                val hFineA = hash2d(x, y, 101)
+                val hFineB = hash2d((x + 37) and (TILE_SIZE - 1), (y + 73) and (TILE_SIZE - 1), 179)
                 val hMed = bilinearPeriodicHash(x * 0.5f, y * 0.5f, 64, 211)
-                val hCoarse = bilinearPeriodicHash(x * 0.25f, y * 0.25f, 32, 307)
 
-                // Combine fine crystalline sparkle (55%), medium sand-grain frost (30%), and coarse surf pit (15%)
-                val combined = hFine * 0.55f + hMed * 0.30f + hCoarse * 0.15f
+                // High-frequency isotropic velvet micro-facet distribution (82% fine velvet + 18% sub-grain)
+                val combined = hFineA * 0.46f + hFineB * 0.36f + hMed * 0.18f
 
                 val argb = if (combined >= 0.50f) {
-                    // Chalky frosted micro-facet highlight (luminous alabaster crystal)
+                    // Velvety sand-abraded micro-facet highlight (soft pearlescent sheen)
                     val intensity = ((combined - 0.50f) * 2.0f).coerceIn(0f, 1f)
-                    val sharpened = intensity * intensity * (1.4f - 0.4f * intensity)
-                    val alpha = (sharpened * 118f).toInt().coerceIn(0, 125)
-                    (alpha shl 24) or 0x00F8FCFF
+                    val softVelvet = intensity * (1.15f - 0.15f * intensity)
+                    val alpha = (softVelvet * 76f).toInt().coerceIn(0, 82)
+                    (alpha shl 24) or 0x00F6FAFD
                 } else {
-                    // Etched micro-pit shadow (gives tactile dry-sanded depth)
-                    val pit = ((0.50f - combined) * 2.0f).coerceIn(0f, 1f)
-                    val sharpened = pit * pit
-                    val alpha = (sharpened * 64f).toInt().coerceIn(0, 72)
-                    (alpha shl 24) or 0x000B2234
+                    // Subtle micro-facet valley (gives tactile velvet depth without dark blotches)
+                    val valley = ((0.50f - combined) * 2.0f).coerceIn(0f, 1f)
+                    val softValley = valley * valley
+                    val alpha = (softValley * 36f).toInt().coerceIn(0, 42)
+                    (alpha shl 24) or 0x000E2434
                 }
 
                 pixels[y * TILE_SIZE + x] = argb

@@ -169,9 +169,9 @@ class SeaGlassDrawable(
             normalizedThickness = 1.25f
         )
 
-        val frostOpacity = (1f - material.transparency).coerceIn(0.08f, 0.96f)
-        val bodyAlpha = ((0.48f + material.tintDensity * 0.30f + frostOpacity * 0.16f)
-            .coerceIn(0.38f, 0.92f) * 255f).toInt()
+        val sandWear = material.effectiveSandWear
+        val bodyAlpha = ((sandWear * 0.66f + material.tintDensity * (0.14f + 0.28f * sandWear))
+            .coerceIn(0.06f, 0.92f) * 255f).toInt()
         val topWithAlpha = (bodyAlpha shl 24) or (transmittedTop and 0x00FFFFFF)
         val bottomWithAlpha = (bodyAlpha shl 24) or (transmittedBottom and 0x00FFFFFF)
 
@@ -185,19 +185,39 @@ class SeaGlassDrawable(
             Shader.TileMode.CLAMP
         )
 
-        val grainScale = (density * 0.55f).coerceIn(0.8f, 2.2f)
+        val grainScale = (density * 0.42f).coerceIn(0.65f, 1.65f)
         grainMatrix.reset()
         grainMatrix.setScale(grainScale, grainScale)
         sandGrainPaint.shader?.setLocalMatrix(grainMatrix)
-        sandGrainPaint.alpha = (material.coarseness * (0.28f + 0.72f * frostOpacity) * 195f)
+        sandGrainPaint.alpha = (material.coarseness * (0.38f + 0.62f * sandWear) * 155f)
             .toInt()
-            .coerceIn(0, 200)
+            .coerceIn(0, 155)
 
         val cx = bounds.exactCenterX()
         val cy = bounds.exactCenterY()
-        val rimLight = (0.46f + material.rimChalkiness * 0.54f).coerceIn(0.28f, 0.98f)
-        val windwardRim = SeaGlassColorMath.lerpOklab(primaryTint, 0xFFFFFFFF.toInt(), 0.88f) and 0x00FFFFFF
-        val leewardRim = SeaGlassColorMath.lerpOklab(secondaryTint, 0xFFFFFFFF.toInt(), 0.60f) and 0x00FFFFFF
+        val rimLight = (0.36f + material.rimChalkiness * 0.52f).coerceIn(0.20f, 0.92f)
+        val effectiveDispersion = (material.chromaticDispersion * (1f - 0.72f * material.coarseness))
+            .coerceIn(0f, 0.85f)
+        val windwardRim = SeaGlassColorMath.lerpOklab(
+            primaryTint,
+            0xFFFFFFFF.toInt(),
+            0.72f - 0.16f * material.coarseness
+        ) and 0x00FFFFFF
+        val leewardRim = SeaGlassColorMath.lerpOklab(
+            secondaryTint,
+            0xFFFFFFFF.toInt(),
+            0.42f - 0.12f * material.coarseness
+        ) and 0x00FFFFFF
+        val coolDispersion = SeaGlassColorMath.lerpOklab(
+            primaryTint,
+            0xFFB8F2FF.toInt(),
+            0.35f * effectiveDispersion + 0.20f
+        ) and 0x00FFFFFF
+        val warmDispersion = SeaGlassColorMath.lerpOklab(
+            secondaryTint,
+            0xFFFFE4C4.toInt(),
+            0.35f * effectiveDispersion + 0.20f
+        ) and 0x00FFFFFF
 
         fun argb(rgb: Int, aFloat: Float): Int {
             val a = (aFloat.coerceIn(0f, 1f) * 255f).toInt()
@@ -209,30 +229,30 @@ class SeaGlassDrawable(
             cx,
             cy,
             intArrayOf(
-                argb(0x0032F4FF, rimLight * 0.36f),
-                argb(0x00FF5C92, rimLight * 0.54f),
-                argb(leewardRim, rimLight * 0.68f),
+                argb(coolDispersion, rimLight * 0.28f),
+                argb(warmDispersion, rimLight * 0.36f),
+                argb(leewardRim, rimLight * 0.48f),
                 argb(windwardRim, 0.04f),
-                argb(0x0032F4FF, rimLight * 0.58f),
-                argb(windwardRim, rimLight * 0.76f),
+                argb(coolDispersion, rimLight * 0.38f),
+                argb(windwardRim, rimLight * 0.56f),
                 argb(windwardRim, 0.04f),
-                argb(0x0032F4FF, rimLight * 0.36f)
+                argb(coolDispersion, rimLight * 0.28f)
             ),
             floatArrayOf(0.0f, 0.10f, 0.20f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
         )
 
-        rimPaint.strokeWidth = 1.5f * density
+        rimPaint.strokeWidth = 1.3f * density
         rimPaint.shader = SweepGradient(
             cx,
             cy,
             intArrayOf(
-                argb(0x00FFFFFF, rimLight * 0.72f),
-                argb(leewardRim, rimLight * 0.74f),
-                argb(windwardRim, 0.06f),
-                argb(0x00FFFFFF, rimLight * 0.78f),
-                argb(0x00FFFFFF, (rimLight * 0.94f).coerceAtMost(0.98f)),
-                argb(windwardRim, 0.06f),
-                argb(0x00FFFFFF, rimLight * 0.72f)
+                argb(windwardRim, rimLight * 0.52f),
+                argb(leewardRim, rimLight * 0.56f),
+                argb(windwardRim, 0.05f),
+                argb(windwardRim, rimLight * 0.58f),
+                argb(0x00FFFFFF, (rimLight * (0.72f - 0.18f * material.coarseness)).coerceIn(0.18f, 0.78f)),
+                argb(windwardRim, 0.05f),
+                argb(windwardRim, rimLight * 0.52f)
             ),
             floatArrayOf(0.0f, 0.15f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
         )

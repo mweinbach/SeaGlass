@@ -8,7 +8,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.seaglass.core.SeaGlassCornerAdaptationConfig
 import dev.seaglass.core.SeaGlassCornerAdaptationMode
+import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
@@ -70,8 +72,28 @@ object SeaGlassSkipBridge {
         return when (modeId.trim().lowercase(Locale.US)) {
             "flush", "flush_corner_embed", "embed" -> SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
             "uniform", "uniform_concentric" -> SeaGlassCornerAdaptationMode.UNIFORM_CONCENTRIC
-            "fixed", "none" -> SeaGlassCornerAdaptationMode.FIXED
+            "fixed", "none", "off" -> SeaGlassCornerAdaptationMode.FIXED
             else -> SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY
+        }
+    }
+
+    /**
+     * Resolves a [SeaGlassCornerMask] by name (`"all"`, `"none"`, `"top"`, `"bottom"`, `"left"`,
+     * `"right"`, `"top_left"`, `"top_right"`, `"bottom_left"`, `"bottom_right"`).
+     */
+    @JvmStatic
+    fun resolveCornerMask(maskId: String): SeaGlassCornerMask {
+        return when (maskId.trim().lowercase(Locale.US)) {
+            "none", "off" -> SeaGlassCornerMask.NONE
+            "top", "top_only" -> SeaGlassCornerMask.TOP_ONLY
+            "bottom", "bottom_only" -> SeaGlassCornerMask.BOTTOM_ONLY
+            "left", "left_only" -> SeaGlassCornerMask.LEFT_ONLY
+            "right", "right_only" -> SeaGlassCornerMask.RIGHT_ONLY
+            "top_left", "tl" -> SeaGlassCornerMask.only(topLeft = true)
+            "top_right", "tr" -> SeaGlassCornerMask.only(topRight = true)
+            "bottom_right", "br" -> SeaGlassCornerMask.only(bottomRight = true)
+            "bottom_left", "bl" -> SeaGlassCornerMask.only(bottomLeft = true)
+            else -> SeaGlassCornerMask.ALL
         }
     }
 
@@ -117,6 +139,28 @@ object SeaGlassSkipBridge {
     )
 
     /**
+     * Creates a [SeaGlassMaterial] along the continuous **Sand-Tumbled Coarseness Continuum**
+     * (`sandWear` $\in [0, 1]$: `0f` = completely clear untreated glass, `1f` = effectively opaque
+     * sand-tumbled velvet glass).
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun createMaterialFromSandWear(
+        tintColorArgb: Int = SeaGlassPalette.SeafoamMint.primaryGlass.tintColorArgb,
+        sandWear: Float = 0.45f,
+        tintDensity: Float = 0.58f,
+        ior: Float = 1.54f,
+        thicknessDp: Float = 16f,
+        cornerRadiusDp: Float = 28f
+    ): SeaGlassMaterial = SeaGlassMaterial(
+        tintColorArgb = tintColorArgb,
+        tintDensity = tintDensity.coerceIn(0f, 1f),
+        ior = ior.coerceIn(1f, 2f),
+        thicknessDp = thicknessDp.coerceAtLeast(1f),
+        cornerRadiusDp = cornerRadiusDp.coerceAtLeast(0f)
+    ).withSandWear(sandWear)
+
+    /**
      * Root stage wrapper for Swift/Skip screens: initializes [SeaGlassTheme], captures
      * [backgroundContent] into the zero-copy GPU [SeaGlassStageState], and provides
      * [LocalSeaGlassStageState] to all descendants inside [foregroundContent].
@@ -152,7 +196,7 @@ object SeaGlassSkipBridge {
     }
 
     /**
-     * Skip-friendly SeaGlass surface container with automatic device & page corner adaptation.
+     * Skip-friendly SeaGlass surface container with developer-configurable device & page corner adaptation.
      */
     @Composable
     fun Surface(
@@ -162,6 +206,9 @@ object SeaGlassSkipBridge {
         paddingHorizontalDp: Float = 18f,
         paddingVerticalDp: Float = 14f,
         cornerModeId: String = "concentric_proximity",
+        cornerMaskId: String = "all",
+        proximityThresholdDp: Float = SeaGlassCornerAdaptationConfig.DEFAULT_PROXIMITY_THRESHOLD_DP,
+        allowAsymmetricCorners: Boolean = false,
         onClick: (() -> Unit)? = null,
         content: @Composable () -> Unit
     ) {
@@ -188,6 +235,9 @@ object SeaGlassSkipBridge {
                 vertical = paddingVerticalDp.coerceAtLeast(0f).dp
             ),
             cornerAdaptationMode = resolveCornerMode(cornerModeId),
+            cornerMask = resolveCornerMask(cornerMaskId),
+            cornerProximityThresholdDp = proximityThresholdDp.coerceAtLeast(0f),
+            allowAsymmetricCorners = allowAsymmetricCorners,
             modifier = modifier
         ) {
             content()
@@ -206,6 +256,8 @@ object SeaGlassSkipBridge {
         baseCornerRadiusDp: Float = 18f,
         paddingHorizontalDp: Float = 14f,
         paddingVerticalDp: Float = 10f,
+        cornerMaskId: String = "all",
+        proximityThresholdDp: Float = 48f,
         onClick: (() -> Unit)? = null,
         content: @Composable () -> Unit
     ) {
@@ -225,6 +277,8 @@ object SeaGlassSkipBridge {
                 horizontal = paddingHorizontalDp.coerceAtLeast(0f).dp,
                 vertical = paddingVerticalDp.coerceAtLeast(0f).dp
             ),
+            cornerMask = resolveCornerMask(cornerMaskId),
+            cornerProximityThresholdDp = proximityThresholdDp.coerceAtLeast(0f),
             modifier = modifier
         ) {
             content()
