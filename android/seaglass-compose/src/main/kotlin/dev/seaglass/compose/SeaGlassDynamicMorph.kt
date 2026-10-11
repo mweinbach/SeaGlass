@@ -1120,6 +1120,12 @@ fun SeaGlassBuddingCluster(
         )
     }
 
+    val budInFlightEnergy = (4f * expandProgress.coerceIn(0f, 1f) * (1f - expandProgress.coerceIn(0f, 1f)))
+        .coerceIn(0f, 1f)
+    val activeClusterMaterial = remember(anchorMaterial, budInFlightEnergy) {
+        anchorMaterial.deaged(budInFlightEnergy)
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1127,7 +1133,7 @@ fun SeaGlassBuddingCluster(
             .onSizeChanged { containerWidthPx = it.width.toFloat() }
             .seaGlass(
                 stageState = stageState,
-                material = anchorMaterial,
+                material = activeClusterMaterial,
                 nodesOptional = activeNodes,
                 smoothRadiusDp = 46f
             )

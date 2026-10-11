@@ -809,6 +809,15 @@ fun SeaGlassFluidBar(
         }
     }
 
+    val barInFlightMalleability = kotlin.math.abs(leadIndex - trailIndex).coerceIn(0f, 1f) * 0.72f
+    val activeBarMaterial = remember(barMaterial, barInFlightMalleability) {
+        barMaterial.copy(
+            cornerRadiusDp = 34f,
+            thicknessDp = 20f,
+            rimChalkiness = 0.90f
+        ).deaged(barInFlightMalleability)
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -819,11 +828,7 @@ fun SeaGlassFluidBar(
             }
             .seaGlass(
                 stageState = stageState,
-                material = barMaterial.copy(
-                    cornerRadiusDp = 34f,
-                    thicknessDp = 20f,
-                    rimChalkiness = 0.90f
-                ),
+                material = activeBarMaterial,
                 nodesOptional = coalescingNodes,
                 smoothRadiusDp = 42f,
                 contentRole = SeaGlassContentRole.NAVIGATION_CHROME

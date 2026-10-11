@@ -762,16 +762,15 @@ fun SeaGlassSwitch(
         label = "switchTintEffects"
     )
 
-    val trackMaterial = remember(checkedMaterial, uncheckedMaterial, tintProgress) {
-        SeaGlassMaterial.lerp(uncheckedMaterial, checkedMaterial, tintProgress.coerceIn(0f, 1f)).copy(
-            cornerRadiusDp = 18f,
-            thicknessDp = 12f
-        )
-    }
-
     val leftThumbFrac = min(leadThumb, trailThumb).coerceIn(-0.08f, 1.08f)
     val rightThumbFrac = max(leadThumb, trailThumb).coerceIn(-0.08f, 1.08f)
     val stretchFrac = (rightThumbFrac - leftThumbFrac).coerceIn(0f, 0.85f)
+    val trackMaterial = remember(checkedMaterial, uncheckedMaterial, tintProgress, stretchFrac) {
+        SeaGlassMaterial.lerp(uncheckedMaterial, checkedMaterial, tintProgress.coerceIn(0f, 1f)).copy(
+            cornerRadiusDp = 18f,
+            thicknessDp = 12f
+        ).deaged(stretchFrac * 1.15f)
+    }
     val trackWidthDp = 56.dp
     val trackHeightDp = 32.dp
     val baseThumbWidthDp = 26.dp
@@ -1046,6 +1045,11 @@ fun SeaGlassSegmentedButtonRow(
         Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.48f)
     }
 
+    val segStretchMalleability = abs(leadSegIndex - trailSegIndex).coerceIn(0f, 1f) * 0.78f
+    val activeSegMaterial = remember(containerMaterial, segStretchMalleability) {
+        containerMaterial.copy(cornerRadiusDp = 23f, thicknessDp = 15f).deaged(segStretchMalleability)
+    }
+
     ProvideSeaGlassLegibleContent(contentColor = contentColor) {
         Box(
             modifier = modifier
@@ -1054,7 +1058,7 @@ fun SeaGlassSegmentedButtonRow(
                 .onSizeChanged { barWidthPx = it.width.toFloat().coerceAtLeast(1f) }
                 .seaGlass(
                     stageState = stageState,
-                    material = containerMaterial.copy(cornerRadiusDp = 23f, thicknessDp = 15f),
+                    material = activeSegMaterial,
                     contentRole = SeaGlassContentRole.NAVIGATION_CHROME
                 )
                 .padding(4.dp)
@@ -1345,6 +1349,11 @@ fun SeaGlassFloatingToolbar(
         )
     }
 
+    val toolbarGapMalleability = (abs(gapDp.value - (if (fabDetached) 18f else -6f)) / 14f).coerceIn(0f, 1f)
+    val activeToolbarMaterial = remember(barMaterial, toolbarGapMalleability) {
+        barMaterial.deaged(toolbarGapMalleability)
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1352,7 +1361,7 @@ fun SeaGlassFloatingToolbar(
             .onSizeChanged { totalWidthPx = it.width.toFloat().coerceAtLeast(240f) }
             .seaGlass(
                 stageState = stageState,
-                material = barMaterial,
+                material = activeToolbarMaterial,
                 nodesOptional = sdfNodes,
                 smoothRadiusDp = 32f,
                 contentRole = SeaGlassContentRole.NAVIGATION_CHROME

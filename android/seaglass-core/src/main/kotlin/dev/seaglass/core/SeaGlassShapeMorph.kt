@@ -676,7 +676,13 @@ object SeaGlassShapeMorph {
     ): RoundedPolygon = obtainNormalizedPolygon(kind, aspectRatio)
 
     /**
-     * Computes the dynamic **Liquid Glass Flex Material** during an animation or transition.
+     * Computes the dynamic **Liquid Glass Flex & Temporal De-Aging Material** during an animation or transition:
+     * - While in flight (`totalEnergy > 0`), the material **de-ages** (`deaged(totalEnergy)`): it sheds
+     *   its coarse sand-frosted texture (`coarseness` dissolves toward `0`), clarifies into malleable
+     *   liquid glass (`transparency` rises, `frostRadiusDp` tightens), and flexes its refractive lens
+     *   (`ior`, `chromaticDispersion`, `thicknessDp`).
+     * - As the animation settles (`progress -> 0` or `progress -> 1`), the glass solidifies and
+     *   regains its full sand-frosted surface treatment.
      */
     fun computeDynamicFlexMaterial(
         startMaterial: SeaGlassMaterial,
@@ -690,11 +696,12 @@ object SeaGlassShapeMorph {
 
         val morphEnergy = (4f * p * (1f - p)).coerceIn(0f, 1f)
         val velocityEnergy = (abs(velocityPxPerSec) / 1800f).coerceIn(0f, 1f)
-        val totalEnergy = max(morphEnergy, velocityEnergy * 0.75f)
+        val totalEnergy = max(morphEnergy, velocityEnergy * 0.75f).coerceIn(0f, 1f)
 
         val scaleFactor = sqrt(areaExpansionRatio.coerceIn(0.5f, 4.0f))
+        val deagedBase = base.deaged(totalEnergy)
 
-        return base.copy(
+        return deagedBase.copy(
             ior = (base.ior + 0.10f * totalEnergy + 0.04f * (scaleFactor - 1f)).coerceIn(1.0f, 1.95f),
             chromaticDispersion = (base.chromaticDispersion + 0.22f * totalEnergy).coerceIn(0f, 1f),
             rimChalkiness = (base.rimChalkiness + 0.16f * totalEnergy).coerceIn(0f, 1f),

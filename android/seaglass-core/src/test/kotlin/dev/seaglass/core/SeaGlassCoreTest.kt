@@ -224,6 +224,13 @@ class SeaGlassCoreTest {
             areaExpansionRatio = 2.25f
         )
 
+        val atRestEnd = SeaGlassShapeMorph.computeDynamicFlexMaterial(
+            startMaterial = start,
+            endMaterial = end,
+            progress = 1f,
+            areaExpansionRatio = 1f
+        )
+
         assertTrue(
             "Mid-flight morph must boost IOR lensing (${midFlight.ior} > ${atRestStart.ior})",
             midFlight.ior > atRestStart.ior
@@ -235,6 +242,26 @@ class SeaGlassCoreTest {
         assertTrue(
             "Expanded mid-flight morph must increase effective glass thickness",
             midFlight.thicknessDp > atRestStart.thicknessDp
+        )
+        assertTrue(
+            "Mid-flight morph must de-age (lose coarse sand texture while malleable: ${midFlight.coarseness} < ${atRestStart.coarseness})",
+            midFlight.coarseness < atRestStart.coarseness * 0.25f
+        )
+        assertTrue(
+            "Mid-flight morph must clarify into transparent liquid glass (${midFlight.transparency} > ${atRestStart.transparency})",
+            midFlight.transparency > atRestStart.transparency + 0.15f
+        )
+        assertEquals(
+            "Solidified end state must regain full sand-frosted coarseness",
+            end.coarseness,
+            atRestEnd.coarseness,
+            1e-4f
+        )
+        assertEquals(
+            "Solidified end state must regain target resting transparency",
+            end.transparency,
+            atRestEnd.transparency,
+            1e-4f
         )
 
         for (kind in SeaGlassShapeKind.entries) {

@@ -596,15 +596,17 @@ private fun OpticsLabSection(
     // 1. Flagship Material 3 Expressive × Liquid Sea Glass Coalescing Media & Soundscape Deck
     var isPlaying by remember { mutableStateOf(true) }
     var heroFlowState by remember { mutableIntStateOf(0) }
+    val targetOrbGapDp = when (heroFlowState) {
+        0 -> -2f
+        1 -> 9f
+        else -> 22f
+    }
     val playOrbGapDp by animateFloatAsState(
-        targetValue = when (heroFlowState) {
-            0 -> -2f
-            1 -> 9f
-            else -> 22f
-        },
+        targetValue = targetOrbGapDp,
         animationSpec = spring(dampingRatio = 0.54f, stiffness = 300f),
         label = "playOrbGap"
     )
+    val deckFlowMalleability = (kotlin.math.abs(playOrbGapDp - targetOrbGapDp) / 10f).coerceIn(0f, 1f)
 
     var deckWidthPx by remember { mutableFloatStateOf(960f) }
     val deckHeight = 112.dp
@@ -692,7 +694,7 @@ private fun OpticsLabSection(
             )
             .seaGlass(
                 stageState = stageState,
-                material = primaryMaterial,
+                material = primaryMaterial.deaged(kotlin.math.max(deckFlowMalleability, deckTouchIntensity * 0.7f)),
                 nodesOptional = heroNodes,
                 smoothRadiusDp = 44f,
                 touchPointInLocal = deckTouchPoint,
@@ -1422,6 +1424,10 @@ private fun FluidCoalescingSection(
         animationSpec = spring(dampingRatio = 0.60f, stiffness = 580f),
         label = "arenaTouchIntensity"
     )
+    val sepFlightEnergy = (kotlin.math.abs(animatedSepDp - targetSeparationDp) / 36f).coerceIn(0f, 1f)
+    val shapeFlightEnergy = (4f * localMorphFrac.coerceIn(0f, 1f) * (1f - localMorphFrac.coerceIn(0f, 1f)))
+        .coerceIn(0f, 1f)
+    val arenaMalleability = maxOf(sepFlightEnergy, shapeFlightEnergy, arenaTouchIntensity * 0.85f).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
@@ -1446,7 +1452,7 @@ private fun FluidCoalescingSection(
             }
             .seaGlass(
                 stageState = stageState,
-                material = primaryMaterial,
+                material = primaryMaterial.deaged(arenaMalleability),
                 nodesOptional = arenaMorphNodes,
                 smoothRadiusDp = smoothBridgeDp,
                 touchPointInLocal = arenaTouchPoint,

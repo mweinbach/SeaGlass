@@ -157,11 +157,23 @@ fun animateSeaGlassMaterialAsState(
         label = "transparency"
     )
 
-    return remember {
+    return remember(targetMaterial) {
         derivedStateOf {
             val animatedArgb = SeaGlassColorMath.oklabToArgb(
                 SeaGlassColorMath.OklabColor(l = l, a = a, b = b, alpha = 1f)
             )
+            // Compute in-flight malleability from active spatial/state transitions:
+            // while geometry (cornerRadius, thickness) or state tint is moving toward its target,
+            // the glass de-ages (loses its coarse sand texture and clarifies into malleable liquid
+            // glass) and solidifies back to its sand-frosted finish as the animation settles!
+            val cornerDelta = kotlin.math.abs(cornerRadiusDp - targetMaterial.cornerRadiusDp) / 7f
+            val thicknessDelta = kotlin.math.abs(thicknessDp - targetMaterial.thicknessDp) / 4.5f
+            val dl = l - labTarget.l
+            val da = a - labTarget.a
+            val db = b - labTarget.b
+            val colorDelta = kotlin.math.sqrt(dl * dl + da * da + db * db) * 4.5f
+            val inFlightMalleability = maxOf(cornerDelta, thicknessDelta, colorDelta).coerceIn(0f, 1f)
+
             SeaGlassMaterial(
                 tintColorArgb = animatedArgb,
                 tintDensity = tintDensity.coerceIn(0f, 1f),
@@ -175,7 +187,7 @@ fun animateSeaGlassMaterialAsState(
                 cornerSmoothing = cornerSmoothing.coerceIn(2.0f, 4.0f),
                 ambientAdaptation = targetMaterial.ambientAdaptation,
                 transparency = transparency.coerceIn(0f, 1f)
-            )
+            ).deaged(inFlightMalleability)
         }
     }
 }
