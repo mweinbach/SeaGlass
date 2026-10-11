@@ -45,6 +45,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
 import dev.seaglass.core.SeaGlassColorMath
 import dev.seaglass.core.SeaGlassContourPathBuilder
+import dev.seaglass.core.SeaGlassCornerAdaptationMode
+import dev.seaglass.core.SeaGlassCornerAdaptationSolver
+import dev.seaglass.core.SeaGlassCornerRadiiPx
 import dev.seaglass.core.SeaGlassDeviceTier
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSandGrainTexture
@@ -269,11 +272,15 @@ fun Modifier.seaGlass(
     touchPointInLocal: Offset? = null,
     touchIntensity: Float = 0f,
     contentRole: SeaGlassContentRole = SeaGlassContentRole.TEXT_AND_ICONS,
+    cornerAdaptationMode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
+    cornerAdaptationStrength: Float = 1.0f,
     customContourPathBuilder: ((widthPx: Float, heightPx: Float, outPath: Path) -> Unit)? = null
 ): Modifier {
     val context = LocalContext.current
     val tierOverride = LocalSeaGlassTierOverride.current
     val tiltState = LocalSeaGlassTiltState.current
+    val deviceCornerSpec = LocalSeaGlassDeviceCornerSpec.current
+    val parentContainerScope = LocalSeaGlassContainerCornerScope.current
     val activeTier = remember(context, tierOverride) {
         tierOverride ?: SeaGlassDeviceTier.detect(context)
     }
@@ -345,13 +352,68 @@ fun Modifier.seaGlass(
             val activeNodes = if (!nodesOptional.isNullOrEmpty()) {
                 nodesOptional
             } else {
+                val stageW = (stageState?.backdropSize?.width?.toFloat()
+                    ?: context.resources.displayMetrics.widthPixels.toFloat()).coerceAtLeast(1f)
+                val stageH = (stageState?.backdropSize?.height?.toFloat()
+                    ?: context.resources.displayMetrics.heightPixels.toFloat()).coerceAtLeast(1f)
+                val stageOrigin = stageState?.backdropOriginInRoot ?: Offset.Zero
+                val elemLeftInStage = elementOriginInRoot.x - stageOrigin.x
+                val elemTopInStage = elementOriginInRoot.y - stageOrigin.y
+
+                // 1. Solve concentric corner radii against physical device display corners
+                val deviceSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+                    elementLeftPx = elemLeftInStage,
+                    elementTopPx = elemTopInStage,
+                    elementRightPx = elemLeftInStage + widthPx,
+                    elementBottomPx = elemTopInStage + heightPx,
+                    containerWidthPx = stageW,
+                    containerHeightPx = stageH,
+                    containerCornersPx = deviceCornerSpec.toRadiiPx(),
+                    baseCornerRadiusPx = cornerPx,
+                    minCornerFloorPx = 8f * density,
+                    influenceDistancePx = 136f * density,
+                    adaptationStrength = cornerAdaptationStrength,
+                    mode = cornerAdaptationMode
+                )
+
+                // 2. If nested inside a page/card container (LocalSeaGlassContainerCornerScope),
+                // also adapt concentrically to the parent page/card corners!
+                val solvedCorners = if (
+                    parentContainerScope != null &&
+                    parentContainerScope.widthPx > widthPx + 4f &&
+                    parentContainerScope.heightPx > heightPx + 4f &&
+                    cornerAdaptationMode != SeaGlassCornerAdaptationMode.FIXED
+                ) {
+                    val relLeft = elementOriginInRoot.x - parentContainerScope.originInRoot.x
+                    val relTop = elementOriginInRoot.y - parentContainerScope.originInRoot.y
+                    SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+                        elementLeftPx = relLeft,
+                        elementTopPx = relTop,
+                        elementRightPx = relLeft + widthPx,
+                        elementBottomPx = relTop + heightPx,
+                        containerWidthPx = parentContainerScope.widthPx,
+                        containerHeightPx = parentContainerScope.heightPx,
+                        containerCornersPx = parentContainerScope.cornerRadiiPx,
+                        baseCornerRadiusPx = deviceSolved.maxRadiusPx,
+                        minCornerFloorPx = 7f * density,
+                        influenceDistancePx = 92f * density,
+                        adaptationStrength = cornerAdaptationStrength,
+                        mode = cornerAdaptationMode
+                    )
+                } else {
+                    deviceSolved
+                }
+
                 listOf(
                     SeaGlassSdfEngine.SdfNode(
                         centerX = widthPx * 0.5f,
                         centerY = heightPx * 0.5f,
                         halfWidth = widthPx * 0.5f,
                         halfHeight = heightPx * 0.5f,
-                        uniformCornerRadius = cornerPx,
+                        cornerTopLeft = solvedCorners.topLeftPx,
+                        cornerTopRight = solvedCorners.topRightPx,
+                        cornerBottomRight = solvedCorners.bottomRightPx,
+                        cornerBottomLeft = solvedCorners.bottomLeftPx,
                         cornerSmoothing = material.cornerSmoothing,
                         tintColorArgb = material.tintColorArgb,
                         thicknessPx = thicknessPx

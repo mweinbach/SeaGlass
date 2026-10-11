@@ -43,8 +43,10 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -66,7 +68,9 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +82,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassCornerAdaptationMode
+import dev.seaglass.core.SeaGlassCornerAdaptationSolver
+import dev.seaglass.core.SeaGlassCornerRadiiPx
+import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSdfEngine
 import dev.seaglass.core.SeaGlassShapeKind
@@ -2596,4 +2604,335 @@ fun SeaGlassContextRingMorph(
         }
     )
 }
+
+/**
+ * Corner-Embedded SeaGlass Pod (`SeaGlassCornerEmbeddedPod`):
+ *
+ * Designed for elements embedded directly into or near the corners of a device screen or
+ * page container. Uses [SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED] so the outer
+ * corner(s) facing the device/page bezel match the concentric radius
+ * $R_{\text{concentric}} = \max(r_{\min}, R_{\text{outer}} - \text{inset})$ while the inner
+ * page-facing corner(s) maintain a tighter architectural radius.
+ */
+@Composable
+fun SeaGlassCornerEmbeddedPod(
+    stageState: SeaGlassStageState?,
+    modifier: Modifier = Modifier,
+    material: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
+    onClick: (() -> Unit)? = null,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+    contentAlignment: Alignment = Alignment.Center,
+    content: @Composable BoxScope.() -> Unit
+) {
+    SeaGlassSurface(
+        stageState = stageState,
+        material = material,
+        onClick = onClick,
+        contentPadding = contentPadding,
+        contentAlignment = contentAlignment,
+        cornerAdaptationMode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED,
+        modifier = modifier,
+        content = content
+    )
+}
+
+/**
+ * Interactive **Device & Page Corner Radius Adaptation Lab** (`SeaGlassAdaptiveCornerLabCard`):
+ *
+ * Demonstrates live hardware display corner detection (`WindowInsets.getRoundedCorner` ->
+ * `Display.getRoundedCorner` -> `SystemUI dimen/rounded_corner_radius` -> `Build.MODEL` catalog)
+ * and shows how SeaGlass elements embedded in or approaching device/page corners automatically
+ * morph each individual corner `(TL, TR, BR, BL)` concentrically ($R_{\text{inner}} = R_{\text{outer}} - d$).
+ */
+@Composable
+fun SeaGlassAdaptiveCornerLabCard(
+    stageState: SeaGlassStageState?,
+    activeProfile: SeaGlassDeviceHardwareProfile,
+    onSelectProfile: (SeaGlassDeviceHardwareProfile) -> Unit,
+    modifier: Modifier = Modifier,
+    surfaceMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
+    primaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
+    tertiaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.tertiaryGlass
+) {
+    val density = LocalDensity.current
+    val deviceCornerSpec = LocalSeaGlassDeviceCornerSpec.current
+
+    // 0 = Flush Corner Embed (3dp inset), 1 = Concentric Padded (12dp inset), 2 = Page Interior (24dp inset)
+    var insetPresetIndex by remember { mutableIntStateOf(0) }
+    val targetInsetDp = when (insetPresetIndex) {
+        0 -> 3f
+        1 -> 12f
+        else -> 24f
+    }
+    val animatedInsetDp by animateFloatAsState(
+        targetValue = targetInsetDp,
+        animationSpec = spring(dampingRatio = 0.64f, stiffness = 380f),
+        label = "cornerLabInset"
+    )
+
+    val tlBezelDp = deviceCornerSpec.topLeftDp.roundToInt()
+    val trBezelDp = deviceCornerSpec.topRightDp.roundToInt()
+    val brBezelDp = deviceCornerSpec.bottomRightDp.roundToInt()
+    val blBezelDp = deviceCornerSpec.bottomLeftDp.roundToInt()
+
+    SeaGlassCard(
+        stageState = stageState,
+        material = surfaceMaterial,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "ADAPTIVE DEVICE & PAGE CORNER OPTICS",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.2.sp
+                    ),
+                    color = LocalContentColor.current.copy(alpha = 0.76f)
+                )
+                Text(
+                    text = "Concentric Bezel & Page Corner Matching",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black)
+                )
+            }
+            SeaGlassBadge(
+                text = if (tlBezelDp == trBezelDp) "${tlBezelDp}dp Bezel" else "${tlBezelDp}/${trBezelDp}dp",
+                stageState = stageState,
+                material = tertiaryMaterial
+            )
+        }
+
+        Text(
+            text = "Source: ${deviceCornerSpec.source.label} · Outer Bezel: TL ${tlBezelDp}dp · TR ${trBezelDp}dp · BR ${brBezelDp}dp · BL ${blBezelDp}dp",
+            style = MaterialTheme.typography.labelSmall,
+            color = LocalContentColor.current.copy(alpha = 0.84f)
+        )
+
+        // Device Hardware Bezel Profile Selector Row
+        val featuredProfiles = remember {
+            listOf(
+                SeaGlassDeviceHardwareProfile.AUTO_DETECT,
+                SeaGlassDeviceHardwareProfile.PIXEL_9_PRO,
+                SeaGlassDeviceHardwareProfile.IPHONE_16_PRO,
+                SeaGlassDeviceHardwareProfile.GALAXY_S25_ULTRA,
+                SeaGlassDeviceHardwareProfile.FOLD_ASYMMETRIC
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            featuredProfiles.forEach { profile ->
+                val selected = profile == activeProfile
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (selected) Color(primaryMaterial.tintColorArgb).copy(alpha = 0.42f)
+                            else LocalContentColor.current.copy(alpha = 0.10f)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = if (selected) Color.White.copy(alpha = 0.72f) else Color.Transparent,
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onSelectProfile(profile) }
+                        )
+                        .padding(vertical = 8.dp, horizontal = 4.dp)
+                ) {
+                    Text(
+                        text = profile.shortLabel,
+                        maxLines = 1,
+                        color = LocalContentColor.current,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            fontSize = 10.sp
+                        )
+                    )
+                }
+            }
+        }
+
+        // Proximity / Inset Mode Selector
+        SeaGlassSegmentedButtonRow(
+            options = listOf("Flush (3dp)", "Inset (12dp)", "Page (24dp)"),
+            selectedIndex = insetPresetIndex,
+            onSelect = { insetPresetIndex = it },
+            stageState = stageState,
+            containerMaterial = surfaceMaterial,
+            indicatorMaterial = primaryMaterial
+        )
+
+        // Live Simulated Device / Page Bezel Frame with 4 Corner-Adaptive Glass Pods
+        var frameSize by remember { mutableStateOf(IntSize(900, 520)) }
+        var frameOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+        val bezelRadiiPx = deviceCornerSpec.toRadiiPx()
+
+        val bezelShape = remember(tlBezelDp, trBezelDp, brBezelDp, blBezelDp) {
+            RoundedCornerShape(
+                topStart = tlBezelDp.dp,
+                topEnd = trBezelDp.dp,
+                bottomEnd = brBezelDp.dp,
+                bottomStart = blBezelDp.dp
+            )
+        }
+
+        val frameScope = remember(frameOriginInRoot, frameSize, bezelRadiiPx) {
+            SeaGlassContainerCornerScope(
+                originInRoot = frameOriginInRoot,
+                widthPx = frameSize.width.toFloat().coerceAtLeast(1f),
+                heightPx = frameSize.height.toFloat().coerceAtLeast(1f),
+                cornerRadiiPx = bezelRadiiPx
+            )
+        }
+
+        CompositionLocalProvider(LocalSeaGlassContainerCornerScope provides frameScope) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(198.dp)
+                    .onGloballyPositioned { coords ->
+                        frameOriginInRoot = coords.positionInRoot()
+                        frameSize = coords.size
+                    }
+                    .clip(bezelShape)
+                    .background(Color.Black.copy(alpha = 0.16f))
+                    .border(2.dp, Color.White.copy(alpha = 0.68f), bezelShape)
+                    .padding(animatedInsetDp.dp)
+            ) {
+                val podW = 138.dp
+                val podH = 68.dp
+                val podWPx = with(density) { podW.toPx() }
+                val podHPx = with(density) { podH.toPx() }
+                val insetPx = with(density) { animatedInsetDp.dp.toPx() }
+                val basePodCornerPx = with(density) { 18.dp.toPx() }
+
+                // Compute live solved radii for Top-Left and Top-Right pods to display in labels
+                val tlPodSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+                    elementLeftPx = insetPx,
+                    elementTopPx = insetPx,
+                    elementRightPx = insetPx + podWPx,
+                    elementBottomPx = insetPx + podHPx,
+                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(300f),
+                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(200f),
+                    containerCornersPx = bezelRadiiPx,
+                    baseCornerRadiusPx = basePodCornerPx,
+                    minCornerFloorPx = with(density) { 8.dp.toPx() },
+                    influenceDistancePx = with(density) { 96.dp.toPx() },
+                    mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+                )
+                val trPodSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+                    elementLeftPx = (frameSize.width - insetPx - podWPx).coerceAtLeast(0f),
+                    elementTopPx = insetPx,
+                    elementRightPx = (frameSize.width - insetPx).coerceAtLeast(podWPx),
+                    elementBottomPx = insetPx + podHPx,
+                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(300f),
+                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(200f),
+                    containerCornersPx = bezelRadiiPx,
+                    baseCornerRadiusPx = basePodCornerPx,
+                    minCornerFloorPx = with(density) { 8.dp.toPx() },
+                    influenceDistancePx = with(density) { 96.dp.toPx() },
+                    mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+                )
+
+                val tlOuterDp = (tlPodSolved.topLeftPx / density.density).roundToInt()
+                val tlInnerDp = (tlPodSolved.bottomRightPx / density.density).roundToInt()
+                val trOuterDp = (trPodSolved.topRightPx / density.density).roundToInt()
+                val trInnerDp = (trPodSolved.bottomLeftPx / density.density).roundToInt()
+
+                // 1. Top-Left Corner-Embedded Pod
+                SeaGlassCornerEmbeddedPod(
+                    stageState = stageState,
+                    material = primaryMaterial.copy(cornerRadiusDp = 18f, thicknessDp = 18f),
+                    onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .size(width = podW, height = podH)
+                ) {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(
+                            text = "↖ TL Corner Pod",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Black,
+                                fontSize = 11.sp
+                            )
+                        )
+                        Text(
+                            text = "Outer ${tlOuterDp}dp · Inner ${tlInnerDp}dp",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = LocalContentColor.current.copy(alpha = 0.84f)
+                        )
+                    }
+                }
+
+                // 2. Top-Right Corner-Embedded Pod
+                SeaGlassCornerEmbeddedPod(
+                    stageState = stageState,
+                    material = tertiaryMaterial.copy(cornerRadiusDp = 18f, thicknessDp = 18f),
+                    onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(width = podW, height = podH)
+                ) {
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "TR Corner Pod ↗",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Black,
+                                fontSize = 11.sp
+                            )
+                        )
+                        Text(
+                            text = "Outer ${trOuterDp}dp · Inner ${trInnerDp}dp",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = LocalContentColor.current.copy(alpha = 0.84f)
+                        )
+                    }
+                }
+
+                // 3. Bottom Full-Width Concentric Page Dock Bar
+                SeaGlassCornerEmbeddedPod(
+                    stageState = stageState,
+                    material = primaryMaterial.copy(cornerRadiusDp = 22f, thicknessDp = 18f),
+                    onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(54.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "↙ BL ${tlOuterDp}dp Concentric Page Dock",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.sp
+                            )
+                        )
+                        Text(
+                            text = "BR ${trOuterDp}dp ↘",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Black,
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 

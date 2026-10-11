@@ -50,7 +50,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
@@ -58,9 +61,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassCornerAdaptationMode
+import dev.seaglass.core.SeaGlassCornerAdaptationSolver
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSdfEngine
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -114,12 +120,17 @@ fun SeaGlassSurface(
     onClick: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentAlignment: Alignment = Alignment.TopStart,
+    cornerAdaptationMode: SeaGlassCornerAdaptationMode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
     val motion = LocalSeaGlassMotionScheme.current
+    val deviceCornerSpec = LocalSeaGlassDeviceCornerSpec.current
     val interactionSource = remember { MutableInteractionSource() }
     val isClickablePressed by interactionSource.collectIsPressedAsState()
 
+    var surfaceOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     var surfaceSize by remember { mutableStateOf(IntSize.Zero) }
     var lastTouchOffset by remember { mutableStateOf<Offset?>(null) }
     var isPointerDown by remember { mutableStateOf(false) }
@@ -175,33 +186,78 @@ fun SeaGlassSurface(
         Modifier
     }
 
-    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
-        Box(
-            contentAlignment = contentAlignment,
-            modifier = modifier
-                .onSizeChanged { surfaceSize = it }
-                .observeSeaGlassTouch { pos, down ->
-                    if (pos != null) lastTouchOffset = pos
-                    isPointerDown = down
-                }
-                .graphicsLayer {
-                    this.scaleX = scaleX
-                    this.scaleY = scaleY
-                    this.rotationX = tiltRotX
-                    this.rotationY = tiltRotY
-                    this.cameraDistance = 14f * density
-                }
-                .then(clickableModifier)
-                .seaGlass(
-                    stageState = stageState,
-                    material = effectiveMaterial,
-                    touchPointInLocal = lastTouchOffset,
-                    touchIntensity = pressFraction,
-                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS
-                )
-                .padding(contentPadding),
-            content = content
+    val containerScope = remember(
+        surfaceOriginInRoot,
+        surfaceSize,
+        effectiveMaterial.cornerRadiusDp,
+        deviceCornerSpec,
+        cornerAdaptationMode
+    ) {
+        val wPx = surfaceSize.width.toFloat().coerceAtLeast(1f)
+        val hPx = surfaceSize.height.toFloat().coerceAtLeast(1f)
+        val baseCornerPx = min(effectiveMaterial.cornerRadiusDp * density.density, min(wPx, hPx) * 0.5f)
+        val stageW = (stageState?.backdropSize?.width?.toFloat()
+            ?: context.resources.displayMetrics.widthPixels.toFloat()).coerceAtLeast(1f)
+        val stageH = (stageState?.backdropSize?.height?.toFloat()
+            ?: context.resources.displayMetrics.heightPixels.toFloat()).coerceAtLeast(1f)
+        val stageOrigin = stageState?.backdropOriginInRoot ?: Offset.Zero
+        val leftInStage = surfaceOriginInRoot.x - stageOrigin.x
+        val topInStage = surfaceOriginInRoot.y - stageOrigin.y
+
+        val solvedRadii = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = leftInStage,
+            elementTopPx = topInStage,
+            elementRightPx = leftInStage + wPx,
+            elementBottomPx = topInStage + hPx,
+            containerWidthPx = stageW,
+            containerHeightPx = stageH,
+            containerCornersPx = deviceCornerSpec.toRadiiPx(),
+            baseCornerRadiusPx = baseCornerPx,
+            minCornerFloorPx = 8f * density.density,
+            influenceDistancePx = 136f * density.density,
+            mode = cornerAdaptationMode
         )
+        SeaGlassContainerCornerScope(
+            originInRoot = surfaceOriginInRoot,
+            widthPx = wPx,
+            heightPx = hPx,
+            cornerRadiiPx = solvedRadii
+        )
+    }
+
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
+        CompositionLocalProvider(LocalSeaGlassContainerCornerScope provides containerScope) {
+            Box(
+                contentAlignment = contentAlignment,
+                modifier = modifier
+                    .onGloballyPositioned { coords ->
+                        surfaceOriginInRoot = coords.positionInRoot()
+                        surfaceSize = coords.size
+                    }
+                    .observeSeaGlassTouch { pos, down ->
+                        if (pos != null) lastTouchOffset = pos
+                        isPointerDown = down
+                    }
+                    .graphicsLayer {
+                        this.scaleX = scaleX
+                        this.scaleY = scaleY
+                        this.rotationX = tiltRotX
+                        this.rotationY = tiltRotY
+                        this.cameraDistance = 14f * this.density
+                    }
+                    .then(clickableModifier)
+                    .seaGlass(
+                        stageState = stageState,
+                        material = effectiveMaterial,
+                        touchPointInLocal = lastTouchOffset,
+                        touchIntensity = pressFraction,
+                        contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
+                        cornerAdaptationMode = cornerAdaptationMode
+                    )
+                    .padding(contentPadding),
+                content = content
+            )
+        }
     }
 }
 

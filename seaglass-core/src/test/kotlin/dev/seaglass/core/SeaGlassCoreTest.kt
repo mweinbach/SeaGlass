@@ -306,4 +306,61 @@ class SeaGlassCoreTest {
         assertEquals(SeaGlassShapeKind.Cookie9, phase2Overshoot.activeEndShape)
         assertTrue("Spring overshoot should exceed 1.0 in phase 2", phase2Overshoot.activeSubProgress > 1.0f)
     }
+
+    @Test
+    fun adaptiveDeviceAndPageCornerSolverMatchesConcentricAndAsymmetricBezelRadii() {
+        val bezelCorners = SeaGlassCornerRadiiPx(
+            topLeftPx = 120f,
+            topRightPx = 120f,
+            bottomRightPx = 120f,
+            bottomLeftPx = 120f
+        )
+
+        // 1. Pod embedded in the Top-Left corner (inset = 10px, size = 260x160):
+        // Its Top-Left corner is 10px from the 120px bezel corner -> concentric target = 110px (clamped to halfHeight=80px),
+        // while its Bottom-Right corner is far in the interior of the 1080x2400 screen -> keeps base 40px radius!
+        val tlPodRadii = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 10f,
+            elementTopPx = 10f,
+            elementRightPx = 270f,
+            elementBottomPx = 170f,
+            containerWidthPx = 1080f,
+            containerHeightPx = 2400f,
+            containerCornersPx = bezelCorners,
+            baseCornerRadiusPx = 40f,
+            minCornerFloorPx = 16f,
+            influenceDistancePx = 240f,
+            mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+        )
+        assertTrue(
+            "Outer Top-Left corner (${tlPodRadii.topLeftPx}) must be significantly larger than inner Bottom-Right corner (${tlPodRadii.bottomRightPx})",
+            tlPodRadii.topLeftPx > tlPodRadii.bottomRightPx + 20f
+        )
+        assertTrue("Asymmetric corner pod must report isAsymmetric = true", tlPodRadii.isAsymmetric)
+
+        // 2. Asymmetric Foldable Cover Screen (14dp=38px left hinge, 44dp=120px right outer bezel):
+        val foldBezel = SeaGlassCornerRadiiPx(
+            topLeftPx = 38f,
+            topRightPx = 120f,
+            bottomRightPx = 120f,
+            bottomLeftPx = 38f
+        )
+        val fullWidthHeader = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 12f,
+            elementTopPx = 12f,
+            elementRightPx = 1068f,
+            elementBottomPx = 180f,
+            containerWidthPx = 1080f,
+            containerHeightPx = 2400f,
+            containerCornersPx = foldBezel,
+            baseCornerRadiusPx = 56f,
+            minCornerFloorPx = 16f,
+            influenceDistancePx = 280f,
+            mode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY
+        )
+        assertTrue(
+            "Right outer bezel corner (${fullWidthHeader.topRightPx}) must curve more deeply than left hinge corner (${fullWidthHeader.topLeftPx})",
+            fullWidthHeader.topRightPx > fullWidthHeader.topLeftPx + 30f
+        )
+    }
 }

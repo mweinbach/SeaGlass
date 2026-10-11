@@ -16,9 +16,17 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassCornerAdaptationSolver
+import dev.seaglass.core.SeaGlassCornerDetectionSource
+import dev.seaglass.core.SeaGlassCornerRadiiPx
+import dev.seaglass.core.SeaGlassDeviceCornerSpec
+import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassDeviceTier
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
@@ -40,9 +48,35 @@ data class SeaGlassMotionScheme(
     val defaultEffects: SpringSpec<Float> = spring(dampingRatio = 1.0f, stiffness = 540f)
 )
 
+/**
+ * Enclosing page or card container bounds and resolved 4 corner radii in root coordinates,
+ * allowing nested child SeaGlass elements to adapt their corner radii concentrically to the
+ * page/card corners in addition to the physical device bezel.
+ */
+@Immutable
+data class SeaGlassContainerCornerScope(
+    val originInRoot: Offset,
+    val widthPx: Float,
+    val heightPx: Float,
+    val cornerRadiiPx: SeaGlassCornerRadiiPx
+)
+
 val LocalSeaGlassPalette = staticCompositionLocalOf { SeaGlassPalette.SeafoamMint }
 val LocalSeaGlassMotionScheme = staticCompositionLocalOf { SeaGlassMotionScheme() }
 val LocalSeaGlassTierOverride = staticCompositionLocalOf<SeaGlassDeviceTier?> { null }
+val LocalSeaGlassDeviceCornerProfile = staticCompositionLocalOf { SeaGlassDeviceHardwareProfile.AUTO_DETECT }
+val LocalSeaGlassDeviceCornerSpec = staticCompositionLocalOf {
+    SeaGlassDeviceCornerSpec(
+        topLeftPx = 120f,
+        topRightPx = 120f,
+        bottomRightPx = 120f,
+        bottomLeftPx = 120f,
+        density = 2.75f,
+        source = SeaGlassCornerDetectionSource.DEVICE_MODEL_CATALOG,
+        deviceDescription = "Default Flagship Display"
+    )
+}
+val LocalSeaGlassContainerCornerScope = staticCompositionLocalOf<SeaGlassContainerCornerScope?> { null }
 
 /**
  * Smoothly animates a [SeaGlassMaterial] between states using Material 3 Expressive dual-spring
@@ -145,8 +179,20 @@ fun SeaGlassTheme(
     motionScheme: SeaGlassMotionScheme = remember { SeaGlassMotionScheme() },
     tiltState: SeaGlassTiltState = rememberSeaGlassTiltState(),
     tierOverride: SeaGlassDeviceTier? = null,
+    deviceCornerProfile: SeaGlassDeviceHardwareProfile = SeaGlassDeviceHardwareProfile.AUTO_DETECT,
     content: @Composable () -> Unit
 ) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val rootInsets = view.rootWindowInsets
+    val detectedCornerSpec = remember(context, rootInsets, deviceCornerProfile) {
+        SeaGlassCornerAdaptationSolver.detectDeviceCorners(
+            context = context,
+            rootWindowInsets = rootInsets,
+            overrideProfile = deviceCornerProfile
+        )
+    }
+
     val isDark = palette == SeaGlassPalette.ObsidianTide
     val m3ColorScheme: ColorScheme = remember(palette, isDark) {
         val primary = Color(palette.primaryGlass.tintColorArgb)
@@ -181,7 +227,9 @@ fun SeaGlassTheme(
         LocalSeaGlassPalette provides palette,
         LocalSeaGlassMotionScheme provides motionScheme,
         LocalSeaGlassTiltState provides tiltState,
-        LocalSeaGlassTierOverride provides tierOverride
+        LocalSeaGlassTierOverride provides tierOverride,
+        LocalSeaGlassDeviceCornerProfile provides deviceCornerProfile,
+        LocalSeaGlassDeviceCornerSpec provides detectedCornerSpec
     ) {
         MaterialTheme(
             colorScheme = m3ColorScheme,

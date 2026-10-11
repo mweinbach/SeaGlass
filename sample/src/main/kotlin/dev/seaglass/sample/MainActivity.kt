@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.compose.LocalSeaGlassMotionScheme
 import dev.seaglass.compose.LocalSeaGlassTiltState
+import dev.seaglass.compose.SeaGlassAdaptiveCornerLabCard
 import dev.seaglass.compose.SeaGlassBadge
 import dev.seaglass.compose.SeaGlassBottomSheetSurface
 import dev.seaglass.compose.SeaGlassBuddingCluster
@@ -116,6 +117,7 @@ import dev.seaglass.compose.rememberSeaGlassStageState
 import dev.seaglass.compose.seaGlass
 import dev.seaglass.compose.seaGlassBackdrop
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassDeviceTier
 import dev.seaglass.core.SeaGlassHdrSupport
 import dev.seaglass.core.SeaGlassMaterial
@@ -145,6 +147,7 @@ class MainActivity : ComponentActivity() {
 fun SeaGlassShowcaseApp() {
     var activePalette by remember { mutableStateOf(SeaGlassPalette.SeafoamMint) }
     var tierOverride by remember { mutableStateOf<SeaGlassDeviceTier?>(null) }
+    var deviceCornerProfile by remember { mutableStateOf(SeaGlassDeviceHardwareProfile.AUTO_DETECT) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var actionOrbDetached by remember { mutableStateOf(false) }
 
@@ -222,7 +225,8 @@ fun SeaGlassShowcaseApp() {
 
     SeaGlassTheme(
         palette = activePalette,
-        tierOverride = tierOverride
+        tierOverride = tierOverride,
+        deviceCornerProfile = deviceCornerProfile
     ) {
         val stageState = rememberSeaGlassStageState()
         val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
@@ -280,6 +284,8 @@ fun SeaGlassShowcaseApp() {
                             thicknessDp = thicknessDp
                         ),
                         surfaceMaterial = customSurfaceMaterial,
+                        activeCornerProfile = deviceCornerProfile,
+                        onSelectCornerProfile = { deviceCornerProfile = it },
                         transparency = transparency,
                         onTransparencyChange = { transparency = it },
                         coarseness = coarseness,
@@ -537,6 +543,8 @@ private fun OpticsLabSection(
     primaryMaterial: SeaGlassMaterial,
     tertiaryMaterial: SeaGlassMaterial,
     surfaceMaterial: SeaGlassMaterial,
+    activeCornerProfile: SeaGlassDeviceHardwareProfile,
+    onSelectCornerProfile: (SeaGlassDeviceHardwareProfile) -> Unit,
     transparency: Float,
     onTransparencyChange: (Float) -> Unit,
     coarseness: Float,
@@ -554,6 +562,16 @@ private fun OpticsLabSection(
     onApplyPreset: (Float, Float, Float, Float, Float, Float, Float) -> Unit
 ) {
     val density = LocalDensity.current
+
+    // 0. Adaptive Device & Page Corner Optics Lab (Concentric Bezel & Page Corner Matching)
+    SeaGlassAdaptiveCornerLabCard(
+        stageState = stageState,
+        activeProfile = activeCornerProfile,
+        onSelectProfile = onSelectCornerProfile,
+        surfaceMaterial = surfaceMaterial,
+        primaryMaterial = primaryMaterial,
+        tertiaryMaterial = tertiaryMaterial
+    )
 
     // 1. Flagship Material 3 Expressive × Liquid Sea Glass Coalescing Media & Soundscape Deck
     var isPlaying by remember { mutableStateOf(true) }

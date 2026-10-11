@@ -16,6 +16,8 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassCornerAdaptationMode
+import dev.seaglass.core.SeaGlassCornerAdaptationSolver
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
 import dev.seaglass.core.SeaGlassSdfEngine
@@ -128,12 +130,32 @@ open class SeaGlassFrameLayout @JvmOverloads constructor(
                 val relY = (locationBuffer[1] - targetLocationBuffer[1]).toFloat()
 
                 val cornerPx = min(material.cornerRadiusDp * density, min(w, h) * 0.5f)
+                val deviceSpec = SeaGlassCornerAdaptationSolver.detectDeviceCorners(
+                    context = context,
+                    rootWindowInsets = rootWindowInsets
+                )
+                val solvedCorners = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+                    elementLeftPx = locationBuffer[0].toFloat(),
+                    elementTopPx = locationBuffer[1].toFloat(),
+                    elementRightPx = locationBuffer[0].toFloat() + w,
+                    elementBottomPx = locationBuffer[1].toFloat() + h,
+                    containerWidthPx = resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f),
+                    containerHeightPx = resources.displayMetrics.heightPixels.toFloat().coerceAtLeast(1f),
+                    containerCornersPx = deviceSpec.toRadiiPx(),
+                    baseCornerRadiusPx = cornerPx,
+                    minCornerFloorPx = 8f * density,
+                    influenceDistancePx = 136f * density,
+                    mode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY
+                )
                 val node = SeaGlassSdfEngine.SdfNode(
                     centerX = w * 0.5f,
                     centerY = h * 0.5f,
                     halfWidth = w * 0.5f,
                     halfHeight = h * 0.5f,
-                    uniformCornerRadius = cornerPx,
+                    cornerTopLeft = solvedCorners.topLeftPx,
+                    cornerTopRight = solvedCorners.topRightPx,
+                    cornerBottomRight = solvedCorners.bottomRightPx,
+                    cornerBottomLeft = solvedCorners.bottomLeftPx,
                     cornerSmoothing = material.cornerSmoothing,
                     tintColorArgb = material.tintColorArgb,
                     thicknessPx = material.thicknessDp * density
