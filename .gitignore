@@ -1,0 +1,24 @@
+# Gradle & Android build outputs
+.gradle/
+**/build/
+local.properties
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# macOS
+.DS_Store
+
+# Keystore files
+*.jks
+*.keystore
+
+# OpenCode session files
+.opencode/
