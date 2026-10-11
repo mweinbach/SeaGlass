@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.compose.LocalSeaGlassMotionScheme
 import dev.seaglass.compose.LocalSeaGlassTiltState
+import dev.seaglass.compose.SeaGlassActionSheet
 import dev.seaglass.compose.SeaGlassAdaptiveCornerLabCard
 import dev.seaglass.compose.SeaGlassBadge
 import dev.seaglass.compose.SeaGlassBottomSheetSurface
@@ -89,6 +90,9 @@ import dev.seaglass.compose.SeaGlassCascadedModelMorph
 import dev.seaglass.compose.SeaGlassCheckbox
 import dev.seaglass.compose.SeaGlassChoreographedShapeOrb
 import dev.seaglass.compose.SeaGlassCircularProgressIndicator
+import dev.seaglass.compose.SeaGlassContextMenuCard
+import dev.seaglass.compose.SeaGlassContextMenuItem
+import dev.seaglass.compose.SeaGlassContextMenuOverlay
 import dev.seaglass.compose.SeaGlassContextRingMorph
 import dev.seaglass.compose.SeaGlassDialogCard
 import dev.seaglass.compose.SeaGlassExtendedFab
@@ -103,6 +107,7 @@ import dev.seaglass.compose.SeaGlassIconButton
 import dev.seaglass.compose.SeaGlassInspectorSheetContent
 import dev.seaglass.compose.SeaGlassLinearProgressIndicator
 import dev.seaglass.compose.SeaGlassListItem
+import dev.seaglass.compose.SeaGlassLiveActivityPill
 import dev.seaglass.compose.SeaGlassMiniPlayerBar
 import dev.seaglass.compose.SeaGlassMorphMode
 import dev.seaglass.compose.SeaGlassMorphingButton
@@ -119,6 +124,7 @@ import dev.seaglass.compose.SeaGlassTextField
 import dev.seaglass.compose.SeaGlassTheme
 import dev.seaglass.compose.SeaGlassTopAppBar
 import dev.seaglass.compose.SeaGlassTwoElementMorph
+import dev.seaglass.compose.defaultIosContextMenuItems
 import dev.seaglass.compose.rememberSeaGlassStageState
 import dev.seaglass.compose.seaGlass
 import dev.seaglass.compose.seaGlassBackdrop
@@ -157,6 +163,8 @@ fun SeaGlassShowcaseApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
     var actionOrbDetached by remember { mutableStateOf(false) }
     var showFloatingInspectorSheet by remember { mutableStateOf(false) }
+    var showIosContextMenu by remember { mutableStateOf(false) }
+    var showIosActionSheet by remember { mutableStateOf(false) }
     var sheetMorphAnimation by remember { mutableStateOf(true) }
 
     // Live adjustable optical parameters initialized for strong sea-glass tint + transparent frosted glass
@@ -251,13 +259,13 @@ fun SeaGlassShowcaseApp() {
                     modifier = Modifier.fillMaxSize()
                 )
 
-                if (selectedTab == 2) {
+                if (selectedTab == 2 && (showFloatingInspectorSheet || showIosContextMenu || showIosActionSheet)) {
                     SessionTranscriptBackdropOverlay(
                         isDark = activePalette == SeaGlassPalette.ObsidianTide,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(
-                                top = systemBarsPadding.calculateTopPadding() + 260.dp,
+                                top = systemBarsPadding.calculateTopPadding() + 320.dp,
                                 start = 36.dp,
                                 end = 36.dp
                             )
@@ -375,8 +383,10 @@ fun SeaGlassShowcaseApp() {
                                 primaryMaterial = customPrimaryMaterial,
                                 morphAnimationEnabled = sheetMorphAnimation,
                                 onToggleMorphAnimation = { sheetMorphAnimation = it },
-                                isOverlayOpen = showFloatingInspectorSheet,
-                                onOpenOverlaySheet = { showFloatingInspectorSheet = true }
+                                isOverlayOpen = showFloatingInspectorSheet || showIosContextMenu || showIosActionSheet,
+                                onOpenOverlaySheet = { showFloatingInspectorSheet = true },
+                                onOpenContextMenu = { showIosContextMenu = true },
+                                onOpenActionSheet = { showIosActionSheet = true }
                             )
 
                             3 -> PaletteGallerySection(
@@ -472,9 +482,66 @@ fun SeaGlassShowcaseApp() {
             ) {
                 SeaGlassInspectorSheetContent(
                     stageState = stageState,
-                    onDeleteSession = { showFloatingInspectorSheet = false }
+                    onDeleteSession = {
+                        showFloatingInspectorSheet = false
+                        showIosActionSheet = true
+                    }
                 )
             }
+
+            // 5. Proper iOS Context Menu Overlay (Lifted Target Preview + Quick-Reaction Pill + Submenu Morph)
+            SeaGlassContextMenuOverlay(
+                visible = showIosContextMenu,
+                onDismissRequest = { showIosContextMenu = false },
+                stageState = stageState,
+                material = customSurfaceMaterial.copy(
+                    cornerRadiusDp = 24f,
+                    transparency = (transparency + 0.08f).coerceIn(0.32f, 0.88f),
+                    coarseness = coarseness,
+                    frostRadiusDp = (frostRadiusDp + 6f).coerceAtMost(48f),
+                    thicknessDp = 20f
+                ),
+                onItemSelected = { item ->
+                    if (item.id == "delete") {
+                        showIosActionSheet = true
+                    }
+                }
+            )
+
+            // 6. iOS Action Sheet Overlay with Detached Concentric "Cancel" Capsule
+            SeaGlassActionSheet(
+                visible = showIosActionSheet,
+                title = "Delete Session Transcript?",
+                message = "This will permanently remove Windows UI Redesign for SeaGlass Elements and its 199,692 context tokens.",
+                actions = listOf(
+                    SeaGlassContextMenuItem(
+                        id = "export_first",
+                        title = "Export Transcript First",
+                        glyph = SeaGlassGlyph.Export
+                    ),
+                    SeaGlassContextMenuItem(
+                        id = "archive",
+                        title = "Archive Session",
+                        glyph = SeaGlassGlyph.Bookmark
+                    ),
+                    SeaGlassContextMenuItem(
+                        id = "confirm_delete",
+                        title = "Delete Session",
+                        glyph = SeaGlassGlyph.Close,
+                        isDestructive = true
+                    )
+                ),
+                onActionSelected = {},
+                onDismissRequest = { showIosActionSheet = false },
+                stageState = stageState,
+                material = customSurfaceMaterial.copy(
+                    cornerRadiusDp = 30f,
+                    transparency = (transparency + 0.08f).coerceIn(0.32f, 0.88f),
+                    coarseness = coarseness,
+                    frostRadiusDp = (frostRadiusDp + 6f).coerceAtMost(48f),
+                    thicknessDp = 20f
+                )
+            )
         }
     }
 }
@@ -1720,8 +1787,26 @@ private fun FloatingSheetShowcaseSection(
     morphAnimationEnabled: Boolean,
     onToggleMorphAnimation: (Boolean) -> Unit,
     isOverlayOpen: Boolean,
-    onOpenOverlaySheet: () -> Unit
+    onOpenOverlaySheet: () -> Unit,
+    onOpenContextMenu: () -> Unit = {},
+    onOpenActionSheet: () -> Unit = {}
 ) {
+    var liveActivityExpanded by remember { mutableStateOf(false) }
+
+    // 0. iOS Dynamic Island / Live Activity Expandable Capsule
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        SeaGlassLiveActivityPill(
+            expanded = liveActivityExpanded,
+            onExpandedChange = { liveActivityExpanded = it },
+            stageState = stageState,
+            pillMaterial = primaryMaterial,
+            expandedMaterial = surfaceMaterial
+        )
+    }
+
     // 1. iOS-Style Floating Session Top Bar: [=]  [Windows UI Redesign for SeaGlass...]  [•••]
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1730,7 +1815,7 @@ private fun FloatingSheetShowcaseSection(
     ) {
         SeaGlassIconButton(
             glyph = SeaGlassGlyph.Menu,
-            onClick = onOpenOverlaySheet,
+            onClick = onOpenContextMenu,
             stageState = stageState,
             size = 46.dp,
             material = surfaceMaterial
@@ -1784,38 +1869,53 @@ private fun FloatingSheetShowcaseSection(
         }
     }
 
-    // 2. Controls for Morph Animation vs. Slide Spring + Pop Full-Screen Overlay
+    // 2. 3-Button iOS Overlay Launcher Strip: Detent Sheet · Context Menu · Action Sheet
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        SeaGlassSegmentedButtonRow(
-            options = listOf("Morph Transition", "Slide Spring"),
-            selectedIndex = if (morphAnimationEnabled) 0 else 1,
-            onSelect = { onToggleMorphAnimation(it == 0) },
-            stageState = stageState,
-            containerMaterial = surfaceMaterial,
-            indicatorMaterial = primaryMaterial,
-            modifier = Modifier.weight(1f)
-        )
-
-        SeaGlassButton(
+        SeaGlassPill(
+            label = "Detent Sheet",
+            selected = true,
             onClick = onOpenOverlaySheet,
             stageState = stageState,
-            material = primaryMaterial.copy(cornerRadiusDp = 22f, thicknessDp = 16f),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
-        ) {
-            Text(
-                text = "Pop Overlay ↗",
-                maxLines = 1,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
-            )
-        }
+            selectedMaterial = primaryMaterial,
+            unselectedMaterial = surfaceMaterial,
+            modifier = Modifier.weight(1f)
+        )
+        SeaGlassPill(
+            label = "Context Menu",
+            selected = false,
+            onClick = onOpenContextMenu,
+            stageState = stageState,
+            selectedMaterial = primaryMaterial,
+            unselectedMaterial = surfaceMaterial,
+            modifier = Modifier.weight(1f)
+        )
+        SeaGlassPill(
+            label = "Action Sheet",
+            selected = false,
+            onClick = onOpenActionSheet,
+            stageState = stageState,
+            selectedMaterial = primaryMaterial,
+            unselectedMaterial = surfaceMaterial,
+            modifier = Modifier.weight(1f)
+        )
     }
 
+    // 3. Controls for Morph Animation vs. Slide Spring
+    SeaGlassSegmentedButtonRow(
+        options = listOf("Morph Transition", "Slide Spring"),
+        selectedIndex = if (morphAnimationEnabled) 0 else 1,
+        onSelect = { onToggleMorphAnimation(it == 0) },
+        stageState = stageState,
+        containerMaterial = surfaceMaterial,
+        indicatorMaterial = primaryMaterial,
+        modifier = Modifier.fillMaxWidth()
+    )
+
     if (!isOverlayOpen) {
-        // 3. Inline Native Floating Concentric SeaGlass Inspector Sheet Card when modal is dismissed
+        // 4. Inline Native Floating Concentric SeaGlass Inspector Sheet Card when modal is dismissed
         SeaGlassFloatingSheetSurface(
             stageState = stageState,
             material = surfaceMaterial.copy(
@@ -1827,7 +1927,7 @@ private fun FloatingSheetShowcaseSection(
         ) {
             SeaGlassInspectorSheetContent(
                 stageState = stageState,
-                onDeleteSession = onOpenOverlaySheet
+                onDeleteSession = onOpenActionSheet
             )
         }
     }
