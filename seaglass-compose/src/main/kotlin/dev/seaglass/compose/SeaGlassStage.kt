@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path as ComposePath
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -47,7 +48,12 @@ import dev.seaglass.core.SeaGlassSandGrainTexture
 import dev.seaglass.core.SeaGlassSdfEngine
 import dev.seaglass.core.backend.SeaGlassUniformBlock
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Coordinates zero-copy GPU backdrop capture and shared full-stage subsurface blur pyramids
@@ -146,29 +152,28 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
 }
 
 /**
- * Renders a 100% edge-to-edge transparent **Liquid Sea Glass** surface over [stageState]:
- *
- * 1. **Continuous Edge-to-Edge Refraction & Volumetric Sea-Glass Tint**:
- *    - Samples from full-stage [SeaGlassStageState.frostedBackdropLayer] and
- *      [SeaGlassStageState.refractedEdgeBackdropLayer] with zero border crop.
- *    - Applies spectral Oklab color-filter absorption (`BlendMode.Modulate`) + frosted pastel
- *      body scatter (`BlendMode.SrcOver`) + toroidal sand-grain micro-facets.
- * 2. **Angular Optical Rim (Zero "Sticker Border" Look)**:
- *    - Instead of a uniform stroke drawn around all 4 sides, uses an angular `SweepGradient`
- *      refractive bevel that gleams along the top-left windward curve ($\sim 225^\circ$) and
- *      concentrates a colored internal caustic along the bottom-right curve ($\sim 45^\circ$),
- *      while **tapering to near-zero opacity (`0.03`) along the tangential flanks** so the edge
- *      dissolves organically into the refracted glass.
+ * Renders a 100% edge-to-edge transparent **Liquid Sea Glass** surface over [stageState] with:
+ * 1. **Tilt-Adaptive Side Refraction**: Shifts the Snell's law lens refraction and chromatic
+ *    edge-refraction layers dynamically around the sides of the glass based on 3D device tilt
+ *    ([LocalSeaGlassTiltState]) and local finger contact ([touchPointInLocal]).
+ * 2. **HDR Extended-sRGB Specular Headroom & Adaptive Tap Caustic Wave**:
+ *    Uses `ColorSpaces.ExtendedSrgb` (`FP16` HDR values $> 1.0$) and additive `BlendMode.Plus`
+ *    for the rotating angular specular rim and localized finger touch-point caustic flare.
+ * 3. **Angular `SweepGradient` Optical Rim**: Gleams along the tilt-driven windward curve and
+ *    opposite leeward caustic curve while tapering to near-zero at tangential flanks.
  */
 @Composable
 fun Modifier.seaGlass(
     stageState: SeaGlassStageState?,
     material: SeaGlassMaterial,
     nodesOptional: List<SeaGlassSdfEngine.SdfNode>? = null,
-    smoothRadiusDp: Float = 28f
+    smoothRadiusDp: Float = 28f,
+    touchPointInLocal: Offset? = null,
+    touchIntensity: Float = 0f
 ): Modifier {
     val context = LocalContext.current
     val tierOverride = LocalSeaGlassTierOverride.current
+    val tiltState = LocalSeaGlassTiltState.current
     val activeTier = remember(context, tierOverride) {
         tierOverride ?: SeaGlassDeviceTier.detect(context)
     }
@@ -198,6 +203,7 @@ fun Modifier.seaGlass(
         }
     }
     val shaderLocalMatrix = remember { AndroidMatrix() }
+    val rimSweepMatrix = remember { AndroidMatrix() }
 
     var elementOriginInRoot by remember { mutableStateOf(Offset.Zero) }
 
@@ -213,7 +219,6 @@ fun Modifier.seaGlass(
             val thicknessPx = material.thicknessDp * density
             val smoothRadiusPx = smoothRadiusDp * density
 
-            // Frost opacity is inverse of transparency (higher transparency = clearer see-through glass)
             val frostOpacity = (1.0f - material.transparency).coerceIn(0.03f, 0.96f)
             val effectiveFrostPx = (material.frostRadiusDp * density * (0.28f + 0.72f * frostOpacity))
                 .coerceAtLeast(1.5f)
@@ -235,7 +240,6 @@ fun Modifier.seaGlass(
                 )
             }
 
-            // Build exact C^2-continuous sminCubic outer contour
             SeaGlassContourPathBuilder.buildCoalescingScenePath(
                 nodes = activeNodes,
                 smoothRadiusPx = smoothRadiusPx,
@@ -245,7 +249,6 @@ fun Modifier.seaGlass(
 
             val composeOuterPath: ComposePath = outerAndroidPath.asComposePath()
 
-            // Subtle ambient elevation shadow tinted with Oklab glass hue
             val shadowColorArgb = SeaGlassColorMath.lerpOklab(
                 material.tintColorArgb,
                 0xFF04111E.toInt(),
@@ -255,10 +258,6 @@ fun Modifier.seaGlass(
             ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
             ambientShadowPaint.maskFilter = BlurMaskFilter(11f * density, BlurMaskFilter.Blur.NORMAL)
 
-            // Angular SweepGradient Optical Rim:
-            // In Android SweepGradient: 0° = Right, 45° = Bottom-Right (leeward internal caustic),
-            // 90° = Bottom, 135° = Bottom-Left (tangent zero), 180° = Left,
-            // 225° = Top-Left (windward specular crest), 270° = Top, 315° = Top-Right (tangent zero).
             val rimLight = (0.42f + material.rimChalkiness * 0.56f).coerceIn(0.24f, 0.98f)
             val primaryTintArgb = activeNodes.firstOrNull()?.tintColorArgb ?: material.tintColorArgb
             val secondaryTintArgb = if (activeNodes.size >= 2) {
@@ -296,41 +295,41 @@ fun Modifier.seaGlass(
             val cx = widthPx * 0.5f
             val cy = heightPx * 0.5f
 
-            // Layer A: Soft Gaussian-feathered inner refractive sheen (gives 3D lens bevel depth)
+            // Layer A: Soft Gaussian-feathered inner refractive sheen
             innerRefractSheenPaint.strokeWidth = 4.2f * density
             innerRefractSheenPaint.maskFilter = BlurMaskFilter(5.0f * density, BlurMaskFilter.Blur.NORMAL)
             innerRefractSheenPaint.shader = AndroidSweepGradient(
                 cx,
                 cy,
                 intArrayOf(
-                    argbWithAlpha(warmDispersionRgb, rimLight * 0.24f),  // 0° Right
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.54f),  // 45° Bottom-Right Caustic
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.18f),  // 90° Bottom
-                    argbWithAlpha(primaryTintArgb and 0x00FFFFFF, 0.02f),// 135° Bottom-Left Tangent (vanishes!)
-                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.32f),   // 180° Left
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.68f),   // 225° Top-Left Windward Crest
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.36f),   // 270° Top
-                    argbWithAlpha(primaryTintArgb and 0x00FFFFFF, 0.02f),// 315° Top-Right Tangent (vanishes!)
-                    argbWithAlpha(warmDispersionRgb, rimLight * 0.24f)   // 360° Right
+                    argbWithAlpha(warmDispersionRgb, rimLight * 0.24f),
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.56f),
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.18f),
+                    argbWithAlpha(primaryTintArgb and 0x00FFFFFF, 0.02f),
+                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.34f),
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.72f),
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.36f),
+                    argbWithAlpha(primaryTintArgb and 0x00FFFFFF, 0.02f),
+                    argbWithAlpha(warmDispersionRgb, rimLight * 0.24f)
                 ),
                 floatArrayOf(0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f)
             )
 
-            // Layer B: Razor-thin (0.95dp) directional specular lip that tapers to near-zero on tangents
+            // Layer B: Razor-thin (0.95dp) directional specular lip
             outerSpecularLipPaint.strokeWidth = 0.95f * density
             outerSpecularLipPaint.shader = AndroidSweepGradient(
                 cx,
                 cy,
                 intArrayOf(
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.30f),  // 0° Right
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.76f),  // 45° Bottom-Right Caustic Crest
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.26f),  // 90° Bottom
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.04f),   // 135° Bottom-Left Tangent (almost 0!)
-                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.42f),   // 180° Left
-                    argbWithAlpha(0x00FFFFFF, (rimLight * 0.94f).coerceAtMost(0.96f)), // 225° Top-Left Specular Peak
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.52f),   // 270° Top
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.04f),   // 315° Top-Right Tangent (almost 0!)
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.30f)   // 360° Right
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.30f),
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.78f),
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.26f),
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.04f),
+                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.44f),
+                    argbWithAlpha(0x00FFFFFF, (rimLight * 0.95f).coerceAtMost(0.98f)),
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.52f),
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.04f),
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.30f)
                 ),
                 floatArrayOf(0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f)
             )
@@ -349,6 +348,25 @@ fun Modifier.seaGlass(
                     stageState.ensureStageBlurUpdated(effectiveFrostPx)
                 }
 
+                // Combine 3D device tilt vector with local finger touch vector for adaptive refraction
+                val touchNormX = if (touchPointInLocal != null && touchIntensity > 0.01f) {
+                    ((touchPointInLocal.x - cx) / max(cx, 1f)).coerceIn(-1f, 1f) * touchIntensity * 0.55f
+                } else {
+                    0f
+                }
+                val touchNormY = if (touchPointInLocal != null && touchIntensity > 0.01f) {
+                    ((touchPointInLocal.y - cy) / max(cy, 1f)).coerceIn(-1f, 1f) * touchIntensity * 0.55f
+                } else {
+                    0f
+                }
+
+                val combinedTiltX = (tiltState.tiltX + touchNormX).coerceIn(-1f, 1f)
+                val combinedTiltY = (tiltState.tiltY + touchNormY).coerceIn(-1f, 1f)
+                val activeLightAngleDeg = Math.toDegrees(
+                    atan2(combinedTiltY.toDouble(), combinedTiltX.toDouble())
+                ).toFloat()
+
+                // Pack the backend-agnostic 256-byte std140 UBO block with live tilt light direction
                 uniformBlock.pack(
                     widthPx = widthPx,
                     heightPx = heightPx,
@@ -357,53 +375,70 @@ fun Modifier.seaGlass(
                     material = material,
                     density = density,
                     nodes = activeNodes,
-                    smoothRadiusPx = smoothRadiusPx
+                    smoothRadiusPx = smoothRadiusPx,
+                    lightDirX = combinedTiltX,
+                    lightDirY = combinedTiltY,
+                    lightDirZ = 0.52f
                 )
 
                 val nCanvas = drawContext.canvas.nativeCanvas
 
-                // Pass 0: Tinted ambient elevation shadow
+                // Pass 0: Tilt-responsive ambient elevation shadow (shifts opposite to device tilt!)
                 nCanvas.save()
-                nCanvas.translate(0f, 4.5f * density)
+                nCanvas.translate(
+                    -combinedTiltX * 4.5f * density,
+                    (4.5f - combinedTiltY * 3.5f) * density
+                )
                 nCanvas.drawPath(outerAndroidPath, ambientShadowPaint)
                 nCanvas.restore()
 
-                // Pass 1: 100% Edge-to-Edge Frosted Backdrop + High-Refraction Liquid Meniscus Layer
+                // Pass 1: Tilt-Adaptive Side Refraction & Frosted Backdrop
                 if (hasBackdrop && activeTier != SeaGlassDeviceTier.LIGHTWEIGHT_TINT) {
-                    val lensScale = 1.0f +
-                        (material.ior - 1.0f) * 0.12f * (1.0f - 0.30f * material.coarseness)
-                    val refractShiftPx = (material.ior - 1.0f) *
-                        (13f * density) *
-                        (1.0f - 0.28f * material.coarseness)
-                    val edgeRefractShiftPx = -refractShiftPx * (0.85f + material.chromaticDispersion * 0.65f)
+                    val touchLensBoost = 1.0f + touchIntensity * 0.045f
+                    val lensScale = (1.0f + (material.ior - 1.0f) * 0.12f * (1.0f - 0.30f * material.coarseness)) *
+                        touchLensBoost
+
+                    val maxRefractPx = (material.ior - 1.0f) *
+                        (24f * density) *
+                        (1.0f - 0.25f * material.coarseness) *
+                        (1.0f + touchIntensity * 0.35f)
+
+                    // Side refraction vector shifts dynamically with 3D device tilt & touch!
+                    val refractShiftX = -combinedTiltX * maxRefractPx
+                    val refractShiftY = -combinedTiltY * maxRefractPx
+
+                    // Opposing chromatic edge-refraction shift
+                    val edgeScale = 1.0f + (material.ior - 1.0f) * 0.55f
+                    val edgeRefractShiftX = combinedTiltX * maxRefractPx * (0.95f + material.chromaticDispersion * 0.65f)
+                    val edgeRefractShiftY = combinedTiltY * maxRefractPx * (0.95f + material.chromaticDispersion * 0.65f)
 
                     clipPath(composeOuterPath) {
-                        // 1A: Deeply frosted subsurface backdrop
+                        // 1A: Deeply frosted subsurface backdrop shifted by tilt
                         scale(
                             scaleX = lensScale,
                             scaleY = lensScale,
-                            pivot = Offset(widthPx * 0.5f, heightPx * 0.5f)
+                            pivot = touchPointInLocal ?: Offset(cx, cy)
                         ) {
                             translate(
-                                left = -relOffset.x + refractShiftPx * 0.55f,
-                                top = -relOffset.y + refractShiftPx * 0.45f
+                                left = -relOffset.x + refractShiftX * 0.60f,
+                                top = -relOffset.y + refractShiftY * 0.60f
                             ) {
                                 drawLayer(stageState.frostedBackdropLayer)
                             }
                         }
 
-                        // 1B: Crisp, opposing-displaced Liquid Glass refraction layer
-                        val crispRefractWeight = (0.26f + material.transparency * 0.44f + (material.ior - 1.0f) * 0.24f)
-                            .coerceIn(0.18f, 0.76f)
+                        // 1B: Crisp, opposing-displaced Liquid Glass side-refraction layer
+                        val crispRefractWeight = (0.28f + material.transparency * 0.44f + (material.ior - 1.0f) * 0.24f)
+                            .coerceIn(0.18f, 0.78f)
                         stageState.refractedEdgeBackdropLayer.alpha = crispRefractWeight
                         scale(
-                            scaleX = 1.0f + (material.ior - 1.0f) * 0.06f,
-                            scaleY = 1.0f + (material.ior - 1.0f) * 0.06f,
-                            pivot = Offset(widthPx * 0.5f, heightPx * 0.5f)
+                            scaleX = 1.0f + (material.ior - 1.0f) * 0.07f * edgeScale.coerceIn(1f, 1.4f),
+                            scaleY = 1.0f + (material.ior - 1.0f) * 0.07f * edgeScale.coerceIn(1f, 1.4f),
+                            pivot = Offset(cx, cy)
                         ) {
                             translate(
-                                left = -relOffset.x + edgeRefractShiftPx,
-                                top = -relOffset.y - edgeRefractShiftPx * 0.75f
+                                left = -relOffset.x + edgeRefractShiftX,
+                                top = -relOffset.y + edgeRefractShiftY
                             ) {
                                 drawLayer(stageState.refractedEdgeBackdropLayer)
                             }
@@ -412,7 +447,13 @@ fun Modifier.seaGlass(
                     }
                 }
 
-                // Pass 2: Seamless Edge-to-Edge Tint, Sand Coarseness, & Angular Optical Rim
+                // Rotate the SweepGradient rim shaders to match live device tilt + finger touch angle!
+                rimSweepMatrix.reset()
+                rimSweepMatrix.setRotate(activeLightAngleDeg - 225f, cx, cy)
+                innerRefractSheenPaint.shader?.setLocalMatrix(rimSweepMatrix)
+                outerSpecularLipPaint.shader?.setLocalMatrix(rimSweepMatrix)
+
+                // Pass 2: Volumetric Tint, Sand Grit, Tilt-Adaptive Rim, & HDR Touch-Point Caustic Wave
                 drawContinuousLiquidSeaGlass(
                     composeOuterPath = composeOuterPath,
                     outerAndroidPath = outerAndroidPath,
@@ -421,6 +462,10 @@ fun Modifier.seaGlass(
                     widthPx = widthPx,
                     heightPx = heightPx,
                     frostOpacity = frostOpacity,
+                    combinedTiltX = combinedTiltX,
+                    combinedTiltY = combinedTiltY,
+                    touchPointInLocal = touchPointInLocal,
+                    touchIntensity = touchIntensity,
                     innerRefractSheenPaint = innerRefractSheenPaint,
                     outerSpecularLipPaint = outerSpecularLipPaint,
                     sandGrainPaint = sandGrainPaint,
@@ -441,6 +486,10 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
     widthPx: Float,
     heightPx: Float,
     frostOpacity: Float,
+    combinedTiltX: Float,
+    combinedTiltY: Float,
+    touchPointInLocal: Offset?,
+    touchIntensity: Float,
     innerRefractSheenPaint: AndroidPaint,
     outerSpecularLipPaint: AndroidPaint,
     sandGrainPaint: AndroidPaint,
@@ -510,7 +559,7 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
         )
     )
 
-    // 2. Continuous Edge-to-Edge Sand-Tumbled Micro-Facet Texture + Angular Optical Rim
+    // 2. Continuous Edge-to-Edge Sand-Tumbled Micro-Facet Texture + Tilt-Rotated Angular Rim
     val grainScale = (density * 0.55f).coerceIn(0.8f, 2.2f)
     shaderLocalMatrix.reset()
     shaderLocalMatrix.setScale(grainScale, grainScale)
@@ -526,10 +575,85 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
         sandGrainPaint.alpha = grainAlpha
         nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
     }
-    // Soft Gaussian-feathered angular refractive sheen inside the curved bevel
     nCanvas.drawPath(outerAndroidPath, innerRefractSheenPaint)
     nCanvas.restore()
 
-    // Razor-thin (0.95dp) angular specular lip (gleams at 225°/45°, vanishes at 135°/315° tangents)
+    // 3. HDR Extended-sRGB Specular Headroom & Adaptive Touch-Point Caustic Wave
+    val hdrWhite = Color(
+        red = 1.45f,
+        green = 1.48f,
+        blue = 1.52f,
+        alpha = 1.0f,
+        colorSpace = ColorSpaces.ExtendedSrgb
+    )
+    val baseTintSrgb = Color(primaryTintArgb)
+    val hdrTintGlow = Color(
+        red = (baseTintSrgb.red * 1.38f).coerceAtMost(1.6f),
+        green = (baseTintSrgb.green * 1.38f).coerceAtMost(1.6f),
+        blue = (baseTintSrgb.blue * 1.38f).coerceAtMost(1.6f),
+        alpha = 1.0f,
+        colorSpace = ColorSpaces.ExtendedSrgb
+    )
+
+    clipPath(composeOuterPath) {
+        // 3a. Adaptive Touch-Point Liquid Glass Caustic Wave & Rim Flare (blooms under finger!)
+        if (touchPointInLocal != null && touchIntensity > 0.01f) {
+            val waveRadius = max(widthPx, heightPx) * (0.32f + 0.38f * touchIntensity)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        hdrWhite.copy(alpha = 0.44f * touchIntensity),
+                        hdrTintGlow.copy(alpha = 0.28f * touchIntensity),
+                        Color.Transparent
+                    ),
+                    center = touchPointInLocal,
+                    radius = waveRadius
+                ),
+                radius = waveRadius,
+                center = touchPointInLocal,
+                blendMode = BlendMode.Plus
+            )
+
+            // Extra HDR rim flare along the border nearest the touch point
+            drawPath(
+                path = composeOuterPath,
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        hdrWhite.copy(alpha = 0.72f * touchIntensity),
+                        hdrTintGlow.copy(alpha = 0.35f * touchIntensity),
+                        Color.Transparent
+                    ),
+                    center = touchPointInLocal,
+                    radius = waveRadius * 0.95f
+                ),
+                style = Stroke(width = 3.2f * density),
+                blendMode = BlendMode.Plus
+            )
+        }
+
+        // 3b. Tilt-Driven HDR Windward Specular Crest & Leeward Internal Caustic Glint
+        val crestX = widthPx * (0.5f + combinedTiltX * 0.45f)
+        val crestY = heightPx * (0.5f + combinedTiltY * 0.45f)
+        val causticX = widthPx * (0.5f - combinedTiltX * 0.45f)
+        val causticY = heightPx * (0.5f - combinedTiltY * 0.45f)
+
+        drawPath(
+            path = composeOuterPath,
+            brush = Brush.linearGradient(
+                colorStops = arrayOf(
+                    0.00f to hdrWhite.copy(alpha = 0.38f * material.rimChalkiness),
+                    0.30f to Color.Transparent,
+                    0.70f to Color.Transparent,
+                    1.00f to hdrTintGlow.copy(alpha = 0.34f * material.rimChalkiness)
+                ),
+                start = Offset(crestX, crestY),
+                end = Offset(causticX, causticY)
+            ),
+            style = Stroke(width = 2.2f * density),
+            blendMode = BlendMode.Plus
+        )
+    }
+
+    // 4. Razor-thin (0.95dp) tilt-rotated angular specular lip
     nCanvas.drawPath(outerAndroidPath, outerSpecularLipPaint)
 }

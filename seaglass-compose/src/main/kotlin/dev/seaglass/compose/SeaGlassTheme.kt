@@ -143,6 +143,7 @@ fun animateSeaGlassMaterialAsState(
 fun SeaGlassTheme(
     palette: SeaGlassPalette = SeaGlassPalette.SeafoamMint,
     motionScheme: SeaGlassMotionScheme = remember { SeaGlassMotionScheme() },
+    tiltState: SeaGlassTiltState = rememberSeaGlassTiltState(),
     tierOverride: SeaGlassDeviceTier? = null,
     content: @Composable () -> Unit
 ) {
@@ -179,6 +180,7 @@ fun SeaGlassTheme(
     CompositionLocalProvider(
         LocalSeaGlassPalette provides palette,
         LocalSeaGlassMotionScheme provides motionScheme,
+        LocalSeaGlassTiltState provides tiltState,
         LocalSeaGlassTierOverride provides tierOverride
     ) {
         MaterialTheme(

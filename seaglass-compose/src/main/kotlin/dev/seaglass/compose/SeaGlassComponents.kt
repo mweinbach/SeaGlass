@@ -4,7 +4,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,29 +29,55 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.core.SeaGlassColorMath
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSdfEngine
-import kotlin.math.min
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
+ * Non-consuming pointer observer that tracks the live 2D touch point `(touchX, touchY)` and
+ * press state on a SeaGlass surface so off-center taps tilt the glass in 3D, shift side
+ * refraction, and bloom an HDR caustic wave right under the finger—without blocking child
+ * buttons or sliders.
+ */
+private fun Modifier.observeSeaGlassTouch(
+    onTouchUpdate: (Offset?, Boolean) -> Unit
+): Modifier = this.pointerInput(Unit) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val pressedChange = event.changes.firstOrNull { it.pressed }
+            if (pressedChange != null) {
+                onTouchUpdate(pressedChange.position, true)
+            } else {
+                onTouchUpdate(null, false)
+            }
+        }
+    }
+}
+
+/**
  * Foundational SeaGlass container surface with Material 3 Expressive state morphing,
- * tactile press elasticity, and automatic Oklab contrast-safe foreground content color.
+ * adaptive touch-point 3D perspective tilt, HDR touch caustic flare, and automatic
+ * Oklab contrast-safe foreground content color.
  */
 @Composable
 fun SeaGlassSurface(
@@ -67,8 +91,13 @@ fun SeaGlassSurface(
 ) {
     val motion = LocalSeaGlassMotionScheme.current
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    val isClickablePressed by interactionSource.collectIsPressedAsState()
 
+    var surfaceSize by remember { mutableStateOf(IntSize.Zero) }
+    var lastTouchOffset by remember { mutableStateOf<Offset?>(null) }
+    var isPointerDown by remember { mutableStateOf(false) }
+
+    val isPressed = isClickablePressed || isPointerDown
     val pressFraction by animateFloatAsState(
         targetValue = if (isPressed) 1f else 0f,
         animationSpec = motion.fastSpatial,
@@ -80,8 +109,25 @@ fun SeaGlassSurface(
         motionScheme = motion
     )
 
-    val scaleX = 1f + 0.025f * pressFraction
-    val scaleY = 1f - 0.022f * pressFraction
+    // Compute normalized off-center touch vector [-1..+1] for 3D perspective press tilt
+    val cx = max(surfaceSize.width * 0.5f, 1f)
+    val cy = max(surfaceSize.height * 0.5f, 1f)
+    val normTouchX = lastTouchOffset?.let { ((it.x - cx) / cx).coerceIn(-1f, 1f) } ?: 0f
+    val normTouchY = lastTouchOffset?.let { ((it.y - cy) / cy).coerceIn(-1f, 1f) } ?: 0f
+
+    val tiltRotX by animateFloatAsState(
+        targetValue = -normTouchY * 4.8f * pressFraction,
+        animationSpec = motion.fastSpatial,
+        label = "tiltRotX"
+    )
+    val tiltRotY by animateFloatAsState(
+        targetValue = normTouchX * 4.8f * pressFraction,
+        animationSpec = motion.fastSpatial,
+        label = "tiltRotY"
+    )
+
+    val scaleX = 1f + 0.022f * pressFraction
+    val scaleY = 1f - 0.018f * pressFraction
 
     val contentColor = remember(effectiveMaterial.tintColorArgb, effectiveMaterial.tintDensity) {
         Color(
@@ -106,14 +152,24 @@ fun SeaGlassSurface(
         Box(
             contentAlignment = contentAlignment,
             modifier = modifier
+                .onSizeChanged { surfaceSize = it }
+                .observeSeaGlassTouch { pos, down ->
+                    if (pos != null) lastTouchOffset = pos
+                    isPointerDown = down
+                }
                 .graphicsLayer {
                     this.scaleX = scaleX
                     this.scaleY = scaleY
+                    this.rotationX = tiltRotX
+                    this.rotationY = tiltRotY
+                    this.cameraDistance = 14f * density
                 }
                 .then(clickableModifier)
                 .seaGlass(
                     stageState = stageState,
-                    material = effectiveMaterial
+                    material = effectiveMaterial,
+                    touchPointInLocal = lastTouchOffset,
+                    touchIntensity = pressFraction
                 )
                 .padding(contentPadding),
             content = content
@@ -122,9 +178,8 @@ fun SeaGlassSurface(
 }
 
 /**
- * Tactile tumbled sea-glass button that physically compresses on touch:
- * corners subtly morph, volumetric Beer-Lambert tint deepens, and the chalky
- * frosted rim brightens.
+ * Tactile tumbled sea-glass button that physically compresses on touch with adaptive
+ * touch-point HDR caustic flare and 3D perspective tilt.
  */
 @Composable
 fun SeaGlassButton(
@@ -137,8 +192,13 @@ fun SeaGlassButton(
 ) {
     val motion = LocalSeaGlassMotionScheme.current
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    val isClickablePressed by interactionSource.collectIsPressedAsState()
 
+    var buttonSize by remember { mutableStateOf(IntSize.Zero) }
+    var lastTouchOffset by remember { mutableStateOf<Offset?>(null) }
+    var isPointerDown by remember { mutableStateOf(false) }
+
+    val isPressed = isClickablePressed || isPointerDown
     val pressFraction by animateFloatAsState(
         targetValue = if (isPressed) 1f else 0f,
         animationSpec = motion.fastSpatial,
@@ -148,6 +208,22 @@ fun SeaGlassButton(
     val animatedMaterial by animateSeaGlassMaterialAsState(
         targetMaterial = material.pressed(pressFraction),
         motionScheme = motion
+    )
+
+    val cx = max(buttonSize.width * 0.5f, 1f)
+    val cy = max(buttonSize.height * 0.5f, 1f)
+    val normTouchX = lastTouchOffset?.let { ((it.x - cx) / cx).coerceIn(-1f, 1f) } ?: 0f
+    val normTouchY = lastTouchOffset?.let { ((it.y - cy) / cy).coerceIn(-1f, 1f) } ?: 0f
+
+    val tiltRotX by animateFloatAsState(
+        targetValue = -normTouchY * 6.0f * pressFraction,
+        animationSpec = motion.fastSpatial,
+        label = "btnTiltX"
+    )
+    val tiltRotY by animateFloatAsState(
+        targetValue = normTouchX * 6.0f * pressFraction,
+        animationSpec = motion.fastSpatial,
+        label = "btnTiltY"
     )
 
     val contentColor = remember(animatedMaterial.tintColorArgb, animatedMaterial.tintDensity) {
@@ -164,9 +240,17 @@ fun SeaGlassButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
             modifier = modifier
+                .onSizeChanged { buttonSize = it }
+                .observeSeaGlassTouch { pos, down ->
+                    if (pos != null) lastTouchOffset = pos
+                    isPointerDown = down
+                }
                 .graphicsLayer {
                     scaleX = 1f + 0.045f * pressFraction
                     scaleY = 1f - 0.038f * pressFraction
+                    rotationX = tiltRotX
+                    rotationY = tiltRotY
+                    cameraDistance = 12f * density
                 }
                 .clickable(
                     interactionSource = interactionSource,
@@ -175,7 +259,9 @@ fun SeaGlassButton(
                 )
                 .seaGlass(
                     stageState = stageState,
-                    material = animatedMaterial
+                    material = animatedMaterial,
+                    touchPointInLocal = lastTouchOffset,
+                    touchIntensity = pressFraction
                 )
                 .padding(contentPadding),
             content = content
@@ -249,13 +335,6 @@ fun SeaGlassCard(
 /**
  * Liquid-Glass-inspired adaptive Material 3 Expressive navigation & action bar rendered in
  * frosted SeaGlass.
- *
- * Evaluates a multi-node coalescing SDF scene where:
- * - Node 0 is the main floating bar capsule
- * - Node 1 is the detachable / coalescing action FAB orb on the right (which merges into and
- *   splits out of the main bar via cubic `smin` as [actionExpanded] or selection state changes!)
- * - Inside the bar, an expressive primary sea-glass selection droplet glides with an under-damped
- *   spatial spring between items.
  */
 @Composable
 fun SeaGlassFluidBar(
@@ -297,7 +376,6 @@ fun SeaGlassFluidBar(
     val mainBarWidthPx = (totalWidthPx - orbSizePx - gapPx.coerceAtLeast(0f) - with(density) { 4.dp.toPx() })
         .coerceAtLeast(orbSizePx * 2f)
 
-    // Construct the two coalescing SDF nodes: main capsule (Node 0) + action orb (Node 1)
     val coalescingNodes = remember(
         totalWidthPx,
         totalHeightPx,
@@ -364,7 +442,6 @@ fun SeaGlassFluidBar(
         val trackWidthDp = (mainBarWidthDp - innerPadding * 2).coerceAtLeast(40.dp)
         val itemWidthDp = trackWidthDp / itemCount
 
-        // Expressive sliding SeaGlass indicator pill inside the main bar with liquid velocity stretch
         Box(
             modifier = Modifier
                 .width(mainBarWidthDp)
@@ -442,7 +519,6 @@ fun SeaGlassFluidBar(
             }
         }
 
-        // Coalescing Action Droplet Orb on the right
         val orbLeftPx = (mainBarWidthPx + gapPx).coerceAtMost(totalWidthPx - orbSizePx)
         val orbContentColor = Color(
             SeaGlassColorMath.optimalContentColorFor(

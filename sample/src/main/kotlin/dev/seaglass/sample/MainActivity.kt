@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.compose.LocalSeaGlassMotionScheme
+import dev.seaglass.compose.LocalSeaGlassTiltState
 import dev.seaglass.compose.SeaGlassButton
 import dev.seaglass.compose.SeaGlassCard
 import dev.seaglass.compose.SeaGlassFluidBar
@@ -83,6 +84,7 @@ import dev.seaglass.compose.seaGlass
 import dev.seaglass.compose.seaGlassBackdrop
 import dev.seaglass.core.SeaGlassColorMath
 import dev.seaglass.core.SeaGlassDeviceTier
+import dev.seaglass.core.SeaGlassHdrSupport
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
 import dev.seaglass.core.SeaGlassSdfEngine
@@ -98,6 +100,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        SeaGlassHdrSupport.enableWindowHdr(this, desiredHdrHeadroom = 1.65f)
         setContent {
             SeaGlassShowcaseApp()
         }
@@ -353,10 +356,10 @@ private fun HeaderSpecimenBanner(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "LIQUID SEA GLASS · M3 EXPRESSIVE",
+                        text = "HDR 1.65× · TILT & TAP REFRACTION",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 1.4.sp
+                            letterSpacing = 1.3.sp
                         ),
                         color = LocalContentColor.current.copy(alpha = 0.78f)
                     )
@@ -536,12 +539,34 @@ private fun OpticsLabSection(
         )
     }
 
-    // Coalescing Media & Soundscape Capsule + Play Droplet
+    // Coalescing Media & Soundscape Capsule + Play Droplet with Adaptive Touch-Point Caustic Flare
+    var deckTouchPoint by remember { mutableStateOf<Offset?>(null) }
+    var deckPressed by remember { mutableStateOf(false) }
+    val deckTouchIntensity by animateFloatAsState(
+        targetValue = if (deckPressed) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 620f),
+        label = "deckTouchIntensity"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(deckHeight)
             .onSizeChanged { deckWidthPx = it.width.toFloat() }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val down = event.changes.firstOrNull { it.pressed }
+                        if (down != null) {
+                            deckTouchPoint = down.position
+                            deckPressed = true
+                        } else {
+                            deckPressed = false
+                        }
+                    }
+                }
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -554,7 +579,9 @@ private fun OpticsLabSection(
                 stageState = stageState,
                 material = primaryMaterial,
                 nodesOptional = heroNodes,
-                smoothRadiusDp = 44f
+                smoothRadiusDp = 44f,
+                touchPointInLocal = deckTouchPoint,
+                touchIntensity = deckTouchIntensity
             )
     ) {
         val labelColor = Color(
@@ -913,23 +940,44 @@ private fun FluidCoalescingSection(
         )
     }
 
-    // 1. Hero Interactive Multi-Node SDF Arena at the top of Tab 2
+    // 1. Hero Interactive Multi-Node SDF Arena at the top of Tab 2 with HDR Touch Caustic Flare
+    val tiltState = LocalSeaGlassTiltState.current
+    var arenaTouchPoint by remember { mutableStateOf<Offset?>(null) }
+    var arenaPressed by remember { mutableStateOf(false) }
+    val arenaTouchIntensity by animateFloatAsState(
+        targetValue = if (arenaPressed) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.60f, stiffness = 580f),
+        label = "arenaTouchIntensity"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(arenaHeight)
             .onSizeChanged { arenaWidthPx = it.width.toFloat() }
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    dragOffsetPx += dragAmount
-                }
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        arenaTouchPoint = offset
+                        arenaPressed = true
+                    },
+                    onDragEnd = { arenaPressed = false },
+                    onDragCancel = { arenaPressed = false },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        arenaTouchPoint = change.position
+                        arenaPressed = true
+                        dragOffsetPx += dragAmount
+                    }
+                )
             }
             .seaGlass(
                 stageState = stageState,
                 material = primaryMaterial,
                 nodesOptional = arenaNodes,
-                smoothRadiusDp = smoothBridgeDp
+                smoothRadiusDp = smoothBridgeDp,
+                touchPointInLocal = arenaTouchPoint,
+                touchIntensity = arenaTouchIntensity
             )
     ) {
         val labelColor = Color(
@@ -1044,6 +1092,52 @@ private fun FluidCoalescingSection(
             valueRange = 8f..60f,
             onValueChange = { smoothBridgeDp = it }
         )
+
+        Text(
+            text = String.format(
+                Locale.US,
+                "DEVICE TILT & SIDE REFRACTION · %.0f° SPECULAR RIM",
+                tiltState.specularAngleDegrees
+            ),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.0.sp
+            ),
+            color = LocalContentColor.current.copy(alpha = 0.78f)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SeaGlassPill(
+                label = "Tilt Left ↙",
+                selected = tiltState.manualTiltOverride?.x?.let { it < -0.5f } == true,
+                onClick = { tiltState.manualTiltOverride = Offset(-0.85f, -0.35f) },
+                stageState = stageState,
+                selectedMaterial = primaryMaterial,
+                unselectedMaterial = surfaceMaterial,
+                modifier = Modifier.weight(1f)
+            )
+            SeaGlassPill(
+                label = "Gyro Auto ⊙",
+                selected = tiltState.manualTiltOverride == null,
+                onClick = { tiltState.manualTiltOverride = null },
+                stageState = stageState,
+                selectedMaterial = primaryMaterial,
+                unselectedMaterial = surfaceMaterial,
+                modifier = Modifier.weight(1f)
+            )
+            SeaGlassPill(
+                label = "Tilt Right ↘",
+                selected = tiltState.manualTiltOverride?.x?.let { it > 0.5f } == true,
+                onClick = { tiltState.manualTiltOverride = Offset(0.85f, 0.45f) },
+                stageState = stageState,
+                selectedMaterial = primaryMaterial,
+                unselectedMaterial = surfaceMaterial,
+                modifier = Modifier.weight(1f)
+            )
+        }
     }
 }
 
