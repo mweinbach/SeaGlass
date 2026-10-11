@@ -55,26 +55,40 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Exact energy-conserving spectral channel-split filters ($M_{\text{Red+0.5G}} + M_{\text{0.5G+Blue}} = \mathbf{I}$)
- * used to render physical R / G / B Chromatic Aberration of the refracted backdrop without
- * blowing out backdrop luminance.
+ * Exact 3-channel RGB spectral isolation filters ($M_R + M_G + M_B = \mathbf{I}_{\text{RGB}}$).
+ * When Red, Green, and Blue channels are radially magnified by different factors around the
+ * water-drop's High-Point Crown ($\mathbf{p}_{\text{crown}}$):
+ * $$\Delta\mathbf{p}_{\text{RGB}}(\mathbf{x}) = (s_{\text{RGB}} - 1)\,(\mathbf{x} - \mathbf{p}_{\text{crown}})$$
+ * Displacement is identically 0 at the High Point and grows radially towards the inside of the
+ * edges, producing physical top-down water-drop Chromatic Aberration without seams.
  */
-private val ChromaticRedHalfGreenFilter: ColorFilter = ColorFilter.colorMatrix(
+private val PureRedChannelFilter: ColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(
             1f, 0f, 0f, 0f, 0f,
-            0f, 0.5f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f,
             0f, 0f, 0f, 0f, 0f,
             0f, 0f, 0f, 1f, 0f
         )
     )
 )
 
-private val ChromaticHalfGreenBlueFilter: ColorFilter = ColorFilter.colorMatrix(
+private val PureGreenChannelFilter: ColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(
             0f, 0f, 0f, 0f, 0f,
-            0f, 0.5f, 0f, 0f, 0f,
+            0f, 1f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+)
+
+private val PureBlueChannelFilter: ColorFilter = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            0f, 0f, 0f, 0f, 0f,
+            0f, 0f, 0f, 0f, 0f,
             0f, 0f, 1f, 0f, 0f,
             0f, 0f, 0f, 1f, 0f
         )
@@ -119,7 +133,7 @@ class SeaGlassStageState internal constructor(
                 Shader.TileMode.CLAMP
             ).asComposeRenderEffect()
 
-            val edgeBlur = (target * 0.16f).coerceIn(1.0f, 6.0f)
+            val edgeBlur = (target * 0.15f).coerceIn(1.0f, 5.5f)
             refractedEdgeBackdropLayer.renderEffect = AndroidRenderEffect.createBlurEffect(
                 edgeBlur,
                 edgeBlur,
@@ -178,19 +192,18 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
 }
 
 /**
- * Renders a 100% edge-to-edge transparent **Liquid Sea Glass** surface over [stageState] with:
+ * Renders a **Top-Down 3D Water-Drop × Sanded Sea Glass** surface over [stageState]:
  *
- * 1. **Continuous R / G / B Chromatic Aberration & Tilt-Adaptive Refraction**:
- *    - Combines the subsurface [SeaGlassStageState.frostedBackdropLayer] with two opposing
- *      spectral rays (`ChromaticRedHalfGreenFilter` + `ChromaticHalfGreenBlueFilter` with
- *      `BlendMode.Plus`) on [SeaGlassStageState.refractedEdgeBackdropLayer], displaced dynamically
- *      by 3D device tilt ([LocalSeaGlassTiltState]) and finger contact ([touchPointInLocal]).
- * 2. **3D Micro-Stepped Prismatic Meniscus Bevel Rim**:
- *    - Uses an angular `SweepGradient` that disperses white light into **Prismatic Cyan (`#38F6FF`)
- *      → Specular White (`#FFFFFF`) → Warm Amber (`#FFB848`) → Coral-Magenta (`#FF5E96`)** around
- *      the windward and leeward curves while tapering to `0.02` alpha on the tangential flanks.
- *    - Rendered as a 3-layer micro-stepped 3D bevel (`4.8dp` inner cushion → `2.5dp` prismatic
- *      wall → `1.05dp` specular crest) clipped to `outerAndroidPath` with zero inner ring seams.
+ * 1. **High-Point Dome Crown & Radial Water-Drop Refraction**:
+ *    - Pivoting the Red (`scaleRed`), Green (`scaleGreen`), and Blue (`scaleBlue`) spectral
+ *      refraction passes around `highPointPivot` keeps all three channels aligned at the
+ *      **High Point** (`0px` dispersion at the crown) while separating them radially as the
+ *      water-drop surface slopes downward **towards the inside of the edges**.
+ * 2. **Inward-Feathered Chromatic Meniscus Slope (`0.75dp .. 5.25dp` Inside the Edge)**:
+ *    - Clipped inside `outerAndroidPath`, draws a monotonic inward-feathered prismatic slope
+ *      (`10.5dp`, `6.4dp`, `3.4dp` strokes on `outerAndroidPath`) capped by a clean, neutral
+ *      `0.75dp` water-drop surface-tension contact lip—so chromatic aberration lives strictly
+ *      **on the inside towards the edges** with zero double-border lines and zero outer bleed.
  */
 @Composable
 fun Modifier.seaGlass(
@@ -216,9 +229,18 @@ fun Modifier.seaGlass(
             style = AndroidPaint.Style.FILL
         }
     }
-    val outerSpecularLipPaint = remember {
+    val innerSlopeChromaticPaint = remember {
         AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
             style = AndroidPaint.Style.STROKE
+            strokeCap = AndroidPaint.Cap.ROUND
+            strokeJoin = AndroidPaint.Join.ROUND
+        }
+    }
+    val outerContactLipPaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.STROKE
+            strokeCap = AndroidPaint.Cap.ROUND
+            strokeJoin = AndroidPaint.Join.ROUND
         }
     }
     val sandGrainPaint = remember {
@@ -265,6 +287,7 @@ fun Modifier.seaGlass(
                 )
             }
 
+            // Single exact outer boundary contour (zero inset paths -> zero double borders!)
             SeaGlassContourPathBuilder.buildCoalescingScenePath(
                 nodes = activeNodes,
                 smoothRadiusPx = smoothRadiusPx,
@@ -279,7 +302,7 @@ fun Modifier.seaGlass(
                 0xFF04111E.toInt(),
                 0.72f
             )
-            val shadowAlpha = ((0.12f + frostOpacity * 0.14f) * 255f).toInt().coerceIn(14, 58)
+            val shadowAlpha = ((0.14f + frostOpacity * 0.14f) * 255f).toInt().coerceIn(16, 64)
             ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
             ambientShadowPaint.maskFilter = BlurMaskFilter(11f * density, BlurMaskFilter.Blur.NORMAL)
 
@@ -295,15 +318,15 @@ fun Modifier.seaGlass(
             val windwardCrestRgb = SeaGlassColorMath.lerpOklab(
                 primaryTintArgb,
                 0xFFFFFFFF.toInt(),
-                0.90f
+                0.88f
             ) and 0x00FFFFFF
-            val prismaticCyanRgb = 0x0038F6FF
-            val prismaticCoralRgb = 0x00FF5E96
-            val prismaticAmberRgb = 0x00FFB848
+            val prismaticCyanRgb = 0x0032F4FF
+            val prismaticCoralRgb = 0x00FF5C92
+            val prismaticAmberRgb = 0x00FFB444
             val leewardCausticRgb = SeaGlassColorMath.lerpOklab(
                 secondaryTintArgb,
                 0xFFFFFFFF.toInt(),
-                0.60f
+                0.58f
             ) and 0x00FFFFFF
 
             fun argbWithAlpha(rgb: Int, aFloat: Float): Int {
@@ -314,28 +337,44 @@ fun Modifier.seaGlass(
             val cx = widthPx * 0.5f
             val cy = heightPx * 0.5f
 
-            // Angular Prismatic SweepGradient shared across the 3D micro-stepped bevel strokes:
-            // Splits white light into Cyan (195°) -> Specular White Crest (225°) -> Warm Amber (255°)
-            // on the windward bevel, and Coral (28°) -> Caustic Peak (45°) -> Amber (62°) on the
-            // leeward bevel, vanishing to 0.02 at the 135° and 315° tangents!
-            outerSpecularLipPaint.strokeWidth = 1.05f * density
-            outerSpecularLipPaint.shader = AndroidSweepGradient(
+            // 1. Inward-feathered Prismatic Chromatic Meniscus Slope (drawn at 10.5dp, 6.4dp, 3.4dp
+            // on outerAndroidPath inside clipPath(outerAndroidPath) so it glows 0.75dp..5.25dp INSIDE the edge!)
+            innerSlopeChromaticPaint.shader = AndroidSweepGradient(
                 cx,
                 cy,
                 intArrayOf(
-                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.36f * dispersion),     // 0° Right
-                    argbWithAlpha(prismaticCoralRgb, rimLight * 0.72f * dispersion),    // 28° Leeward Coral Fringe
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.86f),                 // 45° Bottom-Right Caustic Peak
-                    argbWithAlpha(prismaticAmberRgb, rimLight * 0.66f * dispersion),    // 62° Leeward Amber Fringe
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.22f),                 // 90° Bottom
-                    argbWithAlpha(windwardCrestRgb, 0.02f),                             // 135° Bottom-Left Tangent (0!)
-                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.70f * dispersion),     // 195° Windward Cyan Fringe
-                    argbWithAlpha(0x00FFFFFF, (rimLight * 0.96f).coerceAtMost(0.98f)),  // 225° Top-Left Specular Peak
-                    argbWithAlpha(prismaticAmberRgb, rimLight * 0.62f * dispersion),    // 255° Windward Amber Fringe
-                    argbWithAlpha(windwardCrestRgb, 0.02f),                             // 315° Top-Right Tangent (0!)
-                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.36f * dispersion)      // 360° Right
+                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.28f * dispersion),     // 0° Right
+                    argbWithAlpha(prismaticCoralRgb, rimLight * 0.68f * dispersion),    // 28° Inner Leeward Coral
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.78f),                 // 45° Inner Leeward Caustic
+                    argbWithAlpha(prismaticAmberRgb, rimLight * 0.64f * dispersion),    // 62° Inner Leeward Amber
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.16f),                 // 90° Bottom
+                    argbWithAlpha(windwardCrestRgb, 0.01f),                             // 135° Tangent (0!)
+                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.66f * dispersion),     // 195° Inner Windward Cyan
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.82f),                  // 225° Inner Windward Slope
+                    argbWithAlpha(prismaticAmberRgb, rimLight * 0.56f * dispersion),    // 255° Inner Windward Amber
+                    argbWithAlpha(windwardCrestRgb, 0.01f),                             // 315° Tangent (0!)
+                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.28f * dispersion)      // 360° Right
                 ),
                 floatArrayOf(0.00f, 0.08f, 0.125f, 0.17f, 0.25f, 0.375f, 0.54f, 0.625f, 0.71f, 0.875f, 1.00f)
+            )
+
+            // 2. Neutral Water-Drop Surface-Tension Contact Lip (outermost 0.75dp inside clipPath, no rainbow on outside!)
+            outerContactLipPaint.strokeWidth = 1.5f * density
+            outerContactLipPaint.shader = AndroidSweepGradient(
+                cx,
+                cy,
+                intArrayOf(
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.24f),
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.72f),                 // 45° Bottom-Right Caustic
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.20f),
+                    argbWithAlpha(windwardCrestRgb, 0.02f),                             // 135° Tangent (0!)
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.36f),
+                    argbWithAlpha(0x00FFFFFF, (rimLight * 0.94f).coerceAtMost(0.96f)),  // 225° Top-Left Specular Peak
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.42f),
+                    argbWithAlpha(windwardCrestRgb, 0.02f),                             // 315° Tangent (0!)
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.24f)
+                ),
+                floatArrayOf(0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f)
             )
 
             onDrawWithContent {
@@ -394,9 +433,17 @@ fun Modifier.seaGlass(
                 nCanvas.drawPath(outerAndroidPath, ambientShadowPaint)
                 nCanvas.restore()
 
-                // Pass 1: Frosted Interior + Continuous R/G/B Chromatic Aberration Refraction
+                // High Point (Crown) of the 3D Water Drop shifts toward the tilt/touch vector
+                val highPointPivot = touchPointInLocal ?: Offset(
+                    cx + combinedTiltX * minDimPx * 0.18f,
+                    cy + combinedTiltY * minDimPx * 0.18f
+                )
+
+                // Pass 1: Top-Down Water-Drop Refraction + Radial R/G/B Chromatic Aberration
+                // Pivoting R, G, and B scales around highPointPivot guarantees 0px aberration at the
+                // High Point and smoothly increasing R/G/B separation towards the inside of the edges!
                 if (hasBackdrop && activeTier != SeaGlassDeviceTier.LIGHTWEIGHT_TINT) {
-                    val touchLensBoost = 1.0f + touchIntensity * 0.045f
+                    val touchLensBoost = 1.0f + touchIntensity * 0.05f
                     val coreLensScale = (1.0f + (material.ior - 1.0f) * 0.10f * (1.0f - 0.30f * material.coarseness)) *
                         touchLensBoost
 
@@ -404,24 +451,30 @@ fun Modifier.seaGlass(
                         (24f * density) *
                         (1.0f + touchIntensity * 0.35f)
 
-                    val coreRefractX = -combinedTiltX * maxRefractPx * 0.45f
-                    val coreRefractY = -combinedTiltY * maxRefractPx * 0.45f
+                    val coreRefractX = -combinedTiltX * maxRefractPx * 0.42f
+                    val coreRefractY = -combinedTiltY * maxRefractPx * 0.42f
 
-                    val disp = (material.chromaticDispersion + 0.22f).coerceIn(0.18f, 1.1f)
-                    val edgeScaleRed = 1.0f + (material.ior - 1.0f) * (0.16f + disp * 0.10f)
-                    val edgeScaleBlue = 1.0f + (material.ior - 1.0f) * (0.06f - disp * 0.04f)
+                    val disp = (material.chromaticDispersion + 0.24f).coerceIn(0.20f, 1.1f)
+                    val scaleRed = 1.0f + (material.ior - 1.0f) * (0.24f + disp * 0.14f)
+                    val scaleGreen = 1.0f + (material.ior - 1.0f) * 0.16f
+                    val scaleBlue = 1.0f + (material.ior - 1.0f) * (0.08f - disp * 0.08f)
 
-                    val edgeShiftRedX = combinedTiltX * maxRefractPx * (0.95f + disp * 0.75f)
-                    val edgeShiftRedY = combinedTiltY * maxRefractPx * (0.95f + disp * 0.75f)
-                    val edgeShiftBlueX = -combinedTiltX * maxRefractPx * (0.65f + disp * 0.75f)
-                    val edgeShiftBlueY = -combinedTiltY * maxRefractPx * (0.65f + disp * 0.75f)
+                    val shiftRedX = -combinedTiltX * maxRefractPx * (0.72f + disp * 0.55f)
+                    val shiftRedY = -combinedTiltY * maxRefractPx * (0.72f + disp * 0.55f)
+                    val shiftGreenX = -combinedTiltX * maxRefractPx * 0.45f
+                    val shiftGreenY = -combinedTiltY * maxRefractPx * 0.45f
+                    val shiftBlueX = -combinedTiltX * maxRefractPx * (0.18f - disp * 0.55f)
+                    val shiftBlueY = -combinedTiltY * maxRefractPx * (0.18f - disp * 0.55f)
+
+                    val crispRefractWeight = (0.24f + material.transparency * 0.42f + (material.ior - 1.0f) * 0.22f)
+                        .coerceIn(0.18f, 0.68f)
 
                     clipPath(composeOuterPath) {
-                        // 1A: Subsurface Frosted Sea-Glass Backdrop
+                        // 1A: Base Frosted Sea-Glass Subsurface Backdrop
                         scale(
                             scaleX = coreLensScale,
                             scaleY = coreLensScale,
-                            pivot = touchPointInLocal ?: Offset(cx, cy)
+                            pivot = highPointPivot
                         ) {
                             translate(
                                 left = -relOffset.x + coreRefractX,
@@ -431,39 +484,50 @@ fun Modifier.seaGlass(
                             }
                         }
 
-                        // 1B: Continuous R / G / B Chromatic Aberration Refraction Layer
-                        val crispRefractWeight = (0.24f + material.transparency * 0.42f + (material.ior - 1.0f) * 0.22f)
-                            .coerceIn(0.16f, 0.70f)
-
-                        // Ray 1: Red + 0.5 Green Chromatic Refraction
-                        stageState.refractedEdgeBackdropLayer.colorFilter = ChromaticRedHalfGreenFilter
+                        // 1B: 3-Channel Radial Water-Drop Chromatic Dispersion (0 at High Point, max towards edges)
+                        stageState.refractedEdgeBackdropLayer.colorFilter = PureRedChannelFilter
                         stageState.refractedEdgeBackdropLayer.blendMode = BlendMode.SrcOver
-                        stageState.refractedEdgeBackdropLayer.alpha = crispRefractWeight * 0.58f
+                        stageState.refractedEdgeBackdropLayer.alpha = crispRefractWeight * 0.56f
                         scale(
-                            scaleX = edgeScaleRed,
-                            scaleY = edgeScaleRed,
-                            pivot = Offset(cx, cy)
+                            scaleX = scaleRed,
+                            scaleY = scaleRed,
+                            pivot = highPointPivot
                         ) {
                             translate(
-                                left = -relOffset.x + edgeShiftRedX,
-                                top = -relOffset.y + edgeShiftRedY
+                                left = -relOffset.x + shiftRedX,
+                                top = -relOffset.y + shiftRedY
                             ) {
                                 drawLayer(stageState.refractedEdgeBackdropLayer)
                             }
                         }
 
-                        // Ray 2: 0.5 Green + Blue Chromatic Refraction (added via BlendMode.Plus!)
-                        stageState.refractedEdgeBackdropLayer.colorFilter = ChromaticHalfGreenBlueFilter
+                        stageState.refractedEdgeBackdropLayer.colorFilter = PureGreenChannelFilter
                         stageState.refractedEdgeBackdropLayer.blendMode = BlendMode.Plus
-                        stageState.refractedEdgeBackdropLayer.alpha = crispRefractWeight * 0.68f
+                        stageState.refractedEdgeBackdropLayer.alpha = crispRefractWeight * 0.62f
                         scale(
-                            scaleX = edgeScaleBlue,
-                            scaleY = edgeScaleBlue,
-                            pivot = Offset(cx, cy)
+                            scaleX = scaleGreen,
+                            scaleY = scaleGreen,
+                            pivot = highPointPivot
                         ) {
                             translate(
-                                left = -relOffset.x + edgeShiftBlueX,
-                                top = -relOffset.y + edgeShiftBlueY
+                                left = -relOffset.x + shiftGreenX,
+                                top = -relOffset.y + shiftGreenY
+                            ) {
+                                drawLayer(stageState.refractedEdgeBackdropLayer)
+                            }
+                        }
+
+                        stageState.refractedEdgeBackdropLayer.colorFilter = PureBlueChannelFilter
+                        stageState.refractedEdgeBackdropLayer.blendMode = BlendMode.Plus
+                        stageState.refractedEdgeBackdropLayer.alpha = crispRefractWeight * 0.66f
+                        scale(
+                            scaleX = scaleBlue,
+                            scaleY = scaleBlue,
+                            pivot = highPointPivot
+                        ) {
+                            translate(
+                                left = -relOffset.x + shiftBlueX,
+                                top = -relOffset.y + shiftBlueY
                             ) {
                                 drawLayer(stageState.refractedEdgeBackdropLayer)
                             }
@@ -475,25 +539,26 @@ fun Modifier.seaGlass(
                     }
                 }
 
-                // Rotate the SweepGradient rim shader to match live device tilt + finger touch angle
                 rimSweepMatrix.reset()
                 rimSweepMatrix.setRotate(activeLightAngleDeg - 225f, cx, cy)
-                outerSpecularLipPaint.shader?.setLocalMatrix(rimSweepMatrix)
+                innerSlopeChromaticPaint.shader?.setLocalMatrix(rimSweepMatrix)
+                outerContactLipPaint.shader?.setLocalMatrix(rimSweepMatrix)
 
-                // Pass 2: Volumetric Tint, 3D Micro-Stepped Prismatic Bevel Rim, & HDR Touch Wave
-                drawContinuousLiquidSeaGlass(
+                // Pass 2: Volumetric Tint, High-Point Dome Sheen, & Inward-Feathered Chromatic Slope
+                drawWaterDropSeaGlassOptics(
                     composeOuterPath = composeOuterPath,
                     outerAndroidPath = outerAndroidPath,
                     material = material,
                     activeNodes = activeNodes,
                     widthPx = widthPx,
                     heightPx = heightPx,
+                    minDimPx = minDimPx,
                     frostOpacity = frostOpacity,
-                    combinedTiltX = combinedTiltX,
-                    combinedTiltY = combinedTiltY,
+                    highPointPivot = highPointPivot,
                     touchPointInLocal = touchPointInLocal,
                     touchIntensity = touchIntensity,
-                    outerSpecularLipPaint = outerSpecularLipPaint,
+                    innerSlopeChromaticPaint = innerSlopeChromaticPaint,
+                    outerContactLipPaint = outerContactLipPaint,
                     sandGrainPaint = sandGrainPaint,
                     shaderLocalMatrix = shaderLocalMatrix
                 )
@@ -504,19 +569,20 @@ fun Modifier.seaGlass(
         }
 }
 
-private fun DrawScope.drawContinuousLiquidSeaGlass(
+private fun DrawScope.drawWaterDropSeaGlassOptics(
     composeOuterPath: ComposePath,
     outerAndroidPath: Path,
     material: SeaGlassMaterial,
     activeNodes: List<SeaGlassSdfEngine.SdfNode>,
     widthPx: Float,
     heightPx: Float,
+    minDimPx: Float,
     frostOpacity: Float,
-    combinedTiltX: Float,
-    combinedTiltY: Float,
+    highPointPivot: Offset,
     touchPointInLocal: Offset?,
     touchIntensity: Float,
-    outerSpecularLipPaint: AndroidPaint,
+    innerSlopeChromaticPaint: AndroidPaint,
+    outerContactLipPaint: AndroidPaint,
     sandGrainPaint: AndroidPaint,
     shaderLocalMatrix: AndroidMatrix
 ) {
@@ -584,7 +650,7 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
         )
     )
 
-    // 2. Sand-Tumbled Micro-Facet Texture + 3D Micro-Stepped Prismatic Meniscus Bevel
+    // 2. Sand-Tumbled Micro-Facet Texture + Inward-Feathered Prismatic Chromatic Meniscus Slope
     val grainScale = (density * 0.55f).coerceIn(0.8f, 2.2f)
     shaderLocalMatrix.reset()
     shaderLocalMatrix.setScale(grainScale, grainScale)
@@ -601,17 +667,25 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
         nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
     }
 
-    // 3D Micro-Stepped Prismatic Meniscus Bevel (grades smoothly from 2.6dp inward to the outer lip!)
-    outerSpecularLipPaint.strokeWidth = 5.2f * density
-    outerSpecularLipPaint.alpha = 34
-    nCanvas.drawPath(outerAndroidPath, outerSpecularLipPaint)
+    // Inward-feathered Prismatic Chromatic Meniscus Slope (0.75dp..5.25dp inside outerAndroidPath,
+    // zero double border and 100% clipped inside the droplet!)
+    innerSlopeChromaticPaint.strokeWidth = 10.5f * density
+    innerSlopeChromaticPaint.alpha = 22
+    nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
 
-    outerSpecularLipPaint.strokeWidth = 2.8f * density
-    outerSpecularLipPaint.alpha = 74
-    nCanvas.drawPath(outerAndroidPath, outerSpecularLipPaint)
+    innerSlopeChromaticPaint.strokeWidth = 6.4f * density
+    innerSlopeChromaticPaint.alpha = 40
+    nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
+
+    innerSlopeChromaticPaint.strokeWidth = 3.4f * density
+    innerSlopeChromaticPaint.alpha = 64
+    nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
+
+    // Clean, neutral Water-Drop Contact Lip on the outermost 0.75dp (clipped inside outerAndroidPath!)
+    nCanvas.drawPath(outerAndroidPath, outerContactLipPaint)
     nCanvas.restore()
 
-    // 3. HDR Extended-sRGB Specular Headroom & Adaptive Touch-Point Caustic Wave
+    // 3. Water-Drop High-Point Crown Reflection & Adaptive Touch-Point Caustic Wave (HDR Extended-sRGB)
     val hdrWhite = Color(
         red = 1.48f,
         green = 1.50f,
@@ -629,6 +703,23 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
     )
 
     clipPath(composeOuterPath) {
+        // Soft 3D Water-Drop High-Point Crown Reflection
+        val crownRadius = (minDimPx * 0.58f).coerceAtLeast(16f)
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.16f * material.rimChalkiness),
+                    Color(primaryTintArgb).copy(alpha = 0.06f),
+                    Color.Transparent
+                ),
+                center = highPointPivot,
+                radius = crownRadius
+            ),
+            radius = crownRadius,
+            center = highPointPivot,
+            blendMode = BlendMode.Plus
+        )
+
         if (touchPointInLocal != null && touchIntensity > 0.01f) {
             val waveRadius = max(widthPx, heightPx) * (0.32f + 0.38f * touchIntensity)
             drawCircle(
@@ -645,47 +736,6 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
                 center = touchPointInLocal,
                 blendMode = BlendMode.Plus
             )
-
-            drawPath(
-                path = composeOuterPath,
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        hdrWhite.copy(alpha = 0.72f * touchIntensity),
-                        hdrTintGlow.copy(alpha = 0.35f * touchIntensity),
-                        Color.Transparent
-                    ),
-                    center = touchPointInLocal,
-                    radius = waveRadius * 0.95f
-                ),
-                style = Stroke(width = 3.2f * density),
-                blendMode = BlendMode.Plus
-            )
         }
-
-        val crestX = widthPx * (0.5f + combinedTiltX * 0.45f)
-        val crestY = heightPx * (0.5f + combinedTiltY * 0.45f)
-        val causticX = widthPx * (0.5f - combinedTiltX * 0.45f)
-        val causticY = heightPx * (0.5f - combinedTiltY * 0.45f)
-
-        drawPath(
-            path = composeOuterPath,
-            brush = Brush.linearGradient(
-                colorStops = arrayOf(
-                    0.00f to hdrWhite.copy(alpha = 0.38f * material.rimChalkiness),
-                    0.30f to Color.Transparent,
-                    0.70f to Color.Transparent,
-                    1.00f to hdrTintGlow.copy(alpha = 0.34f * material.rimChalkiness)
-                ),
-                start = Offset(crestX, crestY),
-                end = Offset(causticX, causticY)
-            ),
-            style = Stroke(width = 2.2f * density),
-            blendMode = BlendMode.Plus
-        )
     }
-
-    // 4. Razor-crisp 1.05dp outer Prismatic + Specular Crest
-    outerSpecularLipPaint.strokeWidth = 1.05f * density
-    outerSpecularLipPaint.alpha = 255
-    nCanvas.drawPath(outerAndroidPath, outerSpecularLipPaint)
 }
