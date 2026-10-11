@@ -77,6 +77,7 @@ import dev.seaglass.core.SeaGlassSdfEngine
 import dev.seaglass.core.SeaGlassShapeKind
 import dev.seaglass.core.SeaGlassShapeMorph
 import dev.seaglass.core.SeaGlassShapeStage
+import dev.seaglass.core.backend.SeaGlassShaderProgramCache
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -422,11 +423,9 @@ fun SeaGlassTwoElementMorph(
                                     scaleY = s
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && collapsedBlurPx > 0.6f) {
                                         compositingStrategy = CompositingStrategy.Offscreen
-                                        renderEffect = AndroidRenderEffect.createBlurEffect(
-                                            collapsedBlurPx,
-                                            collapsedBlurPx,
-                                            Shader.TileMode.DECAL
-                                        ).asComposeRenderEffect()
+                                        renderEffect = SeaGlassShaderProgramCache
+                                            .obtainBlurRenderEffect(collapsedBlurPx, Shader.TileMode.DECAL)
+                                            .asComposeRenderEffect()
                                     } else {
                                         renderEffect = null
                                     }
@@ -453,11 +452,9 @@ fun SeaGlassTwoElementMorph(
                                     scaleY = propScaleY
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && expandedBlurPx > 0.6f) {
                                         compositingStrategy = CompositingStrategy.Offscreen
-                                        renderEffect = AndroidRenderEffect.createBlurEffect(
-                                            expandedBlurPx,
-                                            expandedBlurPx,
-                                            Shader.TileMode.DECAL
-                                        ).asComposeRenderEffect()
+                                        renderEffect = SeaGlassShaderProgramCache
+                                            .obtainBlurRenderEffect(expandedBlurPx, Shader.TileMode.DECAL)
+                                            .asComposeRenderEffect()
                                     } else {
                                         renderEffect = null
                                     }

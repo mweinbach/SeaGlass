@@ -111,6 +111,8 @@ class VulkanSeaGlassBackend : SeaGlassRendererBackend {
         .allocateDirect(SeaGlassUniformBlock.BYTE_SIZE)
         .order(java.nio.ByteOrder.nativeOrder())
 
+    private var lastSyncedRevision: Long = -1L
+
     override fun describeRenderGraph(frostRadiusPx: Float): SeaGlassRenderGraphDescriptor {
         val levels = when {
             frostRadiusPx <= 2f -> 0
@@ -129,15 +131,20 @@ class VulkanSeaGlassBackend : SeaGlassRendererBackend {
     }
 
     override fun syncUniforms(uniformBlock: SeaGlassUniformBlock) {
+        if (lastSyncedRevision == uniformBlock.contentRevision && stagingBuffer.remaining() == SeaGlassUniformBlock.BYTE_SIZE) {
+            return
+        }
+        lastSyncedRevision = uniformBlock.contentRevision
         stagingBuffer.clear()
         uniformBlock.writeToStd140ByteBuffer(stagingBuffer)
         stagingBuffer.flip()
+        uniformBlock.clearDirtyMask()
     }
 }
 
 /**
  * OpenGL ES 3.0 backend implementation consuming the exact same 256-byte `std140` UBO
- * and compiling `ShaderDialect.GLSL_ES_300` on an active EGL/GLES3 thread.
+ * and compiling `ShaderDialect.GLSL_ES_300` once on an active EGL/GLES3 thread.
  */
 class Gles3SeaGlassBackend : SeaGlassRendererBackend {
     override val type: BackendType = BackendType.OPENGLES_3_0
@@ -151,6 +158,7 @@ class Gles3SeaGlassBackend : SeaGlassRendererBackend {
 
     private var uboHandle: Int = 0
     private var compositeProgramHandle: Int = 0
+    private var lastSyncedRevision: Long = -1L
 
     override fun describeRenderGraph(frostRadiusPx: Float): SeaGlassRenderGraphDescriptor {
         val levels = when {
@@ -170,9 +178,14 @@ class Gles3SeaGlassBackend : SeaGlassRendererBackend {
     }
 
     override fun syncUniforms(uniformBlock: SeaGlassUniformBlock) {
+        if (lastSyncedRevision == uniformBlock.contentRevision && stagingBuffer.remaining() == SeaGlassUniformBlock.BYTE_SIZE) {
+            return
+        }
+        lastSyncedRevision = uniformBlock.contentRevision
         stagingBuffer.clear()
         uniformBlock.writeToStd140ByteBuffer(stagingBuffer)
         stagingBuffer.flip()
+        uniformBlock.clearDirtyMask()
         if (uboHandle != 0) {
             GLES30.glBindBuffer(GLES30.GL_UNIFORM_BUFFER, uboHandle)
             GLES30.glBufferSubData(
@@ -186,10 +199,11 @@ class Gles3SeaGlassBackend : SeaGlassRendererBackend {
     }
 
     /**
-     * Compiles the GLSL ES 3.00 SeaGlass composite shader program and allocates the
+     * Compiles the GLSL ES 3.00 SeaGlass composite shader program once and allocates the
      * 256-byte `std140` Uniform Buffer Object when called on an active EGL/GLES3 context.
      */
     fun initializeGlResourcesIfContextActive(): Boolean {
+        if (compositeProgramHandle != 0) return true
         val vShader = compileShader(GLES30.GL_VERTEX_SHADER, shaderBundle.vertexShaderSource ?: return false)
         val fShader = compileShader(GLES30.GL_FRAGMENT_SHADER, shaderBundle.seaGlassCompositeFragmentSource)
         if (vShader == 0 || fShader == 0) return false

@@ -1,11 +1,13 @@
 package dev.seaglass.core
 
 import dev.seaglass.core.backend.SeaGlassShaderCompiler
+import dev.seaglass.core.backend.SeaGlassShaderProgramCache
 import dev.seaglass.core.backend.SeaGlassUniformBlock
 import dev.seaglass.core.backend.ShaderDialect
 import dev.seaglass.core.backend.VulkanSeaGlassBackend
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
@@ -532,5 +534,78 @@ class SeaGlassCoreTest {
             "Greater glass depth must not bleach lightness toward white (deepL=${deepLab.l} <= shallowL=${shallowLab.l})",
             deepLab.l <= shallowLab.l
         )
+    }
+
+    @Test
+    fun shaderProgramCacheAndUniformDeltaTrackingOptimizeGpuCycles() {
+        // 1. Verify compile-once memoization per dialect & device warm-up
+        for (dialect in ShaderDialect.entries) {
+            val first = SeaGlassShaderCompiler.compileForDialect(dialect)
+            val second = SeaGlassShaderCompiler.compileForDialect(dialect)
+            assertSame("Dialect $dialect must compile once and return cached bundle", first, second)
+            assertTrue(
+                "Dialect $dialect must include analytical single-pass sgRoundedBoxSdfAndGrad",
+                first.seaGlassCompositeFragmentSource.contains("sgRoundedBoxSdfAndGrad")
+            )
+        }
+
+        val warmed = SeaGlassShaderProgramCache.warmUpForDevice(null)
+        assertTrue(SeaGlassShaderProgramCache.isWarmedUp)
+        assertSame(warmed, SeaGlassShaderProgramCache.warmUpForDevice(null))
+
+        // 2. Verify dirty-slot bitmask delta tracking in SeaGlassUniformBlock
+        val block = SeaGlassUniformBlock()
+        val mat = SeaGlassPalette.CobaltTide.primaryGlass
+        block.pack(
+            widthPx = 500f,
+            heightPx = 160f,
+            backdropOffsetX = 24f,
+            backdropOffsetY = 480f,
+            material = mat,
+            density = 2.75f,
+            nodes = emptyList(),
+            smoothRadiusPx = 28f,
+            lightDirX = -0.5f,
+            lightDirY = -0.7f,
+            lightDirZ = 0.5f
+        )
+        assertEquals(SeaGlassUniformBlock.ALL_SLOTS_MASK, block.dirtySlotsMask)
+        val rev1 = block.contentRevision
+        block.clearDirtyMask()
+        assertEquals(0, block.dirtySlotsMask)
+
+        // Re-packing identical values must leave dirtySlotsMask == 0 and revision unchanged
+        block.pack(
+            widthPx = 500f,
+            heightPx = 160f,
+            backdropOffsetX = 24f,
+            backdropOffsetY = 480f,
+            material = mat,
+            density = 2.75f,
+            nodes = emptyList(),
+            smoothRadiusPx = 28f,
+            lightDirX = -0.5f,
+            lightDirY = -0.7f,
+            lightDirZ = 0.5f
+        )
+        assertEquals("Unchanged frame must produce 0 dirty uniform slots", 0, block.dirtySlotsMask)
+        assertEquals(rev1, block.contentRevision)
+
+        // Changing only light tilt direction must dirty ONLY slot 3 (uLightAndMeta)
+        block.pack(
+            widthPx = 500f,
+            heightPx = 160f,
+            backdropOffsetX = 24f,
+            backdropOffsetY = 480f,
+            material = mat,
+            density = 2.75f,
+            nodes = emptyList(),
+            smoothRadiusPx = 28f,
+            lightDirX = 0.35f,
+            lightDirY = -0.65f,
+            lightDirZ = 0.5f
+        )
+        assertEquals("Tilt-only update must only dirty slot 3 (uLightAndMeta)", 1 shl 3, block.dirtySlotsMask)
+        assertEquals(rev1 + 1, block.contentRevision)
     }
 }

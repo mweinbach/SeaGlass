@@ -34,7 +34,49 @@ class SeaGlassUniformBlock {
     val data: FloatArray = FloatArray(FLOAT_COUNT)
 
     /**
-     * Packs the current frame's optical material and SDF coalescing nodes into the `std140` layout.
+     * 16-bit bitmask (`bit k` = `vec4` slot `k` in `0..15`) indicating which `vec4` uniform slots
+     * changed during the most recent [pack] call. Allows GPU backends (AGSL, GLES3, Vulkan) to
+     * skip redundant JNI uniform uploads or UBO transfers when `dirtySlotsMask == 0`.
+     */
+    var dirtySlotsMask: Int = ALL_SLOTS_MASK
+        private set
+
+    /**
+     * Monotonically increasing revision counter incremented only when at least one uniform slot changes.
+     */
+    var contentRevision: Long = 0L
+        private set
+
+    private var initialized: Boolean = false
+    private val scratchRgb = FloatArray(3)
+
+    private fun writeVec4Slot(slotIndex: Int, x: Float, y: Float, z: Float, w: Float): Int {
+        val base = slotIndex shl 2
+        if (initialized &&
+            data[base] == x &&
+            data[base + 1] == y &&
+            data[base + 2] == z &&
+            data[base + 3] == w
+        ) {
+            return 0
+        }
+        data[base] = x
+        data[base + 1] = y
+        data[base + 2] = z
+        data[base + 3] = w
+        return 1 shl slotIndex
+    }
+
+    /**
+     * Marks all 16 `vec4` slots clean after a backend has synced them to the GPU.
+     */
+    fun clearDirtyMask() {
+        dirtySlotsMask = 0
+    }
+
+    /**
+     * Packs the current frame's optical material and SDF coalescing nodes into the `std140` layout,
+     * updating [dirtySlotsMask] and [contentRevision] only for slots whose values changed.
      */
     fun pack(
         widthPx: Float,
@@ -56,83 +98,112 @@ class SeaGlassUniformBlock {
         val lLen = sqrt(lightDirX * lightDirX + lightDirY * lightDirY + lightDirZ * lightDirZ)
             .coerceAtLeast(1e-4f)
 
+        var mask = 0
+
         // Slot 0: uResolutionAndOrigin
-        data[0] = widthPx.coerceAtLeast(1f)
-        data[1] = heightPx.coerceAtLeast(1f)
-        data[2] = backdropOffsetX
-        data[3] = backdropOffsetY
+        mask = mask or writeVec4Slot(
+            0,
+            widthPx.coerceAtLeast(1f),
+            heightPx.coerceAtLeast(1f),
+            backdropOffsetX,
+            backdropOffsetY
+        )
 
         // Slot 1: uOpticsPrimary
-        data[4] = material.tintDensity
-        data[5] = material.coarseness
-        data[6] = material.ior
-        data[7] = material.chromaticDispersion
+        mask = mask or writeVec4Slot(
+            1,
+            material.tintDensity,
+            material.coarseness,
+            material.ior,
+            material.chromaticDispersion
+        )
 
         // Slot 2: uOpticsSecondary
-        data[8] = material.rimChalkiness
-        data[9] = thicknessPx
-        data[10] = material.cornerSmoothing
-        data[11] = smoothRadiusPx.coerceAtLeast(0f)
+        mask = mask or writeVec4Slot(
+            2,
+            material.rimChalkiness,
+            thicknessPx,
+            material.cornerSmoothing,
+            smoothRadiusPx.coerceAtLeast(0f)
+        )
 
         // Slot 3: uLightAndMeta
         val activeCount = min(nodes.size, SeaGlassSdfEngine.MAX_SDF_NODES).coerceAtLeast(1)
-        data[12] = lightDirX / lLen
-        data[13] = lightDirY / lLen
-        data[14] = lightDirZ / lLen
-        data[15] = activeCount.toFloat()
+        mask = mask or writeVec4Slot(
+            3,
+            lightDirX / lLen,
+            lightDirY / lLen,
+            lightDirZ / lLen,
+            activeCount.toFloat()
+        )
 
         // Slots 4..15: Node arrays (up to 4 nodes)
         for (i in 0 until SeaGlassSdfEngine.MAX_SDF_NODES) {
-            val boundsOffset = OFFSET_NODE_BOUNDS + i * 4
-            val cornersOffset = OFFSET_NODE_CORNERS + i * 4
-            val tintsOffset = OFFSET_NODE_TINTS + i * 4
+            val boundsSlot = 4 + i
+            val cornersSlot = 8 + i
+            val tintsSlot = 12 + i
 
             if (i < nodes.size) {
                 val node = nodes[i]
-                data[boundsOffset] = node.centerX
-                data[boundsOffset + 1] = node.centerY
-                data[boundsOffset + 2] = node.halfWidth
-                data[boundsOffset + 3] = node.halfHeight
-
-                data[cornersOffset] = node.cornerTopRight
-                data[cornersOffset + 1] = node.cornerBottomRight
-                data[cornersOffset + 2] = node.cornerBottomLeft
-                data[cornersOffset + 3] = node.cornerTopLeft
-
-                SeaGlassColorMath.argbToLinearRgbFloats(node.tintColorArgb, data, tintsOffset)
-                data[tintsOffset + 3] = node.thicknessPx
+                mask = mask or writeVec4Slot(
+                    boundsSlot,
+                    node.centerX,
+                    node.centerY,
+                    node.halfWidth,
+                    node.halfHeight
+                )
+                mask = mask or writeVec4Slot(
+                    cornersSlot,
+                    node.cornerTopRight,
+                    node.cornerBottomRight,
+                    node.cornerBottomLeft,
+                    node.cornerTopLeft
+                )
+                SeaGlassColorMath.argbToLinearRgbFloats(node.tintColorArgb, scratchRgb, 0)
+                mask = mask or writeVec4Slot(
+                    tintsSlot,
+                    scratchRgb[0],
+                    scratchRgb[1],
+                    scratchRgb[2],
+                    node.thicknessPx
+                )
             } else if (i == 0) {
                 // Default single node covering the full viewport if empty list passed
                 val cornerPx = material.cornerRadiusDp * d
-                data[boundsOffset] = widthPx * 0.5f
-                data[boundsOffset + 1] = heightPx * 0.5f
-                data[boundsOffset + 2] = widthPx * 0.5f
-                data[boundsOffset + 3] = heightPx * 0.5f
-
-                data[cornersOffset] = cornerPx
-                data[cornersOffset + 1] = cornerPx
-                data[cornersOffset + 2] = cornerPx
-                data[cornersOffset + 3] = cornerPx
-
-                SeaGlassColorMath.argbToLinearRgbFloats(material.tintColorArgb, data, tintsOffset)
-                data[tintsOffset + 3] = thicknessPx
+                mask = mask or writeVec4Slot(
+                    boundsSlot,
+                    widthPx * 0.5f,
+                    heightPx * 0.5f,
+                    widthPx * 0.5f,
+                    heightPx * 0.5f
+                )
+                mask = mask or writeVec4Slot(
+                    cornersSlot,
+                    cornerPx,
+                    cornerPx,
+                    cornerPx,
+                    cornerPx
+                )
+                SeaGlassColorMath.argbToLinearRgbFloats(material.tintColorArgb, scratchRgb, 0)
+                mask = mask or writeVec4Slot(
+                    tintsSlot,
+                    scratchRgb[0],
+                    scratchRgb[1],
+                    scratchRgb[2],
+                    thicknessPx
+                )
             } else {
                 // Inactive slot pushed far outside the field
-                data[boundsOffset] = -1e5f
-                data[boundsOffset + 1] = -1e5f
-                data[boundsOffset + 2] = 0f
-                data[boundsOffset + 3] = 0f
-
-                data[cornersOffset] = 0f
-                data[cornersOffset + 1] = 0f
-                data[cornersOffset + 2] = 0f
-                data[cornersOffset + 3] = 0f
-
-                data[tintsOffset] = 1f
-                data[tintsOffset + 1] = 1f
-                data[tintsOffset + 2] = 1f
-                data[tintsOffset + 3] = thicknessPx
+                mask = mask or writeVec4Slot(boundsSlot, -1e5f, -1e5f, 0f, 0f)
+                mask = mask or writeVec4Slot(cornersSlot, 0f, 0f, 0f, 0f)
+                mask = mask or writeVec4Slot(tintsSlot, 1f, 1f, 1f, thicknessPx)
             }
+        }
+
+        initialized = true
+        dirtySlotsMask = dirtySlotsMask or mask
+        if (mask != 0) {
+            contentRevision++
         }
     }
 
@@ -165,6 +236,7 @@ class SeaGlassUniformBlock {
         const val VEC4_COUNT = 16
         const val FLOAT_COUNT = VEC4_COUNT * 4 // 64 floats
         const val BYTE_SIZE = FLOAT_COUNT * 4   // 256 bytes
+        const val ALL_SLOTS_MASK = 0xFFFF
 
         const val OFFSET_RESOLUTION_AND_ORIGIN = 0
         const val OFFSET_OPTICS_PRIMARY = 4

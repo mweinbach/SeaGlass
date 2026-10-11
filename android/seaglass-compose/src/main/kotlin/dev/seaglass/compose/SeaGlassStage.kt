@@ -55,6 +55,7 @@ import dev.seaglass.core.SeaGlassDeviceTier
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSandGrainTexture
 import dev.seaglass.core.SeaGlassSdfEngine
+import dev.seaglass.core.backend.SeaGlassShaderProgramCache
 import dev.seaglass.core.backend.SeaGlassUniformBlock
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -85,6 +86,14 @@ enum class SeaGlassContentRole {
 /**
  * Exact 3-channel RGB spectral isolation filters ($M_R + M_G + M_B = \mathbf{I}_{\text{RGB}}$).
  */
+private val InnerSlopeStopPositions = floatArrayOf(
+    0.00f, 0.08f, 0.125f, 0.17f, 0.25f, 0.375f, 0.50f, 0.625f, 0.71f, 0.875f, 1.00f
+)
+
+private val OuterLipStopPositions = floatArrayOf(
+    0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f
+)
+
 private val PureRedChannelFilter: ColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(
@@ -148,55 +157,57 @@ class SeaGlassStageState internal constructor(
     var requestedFrostPx: Float by mutableFloatStateOf(72f)
         internal set
 
+    var needsDispersionLayers: Boolean = false
+        internal set
+
     private var appliedFrostPx: Float = -1f
+    private var appliedDispersionBlurPx: Float = -1f
 
     internal fun ensureStageBlurUpdated(frostPx: Float) {
         val target = frostPx.coerceAtLeast(1.0f)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && abs(target - appliedFrostPx) > 0.5f) {
-            appliedFrostPx = target
-            // Couple edge refraction diffusion to the glass's sand-frosted diffusion so
-            // frosted sea glass diffuses light across both its interior and its curved bevel,
-            // while clear untreated glass (target -> 1px) remains crystal-clear everywhere.
-            val edgeTarget = (target * 0.74f).coerceAtLeast(1.0f)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (abs(target - appliedFrostPx) > 0.5f) {
+                appliedFrostPx = target
+                val cachedMainBlur = SeaGlassShaderProgramCache
+                    .obtainBlurRenderEffect(target, Shader.TileMode.CLAMP)
+                    .asComposeRenderEffect()
 
-            val edgeRenderEffect = AndroidRenderEffect.createBlurEffect(
-                edgeTarget,
-                edgeTarget,
-                Shader.TileMode.CLAMP
-            ).asComposeRenderEffect()
+                frostedBackdropLayer.clip = true
+                frostedBackdropLayer.compositingStrategy = CompositingStrategy.Auto
+                frostedBackdropLayer.renderEffect = cachedMainBlur
+                frostedBackdropLayer.compositingStrategy = CompositingStrategy.Offscreen
+            }
 
-            refractedRedLayer.compositingStrategy = CompositingStrategy.Auto
-            refractedRedLayer.colorFilter = PureRedChannelFilter
-            refractedRedLayer.blendMode = BlendMode.SrcOver
-            refractedRedLayer.alpha = 1f
-            refractedRedLayer.renderEffect = edgeRenderEffect
-            refractedRedLayer.compositingStrategy = CompositingStrategy.Offscreen
+            if (needsDispersionLayers) {
+                val edgeTarget = (target * 0.74f).coerceAtLeast(1.0f)
+                if (abs(edgeTarget - appliedDispersionBlurPx) > 0.5f) {
+                    appliedDispersionBlurPx = edgeTarget
+                    val edgeRenderEffect = SeaGlassShaderProgramCache
+                        .obtainBlurRenderEffect(edgeTarget, Shader.TileMode.CLAMP)
+                        .asComposeRenderEffect()
 
-            refractedGreenLayer.compositingStrategy = CompositingStrategy.Auto
-            refractedGreenLayer.colorFilter = PureGreenChannelFilter
-            refractedGreenLayer.blendMode = BlendMode.Plus
-            refractedGreenLayer.alpha = 1f
-            refractedGreenLayer.renderEffect = edgeRenderEffect
-            refractedGreenLayer.compositingStrategy = CompositingStrategy.Offscreen
+                    refractedRedLayer.compositingStrategy = CompositingStrategy.Auto
+                    refractedRedLayer.colorFilter = PureRedChannelFilter
+                    refractedRedLayer.blendMode = BlendMode.SrcOver
+                    refractedRedLayer.alpha = 1f
+                    refractedRedLayer.renderEffect = edgeRenderEffect
+                    refractedRedLayer.compositingStrategy = CompositingStrategy.Offscreen
 
-            refractedBlueLayer.compositingStrategy = CompositingStrategy.Auto
-            refractedBlueLayer.colorFilter = PureBlueChannelFilter
-            refractedBlueLayer.blendMode = BlendMode.Plus
-            refractedBlueLayer.alpha = 1f
-            refractedBlueLayer.renderEffect = edgeRenderEffect
-            refractedBlueLayer.compositingStrategy = CompositingStrategy.Offscreen
+                    refractedGreenLayer.compositingStrategy = CompositingStrategy.Auto
+                    refractedGreenLayer.colorFilter = PureGreenChannelFilter
+                    refractedGreenLayer.blendMode = BlendMode.Plus
+                    refractedGreenLayer.alpha = 1f
+                    refractedGreenLayer.renderEffect = edgeRenderEffect
+                    refractedGreenLayer.compositingStrategy = CompositingStrategy.Offscreen
 
-            // Crucial: GraphicsLayerV29.setRenderEffect forgot to call updateLayerProperties(),
-            // so toggling compositingStrategy to Offscreen AFTER setting renderEffect forces
-            // RenderNode blur to flush whenever frostPx changes!
-            frostedBackdropLayer.clip = true
-            frostedBackdropLayer.compositingStrategy = CompositingStrategy.Auto
-            frostedBackdropLayer.renderEffect = AndroidRenderEffect.createBlurEffect(
-                target,
-                target,
-                Shader.TileMode.CLAMP
-            ).asComposeRenderEffect()
-            frostedBackdropLayer.compositingStrategy = CompositingStrategy.Offscreen
+                    refractedBlueLayer.compositingStrategy = CompositingStrategy.Auto
+                    refractedBlueLayer.colorFilter = PureBlueChannelFilter
+                    refractedBlueLayer.blendMode = BlendMode.Plus
+                    refractedBlueLayer.alpha = 1f
+                    refractedBlueLayer.renderEffect = edgeRenderEffect
+                    refractedBlueLayer.compositingStrategy = CompositingStrategy.Offscreen
+                }
+            }
         }
     }
 }
@@ -232,6 +243,10 @@ fun rememberSeaGlassStageState(): SeaGlassStageState {
 /**
  * Captures the composable's draw hierarchy into [stageState]'s GPU [GraphicsLayer]s so
  * foreground [Modifier.seaGlass] elements can refract, frost, and tint it edge-to-edge in real time.
+ *
+ * Only records the 3 R/G/B dispersion layers when an active clear-glass surface requests
+ * multi-channel chromatic dispersion ([SeaGlassStageState.needsDispersionLayers]), eliminating
+ * 3 full-screen offscreen `RenderNode` passes per frame during normal sand-frosted rendering.
  */
 fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
     return this
@@ -251,14 +266,16 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
             stageState.frostedBackdropLayer.record(size = stageIntSize) {
                 drawLayer(stageState.backdropLayer)
             }
-            stageState.refractedRedLayer.record(size = stageIntSize) {
-                drawLayer(stageState.backdropLayer)
-            }
-            stageState.refractedGreenLayer.record(size = stageIntSize) {
-                drawLayer(stageState.backdropLayer)
-            }
-            stageState.refractedBlueLayer.record(size = stageIntSize) {
-                drawLayer(stageState.backdropLayer)
+            if (stageState.needsDispersionLayers) {
+                stageState.refractedRedLayer.record(size = stageIntSize) {
+                    drawLayer(stageState.backdropLayer)
+                }
+                stageState.refractedGreenLayer.record(size = stageIntSize) {
+                    drawLayer(stageState.backdropLayer)
+                }
+                stageState.refractedBlueLayer.record(size = stageIntSize) {
+                    drawLayer(stageState.backdropLayer)
+                }
             }
             stageState.hasRecordedBackdrop = true
             stageState.recordTick++
@@ -307,11 +324,13 @@ fun Modifier.seaGlass(
     val deviceCornerSpec = LocalSeaGlassDeviceCornerSpec.current
     val parentContainerScope = LocalSeaGlassContainerCornerScope.current
     val activeTier = remember(context, tierOverride) {
-        tierOverride ?: SeaGlassDeviceTier.detect(context)
+        tierOverride ?: SeaGlassShaderProgramCache.cachedDeviceTier ?: SeaGlassDeviceTier.detect(context)
     }
 
     val uniformBlock = remember { SeaGlassUniformBlock() }
     val outerAndroidPath = remember { Path() }
+    val slopeColors = remember { IntArray(11) }
+    val lipColors = remember { IntArray(9) }
 
     val ambientShadowPaint = remember {
         AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
@@ -475,10 +494,10 @@ fun Modifier.seaGlass(
             )
             val shadowAlpha = ((0.08f + sandWear * 0.14f) * 255f).toInt().coerceIn(10, 52)
             ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
-            ambientShadowPaint.maskFilter = BlurMaskFilter(11f * density, BlurMaskFilter.Blur.NORMAL)
+            ambientShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(11f * density)
 
             val rimLight = (0.36f + material.rimChalkiness * 0.52f).coerceIn(0.20f, 0.92f)
-            // As sand coarseness increases, prism dispersion diffuses into a soft velvet glass rim
+            // As sand coarseness increases, prism dispersion diffuses into a soft sand-frosted glass rim
             val effectiveDispersion = (material.chromaticDispersion * (1f - 0.72f * material.coarseness))
                 .coerceIn(0.0f, 0.85f)
             val primaryTintArgb = activeNodes.firstOrNull()?.tintColorArgb ?: material.tintColorArgb
@@ -518,47 +537,40 @@ fun Modifier.seaGlass(
             val cx = widthPx * 0.5f
             val cy = heightPx * 0.5f
 
-            // 1. Gaussian-Feathered Glass Bevel Slope: uses BlurMaskFilter so the bevel light
-            // tapers smoothly from the curved edge and corners into the interior with zero step lines.
+            // 1. Gaussian-Feathered Glass Bevel Slope: uses cached BlurMaskFilter and pre-allocated
+            // stop arrays so bevel light tapers smoothly into the interior with zero step lines.
             innerSlopeChromaticPaint.strokeWidth = 8.0f * density
-            innerSlopeChromaticPaint.maskFilter = BlurMaskFilter(6.5f * density, BlurMaskFilter.Blur.NORMAL)
-            innerSlopeChromaticPaint.shader = AndroidSweepGradient(
-                cx,
-                cy,
-                intArrayOf(
-                    argbWithAlpha(coolDispersionRgb, rimLight * 0.30f),
-                    argbWithAlpha(warmDispersionRgb, rimLight * 0.36f),
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.48f),
-                    argbWithAlpha(warmDispersionRgb, rimLight * 0.32f),
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.12f),
-                    argbWithAlpha(windwardCrestRgb, 0.04f),
-                    argbWithAlpha(coolDispersionRgb, rimLight * 0.38f),
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.56f),
-                    argbWithAlpha(warmDispersionRgb, rimLight * 0.30f),
-                    argbWithAlpha(windwardCrestRgb, 0.04f),
-                    argbWithAlpha(coolDispersionRgb, rimLight * 0.30f)
-                ),
-                floatArrayOf(0.00f, 0.08f, 0.125f, 0.17f, 0.25f, 0.375f, 0.50f, 0.625f, 0.71f, 0.875f, 1.00f)
-            )
+            innerSlopeChromaticPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(6.5f * density)
+            slopeColors[0] = argbWithAlpha(coolDispersionRgb, rimLight * 0.30f)
+            slopeColors[1] = argbWithAlpha(warmDispersionRgb, rimLight * 0.36f)
+            slopeColors[2] = argbWithAlpha(leewardCausticRgb, rimLight * 0.48f)
+            slopeColors[3] = argbWithAlpha(warmDispersionRgb, rimLight * 0.32f)
+            slopeColors[4] = argbWithAlpha(leewardCausticRgb, rimLight * 0.12f)
+            slopeColors[5] = argbWithAlpha(windwardCrestRgb, 0.04f)
+            slopeColors[6] = argbWithAlpha(coolDispersionRgb, rimLight * 0.38f)
+            slopeColors[7] = argbWithAlpha(windwardCrestRgb, rimLight * 0.56f)
+            slopeColors[8] = argbWithAlpha(warmDispersionRgb, rimLight * 0.30f)
+            slopeColors[9] = argbWithAlpha(windwardCrestRgb, 0.04f)
+            slopeColors[10] = argbWithAlpha(coolDispersionRgb, rimLight * 0.30f)
+            innerSlopeChromaticPaint.shader = AndroidSweepGradient(cx, cy, slopeColors, InnerSlopeStopPositions)
 
-            // 2. Soft Fresnel / Velvet Edge Contact Lip (outermost 0.6dp inside clipPath)
+            // 2. Soft Fresnel Edge Contact Lip (outermost 0.6dp inside clipPath)
             outerContactLipPaint.strokeWidth = 1.2f * density
-            outerContactLipPaint.shader = AndroidSweepGradient(
-                cx,
-                cy,
-                intArrayOf(
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.44f),
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.48f),
-                    argbWithAlpha(leewardCausticRgb, rimLight * 0.16f),
-                    argbWithAlpha(windwardCrestRgb, 0.05f),
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.50f),
-                    argbWithAlpha(0x00FFFFFF, (rimLight * (0.64f - 0.18f * material.coarseness)).coerceIn(0.16f, 0.68f)),
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.32f),
-                    argbWithAlpha(windwardCrestRgb, 0.05f),
-                    argbWithAlpha(windwardCrestRgb, rimLight * 0.44f)
-                ),
-                floatArrayOf(0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f)
-            )
+            lipColors[0] = argbWithAlpha(windwardCrestRgb, rimLight * 0.44f)
+            lipColors[1] = argbWithAlpha(leewardCausticRgb, rimLight * 0.48f)
+            lipColors[2] = argbWithAlpha(leewardCausticRgb, rimLight * 0.16f)
+            lipColors[3] = argbWithAlpha(windwardCrestRgb, 0.05f)
+            lipColors[4] = argbWithAlpha(windwardCrestRgb, rimLight * 0.50f)
+            lipColors[5] = argbWithAlpha(0x00FFFFFF, (rimLight * (0.64f - 0.18f * material.coarseness)).coerceIn(0.16f, 0.68f))
+            lipColors[6] = argbWithAlpha(windwardCrestRgb, rimLight * 0.32f)
+            lipColors[7] = argbWithAlpha(windwardCrestRgb, 0.05f)
+            lipColors[8] = argbWithAlpha(windwardCrestRgb, rimLight * 0.44f)
+            outerContactLipPaint.shader = AndroidSweepGradient(cx, cy, lipColors, OuterLipStopPositions)
+
+            val dispPx = material.chromaticDispersion *
+                (1.8f * density) *
+                (1.0f - 0.82f * material.coarseness)
+            val useDispersionChannels = dispPx > 0.35f && sandWear < 0.28f
 
             onDrawWithContent {
                 val tick = stageState?.recordTick ?: 0
@@ -570,6 +582,9 @@ fun Modifier.seaGlass(
                 }
 
                 if (stageState != null) {
+                    if (useDispersionChannels) {
+                        stageState.needsDispersionLayers = true
+                    }
                     stageState.requestedFrostPx = effectiveFrostPx
                     stageState.ensureStageBlurUpdated(effectiveFrostPx)
                 }

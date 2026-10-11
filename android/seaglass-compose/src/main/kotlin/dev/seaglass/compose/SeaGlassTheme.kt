@@ -31,6 +31,7 @@ import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassDeviceTier
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
+import dev.seaglass.core.backend.SeaGlassShaderProgramCache
 
 /**
  * Material 3 Expressive dual-spring motion scheme for SeaGlass.
@@ -195,6 +196,9 @@ fun SeaGlassTheme(
     val context = LocalContext.current
     val view = LocalView.current
     val rootInsets = view.rootWindowInsets
+    remember(context) {
+        SeaGlassShaderProgramCache.warmUpForDevice(context)
+    }
     val detectedCornerSpec = remember(context, rootInsets, deviceCornerProfile) {
         SeaGlassCornerAdaptationSolver.detectDeviceCorners(
             context = context,
