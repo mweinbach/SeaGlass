@@ -275,13 +275,13 @@ fun SeaGlassTwoElementMorph(
         val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
 
         val collapsedPlaceables = subcompose("collapsed_measure") {
-            CompositionLocalProvider(LocalContentColor provides contentColor) {
+            ProvideSeaGlassLegibleContent(contentColor = contentColor) {
                 Box(content = collapsedContent)
             }
         }.map { it.measure(looseConstraints) }
 
         val expandedPlaceables = subcompose("expanded_measure") {
-            CompositionLocalProvider(LocalContentColor provides contentColor) {
+            ProvideSeaGlassLegibleContent(contentColor = contentColor) {
                 Box(content = expandedContent)
             }
         }.map { it.measure(looseConstraints) }
@@ -298,7 +298,7 @@ fun SeaGlassTwoElementMorph(
         val animatedHeightPx = (cH + (eH - cH) * spatialProgress).roundToInt().coerceAtLeast(32)
 
         val hostPlaceables = subcompose("morph_host") {
-            CompositionLocalProvider(LocalContentColor provides contentColor) {
+            ProvideSeaGlassLegibleContent(contentColor = contentColor) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -638,7 +638,7 @@ fun SeaGlassMorphingButton(
 
     var touchOffset by remember { mutableStateOf<Offset?>(null) }
 
-    CompositionLocalProvider(LocalContentColor provides contentColor) {
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = modifier
@@ -1285,7 +1285,7 @@ fun SeaGlassMultiShapeMorph(
     var touchOffset by remember { mutableStateOf<Offset?>(null) }
     val currentDisplayShape = shapes[safeIndex]
 
-    CompositionLocalProvider(LocalContentColor provides contentColor) {
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = modifier

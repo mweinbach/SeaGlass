@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,9 +46,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -62,6 +65,39 @@ import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSdfEngine
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+/**
+ * Provides both [LocalContentColor] and an optical micro-contrast halo [Shadow] in [LocalTextStyle]
+ * so typography on semi-transparent blurred sea-glass backgrounds remains crisp and legible
+ * regardless of background luminance shifts.
+ */
+@Composable
+fun ProvideSeaGlassLegibleContent(
+    contentColor: Color,
+    content: @Composable () -> Unit
+) {
+    val isDarkInk = contentColor.luminance() < 0.45f
+    val haloColor = if (isDarkInk) {
+        Color.White.copy(alpha = 0.68f)
+    } else {
+        Color(0xFF04101C).copy(alpha = 0.74f)
+    }
+    val baseStyle = LocalTextStyle.current
+    val legibleStyle = remember(baseStyle, haloColor) {
+        baseStyle.copy(
+            shadow = Shadow(
+                color = haloColor,
+                offset = Offset(0f, 1.2f),
+                blurRadius = 6.5f
+            )
+        )
+    }
+    CompositionLocalProvider(
+        LocalContentColor provides contentColor,
+        LocalTextStyle provides legibleStyle,
+        content = content
+    )
+}
 
 /**
  * Non-consuming pointer observer that tracks the live 2D touch point `(touchX, touchY)` and
@@ -159,7 +195,7 @@ fun SeaGlassSurface(
         Modifier
     }
 
-    CompositionLocalProvider(LocalContentColor provides contentColor) {
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
         Box(
             contentAlignment = contentAlignment,
             modifier = modifier
@@ -180,7 +216,8 @@ fun SeaGlassSurface(
                     stageState = stageState,
                     material = effectiveMaterial,
                     touchPointInLocal = lastTouchOffset,
-                    touchIntensity = pressFraction
+                    touchIntensity = pressFraction,
+                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS
                 )
                 .padding(contentPadding),
             content = content
@@ -246,7 +283,7 @@ fun SeaGlassButton(
         )
     }
 
-    CompositionLocalProvider(LocalContentColor provides contentColor) {
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
@@ -272,7 +309,8 @@ fun SeaGlassButton(
                     stageState = stageState,
                     material = animatedMaterial,
                     touchPointInLocal = lastTouchOffset,
-                    touchIntensity = pressFraction
+                    touchIntensity = pressFraction,
+                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS
                 )
                 .padding(contentPadding),
             content = content
@@ -647,7 +685,8 @@ fun SeaGlassFluidBar(
                     rimChalkiness = 0.90f
                 ),
                 nodesOptional = coalescingNodes,
-                smoothRadiusDp = 42f
+                smoothRadiusDp = 42f,
+                contentRole = SeaGlassContentRole.NAVIGATION_CHROME
             )
     ) {
         val mainBarWidthDp = with(density) { mainBarWidthPx.toDp() }
@@ -698,48 +737,62 @@ fun SeaGlassFluidBar(
                         barMaterial.tintDensity
                     )
                 )
+                val isDarkInk = baseInkColor.luminance() < 0.45f
+                val iconHaloColor = if (isDarkInk) {
+                    Color.White.copy(alpha = 0.65f)
+                } else {
+                    Color(0xFF04101C).copy(alpha = 0.72f)
+                }
                 // Vibrant active tab accent color (Apple Music Red/Coral or high-chroma palette accent)
                 val activeAccentColor = Color(
                     SeaGlassColorMath.lerpOklab(
                         indicatorMaterial.tintColorArgb,
                         0xFFFF2D55.toInt(),
-                        0.42f
+                        0.46f
                     )
                 )
 
-                items.forEachIndexed { index, title ->
-                    val selected = index == selectedIndex
-                    val tint = if (selected) activeAccentColor else baseInkColor.copy(alpha = 0.86f)
+                ProvideSeaGlassLegibleContent(contentColor = baseInkColor) {
+                    items.forEachIndexed { index, title ->
+                        val selected = index == selectedIndex
+                        val tint = if (selected) activeAccentColor else baseInkColor.copy(alpha = 0.90f)
 
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { onSelect(index) }
-                            )
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            NavBarTabVectorIcon(
-                                index = index,
-                                color = tint,
-                                modifier = Modifier.size(21.dp)
-                            )
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(
-                                text = title,
-                                color = tint,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                                    fontSize = 11.sp
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { onSelect(index) }
                                 )
-                            )
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                NavBarTabVectorIcon(
+                                    index = index,
+                                    color = tint,
+                                    haloColor = iconHaloColor,
+                                    modifier = Modifier.size(21.dp)
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = title,
+                                    color = tint,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                        fontSize = 11.sp,
+                                        shadow = Shadow(
+                                            color = iconHaloColor,
+                                            offset = Offset(0f, 1.0f),
+                                            blurRadius = 5.5f
+                                        )
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -783,6 +836,7 @@ fun SeaGlassFluidBar(
 private fun NavBarTabVectorIcon(
     index: Int,
     color: Color,
+    haloColor: Color = Color.Transparent,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
@@ -790,116 +844,143 @@ private fun NavBarTabVectorIcon(
         val h = size.height
         val strokeW = 2.1.dp.toPx()
 
-        when (index % 5) {
-            0 -> {
-                // Home House Icon
-                val house = Path().apply {
-                    moveTo(w * 0.50f, h * 0.10f)
-                    lineTo(w * 0.90f, h * 0.46f)
-                    lineTo(w * 0.80f, h * 0.46f)
-                    lineTo(w * 0.80f, h * 0.88f)
-                    lineTo(w * 0.58f, h * 0.88f)
-                    lineTo(w * 0.58f, h * 0.60f)
-                    lineTo(w * 0.42f, h * 0.60f)
-                    lineTo(w * 0.42f, h * 0.88f)
-                    lineTo(w * 0.20f, h * 0.88f)
-                    lineTo(w * 0.20f, h * 0.46f)
-                    lineTo(w * 0.10f, h * 0.46f)
-                    close()
+        // Draw subtle optical micro-contrast halo behind the vector icon first so icons pop
+        // over semi-transparent blurred backgrounds!
+        for (pass in 0..1) {
+            val drawColor = if (pass == 0) haloColor else color
+            val extraStroke = if (pass == 0) 2.2.dp.toPx() else 0f
+            when (index % 5) {
+                0 -> {
+                    val house = Path().apply {
+                        moveTo(w * 0.50f, h * 0.10f)
+                        lineTo(w * 0.90f, h * 0.46f)
+                        lineTo(w * 0.80f, h * 0.46f)
+                        lineTo(w * 0.80f, h * 0.88f)
+                        lineTo(w * 0.58f, h * 0.88f)
+                        lineTo(w * 0.58f, h * 0.60f)
+                        lineTo(w * 0.42f, h * 0.60f)
+                        lineTo(w * 0.42f, h * 0.88f)
+                        lineTo(w * 0.20f, h * 0.88f)
+                        lineTo(w * 0.20f, h * 0.46f)
+                        lineTo(w * 0.10f, h * 0.46f)
+                        close()
+                    }
+                    if (pass == 0) {
+                        drawPath(house, color = drawColor, style = Stroke(width = extraStroke))
+                    } else {
+                        drawPath(house, color = drawColor)
+                    }
                 }
-                drawPath(house, color = color)
-            }
 
-            1 -> {
-                // 4-Square Grid Icon ("New" / "Morph")
-                val r = CornerRadius(2.2.dp.toPx(), 2.2.dp.toPx())
-                val cell = w * 0.36f
-                drawRoundRect(color, Offset(w * 0.10f, h * 0.10f), Size(cell, cell), r)
-                drawRoundRect(color, Offset(w * 0.54f, h * 0.10f), Size(cell, cell), r)
-                drawRoundRect(color, Offset(w * 0.10f, h * 0.54f), Size(cell, cell), r)
-                drawRoundRect(color, Offset(w * 0.54f, h * 0.54f), Size(cell, cell), r)
-            }
+                1 -> {
+                    val r = CornerRadius(2.2.dp.toPx(), 2.2.dp.toPx())
+                    val cell = w * 0.36f
+                    if (pass == 0) {
+                        val st = Stroke(width = extraStroke)
+                        drawRoundRect(drawColor, Offset(w * 0.10f, h * 0.10f), Size(cell, cell), r, style = st)
+                        drawRoundRect(drawColor, Offset(w * 0.54f, h * 0.10f), Size(cell, cell), r, style = st)
+                        drawRoundRect(drawColor, Offset(w * 0.10f, h * 0.54f), Size(cell, cell), r, style = st)
+                        drawRoundRect(drawColor, Offset(w * 0.54f, h * 0.54f), Size(cell, cell), r, style = st)
+                    } else {
+                        drawRoundRect(drawColor, Offset(w * 0.10f, h * 0.10f), Size(cell, cell), r)
+                        drawRoundRect(drawColor, Offset(w * 0.54f, h * 0.10f), Size(cell, cell), r)
+                        drawRoundRect(drawColor, Offset(w * 0.10f, h * 0.54f), Size(cell, cell), r)
+                        drawRoundRect(drawColor, Offset(w * 0.54f, h * 0.54f), Size(cell, cell), r)
+                    }
+                }
 
-            2 -> {
-                // Radio Waves ((•)) Icon ("Palettes" / "Radio")
-                drawCircle(color = color, radius = w * 0.11f, center = Offset(w * 0.50f, h * 0.50f))
-                drawArc(
-                    color = color,
-                    startAngle = -50f,
-                    sweepAngle = 100f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.24f, h * 0.24f),
-                    size = Size(w * 0.52f, h * 0.52f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = 130f,
-                    sweepAngle = 100f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.24f, h * 0.24f),
-                    size = Size(w * 0.52f, h * 0.52f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = -55f,
-                    sweepAngle = 110f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.06f, h * 0.06f),
-                    size = Size(w * 0.88f, h * 0.88f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = 125f,
-                    sweepAngle = 110f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.06f, h * 0.06f),
-                    size = Size(w * 0.88f, h * 0.88f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-            }
+                2 -> {
+                    drawCircle(
+                        color = drawColor,
+                        radius = w * 0.11f + extraStroke * 0.5f,
+                        center = Offset(w * 0.50f, h * 0.50f)
+                    )
+                    drawArc(
+                        color = drawColor,
+                        startAngle = -50f,
+                        sweepAngle = 100f,
+                        useCenter = false,
+                        topLeft = Offset(w * 0.24f, h * 0.24f),
+                        size = Size(w * 0.52f, h * 0.52f),
+                        style = Stroke(width = strokeW + extraStroke, cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = drawColor,
+                        startAngle = 130f,
+                        sweepAngle = 100f,
+                        useCenter = false,
+                        topLeft = Offset(w * 0.24f, h * 0.24f),
+                        size = Size(w * 0.52f, h * 0.52f),
+                        style = Stroke(width = strokeW + extraStroke, cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = drawColor,
+                        startAngle = -55f,
+                        sweepAngle = 110f,
+                        useCenter = false,
+                        topLeft = Offset(w * 0.06f, h * 0.06f),
+                        size = Size(w * 0.88f, h * 0.88f),
+                        style = Stroke(width = strokeW + extraStroke, cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = drawColor,
+                        startAngle = 125f,
+                        sweepAngle = 110f,
+                        useCenter = false,
+                        topLeft = Offset(w * 0.06f, h * 0.06f),
+                        size = Size(w * 0.88f, h * 0.88f),
+                        style = Stroke(width = strokeW + extraStroke, cap = StrokeCap.Round)
+                    )
+                }
 
-            3 -> {
-                // Library Stack / Engine Icon
-                drawLine(
-                    color = color,
-                    start = Offset(w * 0.30f, h * 0.12f),
-                    end = Offset(w * 0.70f, h * 0.12f),
-                    strokeWidth = strokeW,
-                    cap = StrokeCap.Round
-                )
-                drawLine(
-                    color = color,
-                    start = Offset(w * 0.22f, h * 0.24f),
-                    end = Offset(w * 0.78f, h * 0.24f),
-                    strokeWidth = strokeW,
-                    cap = StrokeCap.Round
-                )
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(w * 0.14f, h * 0.34f),
-                    size = Size(w * 0.72f, h * 0.56f),
-                    cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx())
-                )
-            }
+                3 -> {
+                    drawLine(
+                        color = drawColor,
+                        start = Offset(w * 0.30f, h * 0.12f),
+                        end = Offset(w * 0.70f, h * 0.12f),
+                        strokeWidth = strokeW + extraStroke,
+                        cap = StrokeCap.Round
+                    )
+                    drawLine(
+                        color = drawColor,
+                        start = Offset(w * 0.22f, h * 0.24f),
+                        end = Offset(w * 0.78f, h * 0.24f),
+                        strokeWidth = strokeW + extraStroke,
+                        cap = StrokeCap.Round
+                    )
+                    if (pass == 0) {
+                        drawRoundRect(
+                            color = drawColor,
+                            topLeft = Offset(w * 0.14f, h * 0.34f),
+                            size = Size(w * 0.72f, h * 0.56f),
+                            cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx()),
+                            style = Stroke(width = extraStroke)
+                        )
+                    } else {
+                        drawRoundRect(
+                            color = drawColor,
+                            topLeft = Offset(w * 0.14f, h * 0.34f),
+                            size = Size(w * 0.72f, h * 0.56f),
+                            cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx())
+                        )
+                    }
+                }
 
-            else -> {
-                // Search Magnifying Lens Icon
-                drawCircle(
-                    color = color,
-                    radius = w * 0.28f,
-                    center = Offset(w * 0.42f, h * 0.42f),
-                    style = Stroke(width = strokeW * 1.1f)
-                )
-                drawLine(
-                    color = color,
-                    start = Offset(w * 0.63f, h * 0.63f),
-                    end = Offset(w * 0.88f, h * 0.88f),
-                    strokeWidth = strokeW * 1.2f,
-                    cap = StrokeCap.Round
-                )
+                else -> {
+                    drawCircle(
+                        color = drawColor,
+                        radius = w * 0.28f,
+                        center = Offset(w * 0.42f, h * 0.42f),
+                        style = Stroke(width = strokeW * 1.1f + extraStroke)
+                    )
+                    drawLine(
+                        color = drawColor,
+                        start = Offset(w * 0.63f, h * 0.63f),
+                        end = Offset(w * 0.88f, h * 0.88f),
+                        strokeWidth = strokeW * 1.2f + extraStroke,
+                        cap = StrokeCap.Round
+                    )
+                }
             }
         }
     }
