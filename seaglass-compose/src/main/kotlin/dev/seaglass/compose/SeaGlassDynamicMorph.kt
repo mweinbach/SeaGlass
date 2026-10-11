@@ -1,6 +1,9 @@
 package dev.seaglass.compose
 
 import android.graphics.Path
+import android.graphics.RenderEffect as AndroidRenderEffect
+import android.graphics.Shader
+import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloatAsState
@@ -49,6 +52,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -121,6 +127,8 @@ fun SeaGlassTwoElementMorph(
     collapsedShape: SeaGlassShapeKind = SeaGlassShapeKind.Capsule,
     expandedShape: SeaGlassShapeKind = SeaGlassShapeKind.Squircle,
     morphMode: SeaGlassMorphMode = SeaGlassMorphMode.LIQUID_COALESCE,
+    anchorAlignment: Alignment = Alignment.Center,
+    reserveCollapsedLayoutSpace: Boolean = false,
     collapsedContent: @Composable BoxScope.() -> Unit,
     expandedContent: @Composable BoxScope.() -> Unit
 ) {
@@ -130,7 +138,7 @@ fun SeaGlassTwoElementMorph(
     // Spatial spring (allows organic M3 Expressive bounce on geometry)
     val spatialProgress by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.60f, stiffness = 350f),
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 360f),
         label = "twoElementSpatialMorph"
     )
 
@@ -157,19 +165,27 @@ fun SeaGlassTwoElementMorph(
     val expandedArea = max(1f, (expandedMeasuredSize.width * expandedMeasuredSize.height).toFloat())
     val currentAreaRatio = 1f + (expandedArea / collapsedArea - 1f) * effectsProgress
 
+    // Parabolic mid-flight energy (peaks at progress = 0.5)
+    val inFlightEnergy = (4f * effectsProgress * (1f - effectsProgress)).coerceIn(0f, 1f)
+
     val flexMaterial = remember(
         collapsedMaterial,
         expandedMaterial,
         effectsProgress,
         pressFraction,
-        currentAreaRatio
+        currentAreaRatio,
+        inFlightEnergy
     ) {
-        SeaGlassShapeMorph.computeDynamicFlexMaterial(
+        val baseFlex = SeaGlassShapeMorph.computeDynamicFlexMaterial(
             startMaterial = collapsedMaterial,
             endMaterial = expandedMaterial,
             progress = effectsProgress,
             areaExpansionRatio = currentAreaRatio
         ).pressed(pressFraction)
+        // Swell corner radius into a plump oval liquid droplet mid-flight (just like iOS 26 Liquid Glass!)
+        baseFlex.copy(
+            cornerRadiusDp = baseFlex.cornerRadiusDp + 22f * inFlightEnergy
+        )
     }
 
     val curW = (collapsedMeasuredSize.width +
@@ -179,10 +195,9 @@ fun SeaGlassTwoElementMorph(
         (expandedMeasuredSize.height - collapsedMeasuredSize.height) * spatialProgress)
         .coerceAtLeast(32f)
 
-    // Parabolic mid-flight energy (peaks at progress = 0.5)
-    val inFlightEnergy = (4f * effectsProgress * (1f - effectsProgress)).coerceIn(0f, 1f)
-
-    // Build transient 2-node sminCubic liquid bridge during LIQUID_COALESCE transitions
+    // Build transient 2-node sminCubic liquid teardrop bridge anchored to anchorAlignment!
+    // Node 0 stays locked at the trigger button corner (e.g. TopEnd / BottomEnd / Center) while
+    // Node 1 swells outward into the menu/popover/sheet—producing the exact liquid teardrop neck!
     val coalescingNodes = remember(
         curW,
         curH,
@@ -193,36 +208,55 @@ fun SeaGlassTwoElementMorph(
         flexMaterial,
         collapsedMaterial,
         expandedMaterial,
-        morphMode
+        morphMode,
+        anchorAlignment
     ) {
-        if (morphMode == SeaGlassMorphMode.LIQUID_COALESCE && inFlightEnergy > 0.06f) {
+        if (morphMode == SeaGlassMorphMode.LIQUID_COALESCE && inFlightEnergy > 0.04f) {
             val colW = collapsedMeasuredSize.width.toFloat().coerceAtLeast(32f)
             val colH = collapsedMeasuredSize.height.toFloat().coerceAtLeast(32f)
-            // Node 0: Departing anchor core; Node 1: Expanding target lobe budding outward
-            val anchorHalfW = (colW * 0.5f * (1f - effectsProgress * 0.35f)).coerceAtMost(curW * 0.48f)
-            val anchorHalfH = (colH * 0.5f * (1f - effectsProgress * 0.35f)).coerceAtMost(curH * 0.48f)
-            val targetHalfW = (curW * 0.5f * (0.45f + 0.55f * effectsProgress))
-            val targetHalfH = (curH * 0.5f * (0.45f + 0.55f * effectsProgress))
-            val budShiftY = (curH - colH) * 0.22f * inFlightEnergy
+
+            val anchorHalfW = (colW * 0.5f * (1f - effectsProgress * 0.22f)).coerceAtMost(curW * 0.5f)
+            val anchorHalfH = (colH * 0.5f * (1f - effectsProgress * 0.22f)).coerceAtMost(curH * 0.5f)
+
+            val anchorCenterX = when (anchorAlignment) {
+                Alignment.TopEnd, Alignment.BottomEnd, Alignment.CenterEnd ->
+                    (curW - anchorHalfW).coerceAtLeast(anchorHalfW)
+                Alignment.TopStart, Alignment.BottomStart, Alignment.CenterStart ->
+                    anchorHalfW
+                else -> curW * 0.5f
+            }
+            val anchorCenterY = when (anchorAlignment) {
+                Alignment.TopStart, Alignment.TopCenter, Alignment.TopEnd ->
+                    anchorHalfH
+                Alignment.BottomStart, Alignment.BottomCenter, Alignment.BottomEnd ->
+                    (curH - anchorHalfH).coerceAtLeast(anchorHalfH)
+                else -> curH * 0.5f
+            }
+
+            val targetHalfW = (curW * 0.5f * (0.42f + 0.58f * effectsProgress))
+            val targetHalfH = (curH * 0.5f * (0.42f + 0.58f * effectsProgress))
+            val lobeCenterX = anchorCenterX + (curW * 0.5f - anchorCenterX) * (0.35f + 0.65f * effectsProgress)
+            val lobeCenterY = anchorCenterY + (curH * 0.5f - anchorCenterY) * (0.35f + 0.65f * effectsProgress)
+            val ovalMidFlightRadius = min(targetHalfW, targetHalfH) * (0.42f + 0.52f * inFlightEnergy)
 
             listOf(
                 SeaGlassSdfEngine.SdfNode(
-                    centerX = curW * 0.5f,
-                    centerY = curH * 0.5f - budShiftY,
+                    centerX = anchorCenterX,
+                    centerY = anchorCenterY,
                     halfWidth = anchorHalfW,
                     halfHeight = anchorHalfH,
-                    uniformCornerRadius = min(anchorHalfW, anchorHalfH) * 0.85f,
-                    cornerSmoothing = 2.3f,
+                    uniformCornerRadius = min(anchorHalfW, anchorHalfH) * 0.95f,
+                    cornerSmoothing = 2.4f,
                     tintColorArgb = collapsedMaterial.tintColorArgb,
                     thicknessPx = flexMaterial.thicknessDp * 2.8f
                 ),
                 SeaGlassSdfEngine.SdfNode(
-                    centerX = curW * 0.5f,
-                    centerY = curH * 0.5f + budShiftY * 0.6f,
+                    centerX = lobeCenterX,
+                    centerY = lobeCenterY,
                     halfWidth = targetHalfW,
                     halfHeight = targetHalfH,
-                    uniformCornerRadius = min(targetHalfW, targetHalfH) * (0.85f - 0.35f * effectsProgress),
-                    cornerSmoothing = 2.4f,
+                    uniformCornerRadius = ovalMidFlightRadius.coerceAtLeast(flexMaterial.cornerRadiusDp * 2f),
+                    cornerSmoothing = 2.5f,
                     tintColorArgb = flexMaterial.tintColorArgb,
                     thicknessPx = flexMaterial.thicknessDp * 2.8f
                 )
@@ -272,7 +306,11 @@ fun SeaGlassTwoElementMorph(
     // SubcomposeLayout measures both collapsed and expanded branches invisibly so their exact
     // intrinsic target bounds are always known without manual sizing!
     SubcomposeLayout(modifier = modifier) { constraints ->
-        val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val looseConstraints = if (reserveCollapsedLayoutSpace) {
+            Constraints()
+        } else {
+            constraints.copy(minWidth = 0, minHeight = 0)
+        }
 
         val collapsedPlaceables = subcompose("collapsed_measure") {
             ProvideSeaGlassLegibleContent(contentColor = contentColor) {
@@ -297,10 +335,21 @@ fun SeaGlassTwoElementMorph(
         val animatedWidthPx = (cW + (eW - cW) * spatialProgress).roundToInt().coerceAtLeast(32)
         val animatedHeightPx = (cH + (eH - cH) * spatialProgress).roundToInt().coerceAtLeast(32)
 
+        val originPivotX = when (anchorAlignment) {
+            Alignment.TopEnd, Alignment.BottomEnd, Alignment.CenterEnd -> 1f
+            Alignment.TopStart, Alignment.BottomStart, Alignment.CenterStart -> 0f
+            else -> 0.5f
+        }
+        val originPivotY = when (anchorAlignment) {
+            Alignment.TopStart, Alignment.TopCenter, Alignment.TopEnd -> 0f
+            Alignment.BottomStart, Alignment.BottomCenter, Alignment.BottomEnd -> 1f
+            else -> 0.5f
+        }
+
         val hostPlaceables = subcompose("morph_host") {
             ProvideSeaGlassLegibleContent(contentColor = contentColor) {
                 Box(
-                    contentAlignment = Alignment.Center,
+                    contentAlignment = anchorAlignment,
                     modifier = Modifier
                         .size(
                             width = with(density) { animatedWidthPx.toDp() },
@@ -333,8 +382,8 @@ fun SeaGlassTwoElementMorph(
                         )
                         .graphicsLayer {
                             // Velocity-driven liquid stretch during morph + press squish
-                            scaleX = 1f + 0.03f * pressFraction + 0.04f * inFlightEnergy
-                            scaleY = 1f - 0.025f * pressFraction - 0.025f * inFlightEnergy
+                            scaleX = 1f + 0.03f * pressFraction + 0.045f * inFlightEnergy
+                            scaleY = 1f - 0.025f * pressFraction - 0.030f * inFlightEnergy
                             rotationX = -normY * 5.0f * pressFraction
                             rotationY = normX * 5.0f * pressFraction
                             cameraDistance = 14f * this.density
@@ -343,38 +392,75 @@ fun SeaGlassTwoElementMorph(
                             stageState = stageState,
                             material = flexMaterial,
                             nodesOptional = coalescingNodes,
-                            smoothRadiusDp = 42f,
+                            smoothRadiusDp = 38f,
                             touchPointInLocal = touchOffset,
-                            touchIntensity = max(pressFraction, inFlightEnergy * 0.75f),
+                            touchIntensity = max(pressFraction, inFlightEnergy * 0.85f),
                             customContourPathBuilder = polygonBuilder
                         )
                 ) {
-                    val collapsedAlpha = (1f - effectsProgress * 1.45f).coerceIn(0f, 1f)
-                    val expandedAlpha = ((effectsProgress - 0.25f) * 1.35f).coerceIn(0f, 1f)
+                    val collapsedAlpha = (1f - effectsProgress * 1.55f).coerceIn(0f, 1f)
+                    val expandedAlpha = ((effectsProgress - 0.06f) * 1.12f).coerceIn(0f, 1f)
+
+                    // In-flight Gaussian content defocus (peaks mid-morph, resolves to 0px at rest!)
+                    val collapsedBlurPx = (effectsProgress * 13f * density.density).coerceAtLeast(0f)
+                    val expandedBlurPx = ((1f - effectsProgress) * (1f - effectsProgress) * 16f * density.density)
+                        .coerceAtLeast(0f)
 
                     if (collapsedAlpha > 0.01f) {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
+                                .size(
+                                    width = with(density) { cW.toDp() },
+                                    height = with(density) { cH.toDp() }
+                                )
                                 .graphicsLayer {
                                     alpha = collapsedAlpha
-                                    val s = 0.85f + 0.15f * collapsedAlpha
+                                    transformOrigin = TransformOrigin(originPivotX, originPivotY)
+                                    val s = 0.85f + 0.15f * collapsedAlpha + 0.12f * effectsProgress
                                     scaleX = s
                                     scaleY = s
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && collapsedBlurPx > 0.6f) {
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                        renderEffect = AndroidRenderEffect.createBlurEffect(
+                                            collapsedBlurPx,
+                                            collapsedBlurPx,
+                                            Shader.TileMode.DECAL
+                                        ).asComposeRenderEffect()
+                                    } else {
+                                        renderEffect = null
+                                    }
                                 },
                             content = collapsedContent
                         )
                     }
 
                     if (expandedAlpha > 0.01f) {
+                        val propScaleX = (animatedWidthPx.toFloat() / max(eW.toFloat(), 1f)).coerceIn(0.20f, 1.08f)
+                        val propScaleY = (animatedHeightPx.toFloat() / max(eH.toFloat(), 1f)).coerceIn(0.20f, 1.08f)
+
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
+                                .size(
+                                    width = with(density) { eW.toDp() },
+                                    height = with(density) { eH.toDp() }
+                                )
                                 .graphicsLayer {
                                     alpha = expandedAlpha
-                                    val s = 0.88f + 0.12f * expandedAlpha
-                                    scaleX = s
-                                    scaleY = s
+                                    transformOrigin = TransformOrigin(originPivotX, originPivotY)
+                                    scaleX = propScaleX
+                                    scaleY = propScaleY
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && expandedBlurPx > 0.6f) {
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                        renderEffect = AndroidRenderEffect.createBlurEffect(
+                                            expandedBlurPx,
+                                            expandedBlurPx,
+                                            Shader.TileMode.DECAL
+                                        ).asComposeRenderEffect()
+                                    } else {
+                                        renderEffect = null
+                                    }
                                 },
                             content = expandedContent
                         )
@@ -385,8 +471,35 @@ fun SeaGlassTwoElementMorph(
             it.measure(Constraints.fixed(animatedWidthPx, animatedHeightPx))
         }
 
-        layout(animatedWidthPx, animatedHeightPx) {
-            hostPlaceables.forEach { it.placeRelative(0, 0) }
+        val layoutW = if (reserveCollapsedLayoutSpace) cW else animatedWidthPx
+        val layoutH = if (reserveCollapsedLayoutSpace) cH else animatedHeightPx
+        val placeX = if (reserveCollapsedLayoutSpace) {
+            when (anchorAlignment) {
+                Alignment.TopEnd, Alignment.BottomEnd, Alignment.CenterEnd -> cW - animatedWidthPx
+                Alignment.TopStart, Alignment.BottomStart, Alignment.CenterStart -> 0
+                else -> (cW - animatedWidthPx) / 2
+            }
+        } else {
+            0
+        }
+        val placeY = if (reserveCollapsedLayoutSpace) {
+            when (anchorAlignment) {
+                Alignment.BottomStart, Alignment.BottomCenter, Alignment.BottomEnd -> cH - animatedHeightPx
+                Alignment.TopStart, Alignment.TopCenter, Alignment.TopEnd -> 0
+                else -> (cH - animatedHeightPx) / 2
+            }
+        } else {
+            0
+        }
+
+        layout(layoutW, layoutH) {
+            hostPlaceables.forEach {
+                it.placeRelative(
+                    x = placeX,
+                    y = placeY,
+                    zIndex = if (reserveCollapsedLayoutSpace && spatialProgress > 0.01f) 25f else 0f
+                )
+            }
         }
     }
 }

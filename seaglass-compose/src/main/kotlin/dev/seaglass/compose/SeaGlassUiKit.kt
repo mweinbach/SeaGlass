@@ -1,5 +1,8 @@
 package dev.seaglass.compose
 
+import android.graphics.RenderEffect as AndroidRenderEffect
+import android.graphics.Shader
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -53,19 +56,25 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.core.SeaGlassColorMath
@@ -1793,3 +1802,798 @@ fun SeaGlassBottomSheetSurface(
         }
     }
 }
+
+/**
+ * Corner-Anchored Liquid Teardrop Context Menu Morph (`SeaGlassMorphingContextMenu`).
+ *
+ * Matches the iOS 26 Liquid Glass `(•••)` context menu morph:
+ * - **Collapsed**: Circular `44.dp` `(•••)` icon button anchored at [anchorAlignment] (`Alignment.TopEnd`).
+ * - **In-Flight**: Stretches out of (and sucks back into) the corner `(•••)` button via a 2-node
+ *   `sminCubic` liquid teardrop neck while Gaussian-blurring and proportionally scaling the menu rows.
+ * - **Expanded**: Full context menu card with a top 3-action header band (`Pin`, `Settle`, `Rename...`)
+ *   and action list rows (`Files`, `Terminal`, `Git · main`, `Snooze`, `Regenerate Title`, `Delete...`).
+ */
+@Composable
+fun SeaGlassMorphingContextMenu(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    stageState: SeaGlassStageState?,
+    modifier: Modifier = Modifier,
+    anchorAlignment: Alignment = Alignment.TopEnd,
+    onActionSelected: (String) -> Unit = {},
+    buttonMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
+    menuMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
+) {
+    val quickHeaderActions = remember {
+        listOf(
+            SeaGlassGlyph.Bookmark to "Pin",
+            SeaGlassGlyph.Check to "Settle",
+            SeaGlassGlyph.Sparkles to "Rename…"
+        )
+    }
+    val menuRows = remember {
+        listOf(
+            Triple(SeaGlassGlyph.Layers, "Files", ""),
+            Triple(SeaGlassGlyph.Tune, "Terminal", ""),
+            Triple(SeaGlassGlyph.Share, "Git", "main"),
+            Triple(SeaGlassGlyph.Bell, "Snooze", "›"),
+            Triple(SeaGlassGlyph.Sparkles, "Regenerate Title", ""),
+            Triple(SeaGlassGlyph.Close, "Delete…", "destructive")
+        )
+    }
+
+    SeaGlassTwoElementMorph(
+        expanded = expanded,
+        onToggle = { onExpandedChange(!expanded) },
+        stageState = stageState,
+        collapsedMaterial = buttonMaterial.copy(cornerRadiusDp = 22f, thicknessDp = 16f),
+        expandedMaterial = menuMaterial.copy(cornerRadiusDp = 28f, thicknessDp = 20f),
+        morphMode = SeaGlassMorphMode.LIQUID_COALESCE,
+        anchorAlignment = anchorAlignment,
+        reserveCollapsedLayoutSpace = true,
+        modifier = modifier,
+        collapsedContent = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.5.dp)) {
+                    repeat(3) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.5.dp)
+                                .clip(CircleShape)
+                                .background(LocalContentColor.current)
+                        )
+                    }
+                }
+            }
+        },
+        expandedContent = {
+            Column(
+                modifier = Modifier
+                    .width(276.dp)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Top sky-tinted 3-action quick header strip (Pin / Settle / Rename...)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(buttonMaterial.tintColorArgb).copy(alpha = 0.36f),
+                                    Color(buttonMaterial.tintColorArgb).copy(alpha = 0.16f)
+                                )
+                            )
+                        )
+                        .padding(vertical = 10.dp, horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    quickHeaderActions.forEach { (glyph, title) ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {
+                                        onActionSelected(title)
+                                        onExpandedChange(false)
+                                    }
+                                )
+                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                        ) {
+                            SeaGlassIcon(
+                                glyph = glyph,
+                                modifier = Modifier.size(18.dp),
+                                tint = LocalContentColor.current
+                            )
+                            Text(
+                                text = title,
+                                maxLines = 1,
+                                color = LocalContentColor.current,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // Menu Action List Rows
+                menuRows.forEach { (glyph, label, meta) ->
+                    val isDestructive = meta == "destructive"
+                    val rowColor = if (isDestructive) Color(0xFFD92644) else LocalContentColor.current
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {
+                                    onActionSelected(label)
+                                    onExpandedChange(false)
+                                }
+                            )
+                            .padding(horizontal = 12.dp, vertical = 9.dp)
+                    ) {
+                        SeaGlassIcon(
+                            glyph = glyph,
+                            modifier = Modifier.size(18.dp),
+                            tint = rowColor
+                        )
+                        Text(
+                            text = label,
+                            color = rowColor,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                        )
+                        if (meta.isNotEmpty() && !isDestructive) {
+                            Text(
+                                text = meta,
+                                color = LocalContentColor.current.copy(alpha = 0.65f),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
+}
+
+/**
+ * 3-State Cascaded Composer Model & Effort Picker Morph (`SeaGlassCascadedModelMorph`):
+ * - **Stage 0 (Collapsed Composer Pill)**: `[📱 Gemini 4 Argon EAP · High ⌄]`
+ * - **Stage 1 (Compact Effort Slider Popover)**: Morphs out of the pill into a floating popover
+ *   with `[📱 Gemini 4 Argon EAP ›]`, bold effort level (`Low` / `Medium` / `High` / `Max`), and
+ *   an indigo-violet-to-coral gradient slider with a white liquid-glass capsule thumb.
+ * - **Stage 2 (Full Searchable Model List)**: Tapping the model header inside Stage 1 morphs the
+ *   popover card itself through an oval liquid lens (with in-flight Gaussian content blur!) into
+ *   the full searchable model list; tapping `‹` morphs back to Stage 1.
+ */
+@Composable
+fun SeaGlassCascadedModelMorph(
+    stage: Int,
+    onStageChange: (Int) -> Unit,
+    selectedModel: String,
+    onSelectModel: (String) -> Unit,
+    effortFraction: Float,
+    onEffortChange: (Float) -> Unit,
+    stageState: SeaGlassStageState?,
+    modifier: Modifier = Modifier,
+    pillMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
+    popoverMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.elevatedGlass
+) {
+    val density = LocalDensity.current
+    val motion = LocalSeaGlassMotionScheme.current
+
+    val spatialStage by animateFloatAsState(
+        targetValue = stage.coerceIn(0, 2).toFloat(),
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 360f),
+        label = "cascadedSpatialStage"
+    )
+    val effectsStage by animateFloatAsState(
+        targetValue = stage.coerceIn(0, 2).toFloat(),
+        animationSpec = motion.defaultEffects,
+        label = "cascadedEffectsStage"
+    )
+
+    val effortLabel = when {
+        effortFraction < 0.25f -> "Low"
+        effortFraction < 0.60f -> "Medium"
+        effortFraction < 0.88f -> "High"
+        else -> "Max"
+    }
+    var modelSearch by remember { mutableStateOf("") }
+    val models = remember {
+        listOf(
+            "Gemini 4 Argon EAP" to "Google · 1M Context",
+            "Claude Haiku 5.5" to "OpenCode Go",
+            "Exo Free" to "OpenCode Zen",
+            "Ling 3.1 Flash Free" to "OpenCode Zen",
+            "GPT-6.1 Sol" to "OpenAI"
+        )
+    }
+
+    val stage0Content: @Composable () -> Unit = {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { onStageChange(1) }
+                )
+                .padding(horizontal = 14.dp, vertical = 9.dp)
+        ) {
+            SeaGlassIcon(
+                glyph = SeaGlassGlyph.Layers,
+                modifier = Modifier.size(15.dp),
+                tint = LocalContentColor.current
+            )
+            Text(
+                text = selectedModel,
+                color = LocalContentColor.current,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp
+                )
+            )
+            Text(
+                text = "$effortLabel ⌄",
+                color = Color(0xFFC41238),
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontWeight = FontWeight.Black,
+                    fontSize = 12.sp
+                )
+            )
+        }
+    }
+
+    val stage1Content: @Composable () -> Unit = {
+        Column(
+            modifier = Modifier
+                .width(292.dp)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onStageChange(2) }
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    SeaGlassIcon(
+                        glyph = SeaGlassGlyph.Layers,
+                        modifier = Modifier.size(16.dp),
+                        tint = LocalContentColor.current
+                    )
+                    Text(
+                        text = "$selectedModel ›",
+                        color = LocalContentColor.current,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 14.sp
+                        )
+                    )
+                }
+
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(LocalContentColor.current.copy(alpha = 0.12f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onStageChange(0) }
+                        )
+                ) {
+                    SeaGlassIcon(
+                        glyph = SeaGlassGlyph.Close,
+                        modifier = Modifier.size(13.dp),
+                        tint = LocalContentColor.current
+                    )
+                }
+            }
+
+            Text(
+                text = effortLabel,
+                color = Color(0xFFB8143A),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp
+                )
+            )
+
+            Box(
+                contentAlignment = Alignment.CenterStart,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(26.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                Color(0xFF4B44F6),
+                                Color(0xFF9C3CF8),
+                                Color(0xFFF25C78)
+                            )
+                        )
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {
+                            val next = if (effortFraction >= 0.9f) 0.2f else effortFraction + 0.35f
+                            onEffortChange(next.coerceIn(0f, 1f))
+                        }
+                    )
+                    .padding(horizontal = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    repeat(4) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.72f))
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(effortFraction.coerceIn(0.18f, 1f))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(width = 36.dp, height = 20.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                    )
+                }
+            }
+        }
+    }
+
+    val stage2Content: @Composable () -> Unit = {
+        Column(
+            modifier = Modifier
+                .width(308.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(LocalContentColor.current.copy(alpha = 0.12f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onStageChange(1) }
+                        )
+                ) {
+                    SeaGlassIcon(
+                        glyph = SeaGlassGlyph.Back,
+                        modifier = Modifier.size(16.dp),
+                        tint = LocalContentColor.current
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selectedModel,
+                        color = LocalContentColor.current,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp
+                        )
+                    )
+                    Text(
+                        text = "OpenCode 2 · Tap ‹ for Effort",
+                        color = LocalContentColor.current.copy(alpha = 0.68f),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(LocalContentColor.current.copy(alpha = 0.10f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.Search,
+                    modifier = Modifier.size(15.dp),
+                    tint = LocalContentColor.current.copy(alpha = 0.65f)
+                )
+                BasicTextField(
+                    value = modelSearch,
+                    onValueChange = { modelSearch = it },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = LocalContentColor.current,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    decorationBox = { inner ->
+                        if (modelSearch.isEmpty()) {
+                            Text(
+                                text = "Search OpenCode 2 models…",
+                                color = LocalContentColor.current.copy(alpha = 0.52f),
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp)
+                            )
+                        }
+                        inner()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            models.filter {
+                modelSearch.isBlank() || it.first.contains(modelSearch, ignoreCase = true)
+            }.forEach { (name, provider) ->
+                val isSelected = name == selectedModel
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (isSelected) LocalContentColor.current.copy(alpha = 0.12f)
+                            else Color.Transparent
+                        )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                onSelectModel(name)
+                                onStageChange(1)
+                            }
+                        )
+                        .padding(horizontal = 10.dp, vertical = 7.dp)
+                ) {
+                    SeaGlassIcon(
+                        glyph = SeaGlassGlyph.Layers,
+                        modifier = Modifier.size(16.dp),
+                        tint = LocalContentColor.current.copy(alpha = 0.78f)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = name,
+                            color = LocalContentColor.current,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                        )
+                        Text(
+                            text = provider,
+                            color = LocalContentColor.current.copy(alpha = 0.62f),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp)
+                        )
+                    }
+                    if (isSelected) {
+                        SeaGlassIcon(
+                            glyph = SeaGlassGlyph.Check,
+                            modifier = Modifier.size(15.dp),
+                            tint = LocalContentColor.current
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    val contentColor = remember(popoverMaterial.tintColorArgb, popoverMaterial.tintDensity) {
+        Color(
+            SeaGlassColorMath.optimalContentColorFor(
+                popoverMaterial.tintColorArgb,
+                popoverMaterial.tintDensity
+            )
+        )
+    }
+
+    SubcomposeLayout(modifier = modifier) {
+        val unbounded = Constraints()
+        val p0 = subcompose("stage0") {
+            ProvideSeaGlassLegibleContent(contentColor = contentColor, content = stage0Content)
+        }.map { it.measure(unbounded) }
+        val p1 = subcompose("stage1") {
+            ProvideSeaGlassLegibleContent(contentColor = contentColor, content = stage1Content)
+        }.map { it.measure(unbounded) }
+        val p2 = subcompose("stage2") {
+            ProvideSeaGlassLegibleContent(contentColor = contentColor, content = stage2Content)
+        }.map { it.measure(unbounded) }
+
+        val w0 = p0.maxOfOrNull { it.width }?.coerceAtLeast(48) ?: 200
+        val h0 = p0.maxOfOrNull { it.height }?.coerceAtLeast(36) ?: 40
+        val w1 = p1.maxOfOrNull { it.width }?.coerceAtLeast(48) ?: 292
+        val h1 = p1.maxOfOrNull { it.height }?.coerceAtLeast(48) ?: 132
+        val w2 = p2.maxOfOrNull { it.width }?.coerceAtLeast(48) ?: 308
+        val h2 = p2.maxOfOrNull { it.height }?.coerceAtLeast(48) ?: 320
+
+        val isUpperSegment = effectsStage > 1.0f || (stage == 2 && spatialStage > 0.85f)
+        val localSpatial = if (isUpperSegment) (spatialStage - 1f) else spatialStage
+        val localEffects = if (isUpperSegment) (effectsStage - 1f).coerceIn(0f, 1f) else effectsStage.coerceIn(0f, 1f)
+
+        val startW = if (isUpperSegment) w1 else w0
+        val startH = if (isUpperSegment) h1 else h0
+        val endW = if (isUpperSegment) w2 else w1
+        val endH = if (isUpperSegment) h2 else h1
+
+        val animatedWidthPx = (startW + (endW - startW) * localSpatial).roundToInt().coerceAtLeast(36)
+        val animatedHeightPx = (startH + (endH - startH) * localSpatial).roundToInt().coerceAtLeast(32)
+        val inFlightEnergy = (4f * localEffects * (1f - localEffects)).coerceIn(0f, 1f)
+
+        val activeMaterial = SeaGlassShapeMorph.computeDynamicFlexMaterial(
+            startMaterial = if (isUpperSegment) popoverMaterial else pillMaterial,
+            endMaterial = popoverMaterial,
+            progress = localEffects,
+            areaExpansionRatio = 1f + inFlightEnergy * 0.8f
+        ).copy(
+            cornerRadiusDp = (if (isUpperSegment) 28f else (20f + 8f * localEffects)) + 24f * inFlightEnergy,
+            thicknessDp = 16f + 6f * localEffects + 4f * inFlightEnergy
+        )
+
+        val hostPlaceables = subcompose("cascaded_host") {
+            ProvideSeaGlassLegibleContent(contentColor = contentColor) {
+                Box(
+                    contentAlignment = Alignment.TopStart,
+                    modifier = Modifier
+                        .size(
+                            width = with(density) { animatedWidthPx.toDp() },
+                            height = with(density) { animatedHeightPx.toDp() }
+                        )
+                        .graphicsLayer {
+                            scaleX = 1f + 0.04f * inFlightEnergy
+                            scaleY = 1f - 0.025f * inFlightEnergy
+                        }
+                        .seaGlass(
+                            stageState = stageState,
+                            material = activeMaterial,
+                            touchIntensity = inFlightEnergy * 0.85f
+                        )
+                ) {
+                    val alphaA = (1f - localEffects * 1.45f).coerceIn(0f, 1f)
+                    val alphaB = ((localEffects - 0.06f) * 1.12f).coerceIn(0f, 1f)
+                    val blurAPx = (localEffects * 14f * density.density).coerceAtLeast(0f)
+                    val blurBPx = ((1f - localEffects) * (1f - localEffects) * 16f * density.density)
+                        .coerceAtLeast(0f)
+
+                    if (alphaA > 0.01f) {
+                        val scaleXA = (animatedWidthPx.toFloat() / max(startW.toFloat(), 1f)).coerceIn(0.25f, 1.15f)
+                        val scaleYA = (animatedHeightPx.toFloat() / max(startH.toFloat(), 1f)).coerceIn(0.25f, 1.15f)
+                        Box(
+                            modifier = Modifier
+                                .size(
+                                    width = with(density) { startW.toDp() },
+                                    height = with(density) { startH.toDp() }
+                                )
+                                .graphicsLayer {
+                                    alpha = alphaA
+                                    transformOrigin = TransformOrigin(0f, 0f)
+                                    scaleX = scaleXA
+                                    scaleY = scaleYA
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurAPx > 0.6f) {
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                        renderEffect = AndroidRenderEffect.createBlurEffect(
+                                            blurAPx,
+                                            blurAPx,
+                                            Shader.TileMode.DECAL
+                                        ).asComposeRenderEffect()
+                                    } else {
+                                        renderEffect = null
+                                    }
+                                }
+                        ) {
+                            if (isUpperSegment) stage1Content() else stage0Content()
+                        }
+                    }
+
+                    if (alphaB > 0.01f) {
+                        val scaleXB = (animatedWidthPx.toFloat() / max(endW.toFloat(), 1f)).coerceIn(0.22f, 1.08f)
+                        val scaleYB = (animatedHeightPx.toFloat() / max(endH.toFloat(), 1f)).coerceIn(0.22f, 1.08f)
+                        Box(
+                            modifier = Modifier
+                                .size(
+                                    width = with(density) { endW.toDp() },
+                                    height = with(density) { endH.toDp() }
+                                )
+                                .graphicsLayer {
+                                    alpha = alphaB
+                                    transformOrigin = TransformOrigin(0f, 0f)
+                                    scaleX = scaleXB
+                                    scaleY = scaleYB
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurBPx > 0.6f) {
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                        renderEffect = AndroidRenderEffect.createBlurEffect(
+                                            blurBPx,
+                                            blurBPx,
+                                            Shader.TileMode.DECAL
+                                        ).asComposeRenderEffect()
+                                    } else {
+                                        renderEffect = null
+                                    }
+                                }
+                        ) {
+                            if (isUpperSegment) stage2Content() else stage1Content()
+                        }
+                    }
+                }
+            }
+        }.map {
+            it.measure(Constraints.fixed(animatedWidthPx, animatedHeightPx))
+        }
+
+        layout(w0, h0) {
+            hostPlaceables.forEach {
+                it.placeRelative(0, 0, zIndex = if (spatialStage > 0.01f) 30f else 0f)
+            }
+        }
+    }
+}
+
+/**
+ * Circular Progress Ring $\leftrightarrow$ Context Window Popover Morph (`SeaGlassContextRingMorph`):
+ * - **Collapsed**: Compact `38.dp` circular progress ring button in a composer bar.
+ * - **In-Flight**: Scales the progress ring inside the expanding liquid droplet with Gaussian blur.
+ * - **Expanded**: Floating `Context Window` popover card (`35% · 366K of 1.05M tokens · 683K left`).
+ */
+@Composable
+fun SeaGlassContextRingMorph(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    progress: Float,
+    usedLabel: String,
+    remainingLabel: String,
+    stageState: SeaGlassStageState?,
+    modifier: Modifier = Modifier,
+    ringMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
+    popoverMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.elevatedGlass
+) {
+    val accentBlue = Color(0xFF0A7AFF)
+
+    SeaGlassTwoElementMorph(
+        expanded = expanded,
+        onToggle = { onExpandedChange(!expanded) },
+        stageState = stageState,
+        collapsedMaterial = ringMaterial.copy(cornerRadiusDp = 19f, thicknessDp = 14f),
+        expandedMaterial = popoverMaterial.copy(cornerRadiusDp = 26f, thicknessDp = 20f),
+        morphMode = SeaGlassMorphMode.LIQUID_COALESCE,
+        anchorAlignment = Alignment.TopCenter,
+        reserveCollapsedLayoutSpace = true,
+        modifier = modifier,
+        collapsedContent = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(38.dp)
+            ) {
+                val trackColor = LocalContentColor.current.copy(alpha = 0.20f)
+                Canvas(modifier = Modifier.size(20.dp)) {
+                    val sw = 2.6.dp.toPx()
+                    drawCircle(color = trackColor, style = Stroke(width = sw))
+                    drawArc(
+                        color = accentBlue,
+                        startAngle = -90f,
+                        sweepAngle = 360f * progress.coerceIn(0.05f, 1f),
+                        useCenter = false,
+                        style = Stroke(width = sw, cap = StrokeCap.Round)
+                    )
+                }
+            }
+        },
+        expandedContent = {
+            Column(
+                modifier = Modifier
+                    .width(236.dp)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Context Window",
+                    color = LocalContentColor.current,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp
+                    )
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(54.dp)
+                    ) {
+                        val trackColor = LocalContentColor.current.copy(alpha = 0.16f)
+                        Canvas(modifier = Modifier.size(48.dp)) {
+                            val sw = 5.dp.toPx()
+                            drawCircle(color = trackColor, style = Stroke(width = sw))
+                            drawArc(
+                                color = accentBlue,
+                                startAngle = -90f,
+                                sweepAngle = 360f * progress.coerceIn(0.05f, 1f),
+                                useCenter = false,
+                                style = Stroke(width = sw, cap = StrokeCap.Round)
+                            )
+                        }
+                        Text(
+                            text = "${(progress * 100).roundToInt()}%",
+                            color = LocalContentColor.current,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Black,
+                                fontSize = 11.sp
+                            )
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = usedLabel,
+                            color = LocalContentColor.current,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Black,
+                                fontSize = 14.sp
+                            )
+                        )
+                        Text(
+                            text = remainingLabel,
+                            color = LocalContentColor.current.copy(alpha = 0.68f),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+

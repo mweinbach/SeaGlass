@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -80,9 +81,11 @@ import dev.seaglass.compose.SeaGlassBottomSheetSurface
 import dev.seaglass.compose.SeaGlassBuddingCluster
 import dev.seaglass.compose.SeaGlassButton
 import dev.seaglass.compose.SeaGlassCard
+import dev.seaglass.compose.SeaGlassCascadedModelMorph
 import dev.seaglass.compose.SeaGlassCheckbox
 import dev.seaglass.compose.SeaGlassChoreographedShapeOrb
 import dev.seaglass.compose.SeaGlassCircularProgressIndicator
+import dev.seaglass.compose.SeaGlassContextRingMorph
 import dev.seaglass.compose.SeaGlassDialogCard
 import dev.seaglass.compose.SeaGlassExtendedFab
 import dev.seaglass.compose.SeaGlassFilterChip
@@ -96,6 +99,7 @@ import dev.seaglass.compose.SeaGlassListItem
 import dev.seaglass.compose.SeaGlassMiniPlayerBar
 import dev.seaglass.compose.SeaGlassMorphMode
 import dev.seaglass.compose.SeaGlassMorphingButton
+import dev.seaglass.compose.SeaGlassMorphingContextMenu
 import dev.seaglass.compose.SeaGlassPill
 import dev.seaglass.compose.SeaGlassRadioButton
 import dev.seaglass.compose.SeaGlassSearchBar
@@ -1013,7 +1017,75 @@ private fun FluidCoalescingSection(
         )
     }
 
-    // 1. M3 Expressive Choreographed Shape Shifter Orb (Flower -> Small Circle -> Cookie9 -> Large Orb -> Clover4)
+    // 1. Source-Anchored Teardrop Context Menu + 3-State Cascaded Model Picker + Context Ring Morphs
+    var contextMenuExpanded by remember { mutableStateOf(false) }
+    var modelMorphStage by remember { mutableIntStateOf(0) }
+    var selectedModelName by remember { mutableStateOf("Gemini 4 Argon EAP") }
+    var effortLevelFraction by remember { mutableFloatStateOf(0.76f) }
+    var contextRingExpanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .zIndex(30f),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SeaGlassCascadedModelMorph(
+            stage = modelMorphStage,
+            onStageChange = {
+                modelMorphStage = it
+                if (it > 0) {
+                    contextMenuExpanded = false
+                    contextRingExpanded = false
+                }
+            },
+            selectedModel = selectedModelName,
+            onSelectModel = { selectedModelName = it },
+            effortFraction = effortLevelFraction,
+            onEffortChange = { effortLevelFraction = it },
+            stageState = stageState,
+            pillMaterial = surfaceMaterial,
+            popoverMaterial = surfaceMaterial,
+            modifier = Modifier.zIndex(if (modelMorphStage > 0) 40f else 1f)
+        )
+
+        SeaGlassContextRingMorph(
+            expanded = contextRingExpanded,
+            onExpandedChange = {
+                contextRingExpanded = it
+                if (it) {
+                    contextMenuExpanded = false
+                    modelMorphStage = 0
+                }
+            },
+            progress = 0.35f,
+            usedLabel = "366K of 1.05M tokens",
+            remainingLabel = "683K left",
+            stageState = stageState,
+            ringMaterial = surfaceMaterial,
+            popoverMaterial = surfaceMaterial,
+            modifier = Modifier.zIndex(if (contextRingExpanded) 40f else 1f)
+        )
+
+        SeaGlassMorphingContextMenu(
+            expanded = contextMenuExpanded,
+            onExpandedChange = {
+                contextMenuExpanded = it
+                if (it) {
+                    modelMorphStage = 0
+                    contextRingExpanded = false
+                }
+            },
+            stageState = stageState,
+            anchorAlignment = Alignment.TopEnd,
+            buttonMaterial = primaryMaterial,
+            menuMaterial = surfaceMaterial,
+            modifier = Modifier.zIndex(if (contextMenuExpanded) 40f else 1f)
+        )
+    }
+
+    // 2. M3 Expressive Choreographed Shape Shifter Orb (Flower -> Small Circle -> Cookie9 -> Large Orb -> Clover4)
     SeaGlassChoreographedShapeOrb(
         stageState = stageState,
         autoPlay = true,
