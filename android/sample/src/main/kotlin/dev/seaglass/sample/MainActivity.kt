@@ -94,6 +94,7 @@ import dev.seaglass.compose.SeaGlassContextMenuCard
 import dev.seaglass.compose.SeaGlassContextMenuItem
 import dev.seaglass.compose.SeaGlassContextMenuOverlay
 import dev.seaglass.compose.SeaGlassContextRingMorph
+import dev.seaglass.compose.SeaGlassControlCenterGrid
 import dev.seaglass.compose.SeaGlassDialogCard
 import dev.seaglass.compose.SeaGlassExtendedFab
 import dev.seaglass.compose.SeaGlassFilterChip
@@ -108,10 +109,12 @@ import dev.seaglass.compose.SeaGlassInspectorSheetContent
 import dev.seaglass.compose.SeaGlassLinearProgressIndicator
 import dev.seaglass.compose.SeaGlassListItem
 import dev.seaglass.compose.SeaGlassLiveActivityPill
+import dev.seaglass.compose.SeaGlassMagnifierScrubber
 import dev.seaglass.compose.SeaGlassMiniPlayerBar
 import dev.seaglass.compose.SeaGlassMorphMode
 import dev.seaglass.compose.SeaGlassMorphingButton
 import dev.seaglass.compose.SeaGlassMorphingContextMenu
+import dev.seaglass.compose.SeaGlassNotificationStack
 import dev.seaglass.compose.SeaGlassPill
 import dev.seaglass.compose.SeaGlassRadioButton
 import dev.seaglass.compose.SeaGlassSearchBar
@@ -124,6 +127,7 @@ import dev.seaglass.compose.SeaGlassTextField
 import dev.seaglass.compose.SeaGlassTheme
 import dev.seaglass.compose.SeaGlassTopAppBar
 import dev.seaglass.compose.SeaGlassTwoElementMorph
+import dev.seaglass.compose.SeaGlassWheelPicker
 import dev.seaglass.compose.defaultIosContextMenuItems
 import dev.seaglass.compose.rememberSeaGlassStageState
 import dev.seaglass.compose.seaGlass
@@ -2128,15 +2132,31 @@ private fun UiComponentLibrarySection(
         )
     }
 
-    // 2. Segmented Control switching between Controls, Surfaces, and Overlays
+    var scrubberVal by remember { mutableFloatStateOf(0.62f) }
+    var notifStackExpanded by remember { mutableStateOf(false) }
+    var wheelSelectedIdx by remember { mutableIntStateOf(2) }
+    var ccFrostVal by remember { mutableFloatStateOf(0.68f) }
+    var ccRefractVal by remember { mutableFloatStateOf(0.76f) }
+    val wheelPresets = remember {
+        listOf(
+            "60 Hz · Standard Clear",
+            "90 Hz · Light Sand Frost",
+            "120 Hz · ProMotion SeaGlass",
+            "144 Hz · Deep Tidal Frost",
+            "240 Hz · Ultra Liquid Lens"
+        )
+    }
+
+    // 2. Segmented Control switching between iOS 27, Controls, Surfaces, and Overlays
     SeaGlassSegmentedButtonRow(
-        options = listOf("Controls", "Surfaces", "Overlays"),
+        options = listOf("iOS 27", "Controls", "Surfaces", "Overlays"),
         selectedIndex = segmentIdx,
         onSelect = {
             segmentIdx = it
             progressVal = when (it) {
-                0 -> 0.74f
-                1 -> 0.56f
+                0 -> 0.82f
+                1 -> 0.74f
+                2 -> 0.56f
                 else -> 0.90f
             }
         },
@@ -2161,10 +2181,52 @@ private fun UiComponentLibrarySection(
     ) { activeCategory ->
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             when (activeCategory) {
                 0 -> {
+                    // 1. iOS 27 Control Center Modular Grid & Twin Vertical Liquid Capsule Sliders
+                    SeaGlassControlCenterGrid(
+                        frostFraction = ccFrostVal,
+                        onFrostFractionChange = { ccFrostVal = it },
+                        refractFraction = ccRefractVal,
+                        onRefractFractionChange = { ccRefractVal = it },
+                        stageState = stageState,
+                        primaryMaterial = primaryMaterial,
+                        surfaceMaterial = surfaceMaterial,
+                        tertiaryMaterial = tertiaryMaterial
+                    )
+
+                    // 2. iOS 27 Optical Magnifier Loupe & Scrubbing Bar (2-node sminCubic droplet)
+                    SeaGlassMagnifierScrubber(
+                        value = scrubberVal,
+                        onValueChange = { scrubberVal = it },
+                        stageState = stageState,
+                        trackMaterial = surfaceMaterial,
+                        loupeMaterial = primaryMaterial
+                    )
+
+                    // 3. iOS 27 3D Cylindrical Refractive Drum-Wheel Picker
+                    SeaGlassWheelPicker(
+                        items = wheelPresets,
+                        selectedIndex = wheelSelectedIdx,
+                        onSelectIndex = { wheelSelectedIdx = it },
+                        stageState = stageState,
+                        containerMaterial = surfaceMaterial,
+                        lensMaterial = primaryMaterial
+                    )
+
+                    // 4. iOS 27 Concentric Notification Rollup Stack
+                    SeaGlassNotificationStack(
+                        expanded = notifStackExpanded,
+                        onExpandedChange = { notifStackExpanded = it },
+                        stageState = stageState,
+                        primaryMaterial = primaryMaterial,
+                        surfaceMaterial = surfaceMaterial
+                    )
+                }
+
+                1 -> {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2323,7 +2385,7 @@ private fun UiComponentLibrarySection(
                     }
                 }
 
-                1 -> {
+                2 -> {
                     SeaGlassListItem(
                         headlineText = "Sand-Frosted Continuum",
                         supportingText = "Smoothly spans clear untreated glass to opaque sand-frosted glass",

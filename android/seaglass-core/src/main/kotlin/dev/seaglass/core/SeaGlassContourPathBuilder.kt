@@ -100,6 +100,56 @@ object SeaGlassContourPathBuilder {
         val activeCount = min(nodes.size, SeaGlassSdfEngine.MAX_SDF_NODES)
         val targetD = -insetPx
 
+        // Vertical T-junction fast path: when Node 0 is a wide horizontal track/bar and Node 1
+        // is a magnifier loupe or popover rising vertically out of an interior X coordinate along
+        // the track, union the full-width track capsule with the vertical sminCubic bridge between
+        // the track anchor at (nB.centerX, nA.centerY) and nB so the track's full width is preserved!
+        if (activeCount == 2) {
+            val nA = nodes[0]
+            val nB = nodes[1]
+            if (nA.halfWidth > nB.halfWidth * 1.65f &&
+                abs(nB.centerY - nA.centerY) > nA.halfHeight * 0.55f
+            ) {
+                buildSingleNodePath(nA, outPath, insetPx)
+                val anchorX = nB.centerX.coerceIn(
+                    nA.centerX - nA.halfWidth + nA.halfHeight,
+                    nA.centerX + nA.halfWidth - nA.halfHeight
+                )
+                val anchorHalfW = min(nB.halfWidth * 0.82f, nA.halfHeight * 1.45f)
+                val anchorNode = SeaGlassSdfEngine.SdfNode(
+                    centerX = anchorX,
+                    centerY = nA.centerY,
+                    halfWidth = anchorHalfW,
+                    halfHeight = nA.halfHeight,
+                    uniformCornerRadius = nA.halfHeight,
+                    cornerSmoothing = nA.cornerSmoothing,
+                    tintColorArgb = nA.tintColorArgb,
+                    thicknessPx = nA.thicknessPx
+                )
+                val verticalPair = listOf(anchorNode, nB)
+                val midX = (anchorNode.centerX + nB.centerX) * 0.5f
+                val midY = (anchorNode.centerY + nB.centerY) * 0.5f
+                val dMid = evaluateCombinedDistance(midX, midY, verticalPair, smoothRadiusPx)
+                val bridgePath = Path()
+                if (dMid < targetD - 0.5f) {
+                    val maxSpan = max(nB.halfWidth, abs(nB.centerY - anchorNode.centerY) * 0.5f + nB.halfHeight) * 1.45f + smoothRadiusPx
+                    traceStarShapedLobeIsosurface(
+                        centerX = midX,
+                        centerY = midY,
+                        maxSpan = maxSpan,
+                        allNodes = verticalPair,
+                        smoothRadiusPx = smoothRadiusPx,
+                        targetD = targetD,
+                        outPath = bridgePath
+                    )
+                } else {
+                    buildSingleNodePath(nB, bridgePath, insetPx)
+                }
+                outPath.op(bridgePath, Path.Op.UNION)
+                return
+            }
+        }
+
         // Check whether every adjacent pair in the chain [0 .. activeCount - 1] is connected across its spine
         var chainConnected = activeCount >= 2
         if (chainConnected) {
