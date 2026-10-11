@@ -75,42 +75,44 @@ object SeaGlassContourPathBuilder {
             return
         }
 
-        val nodeA = nodes[0]
-        val nodeB = nodes[1]
-        val signX = if (nodeB.centerX >= nodeA.centerX) 1f else -1f
-        val focusOffsetA = max(0f, nodeA.halfWidth - nodeA.halfHeight)
-        val focusOffsetB = max(0f, nodeB.halfWidth - nodeB.halfHeight)
-
-        // Inner focal centers facing each other across the coalescing bridge
-        val innerCapAX = nodeA.centerX + signX * focusOffsetA
-        val innerCapAY = nodeA.centerY
-        val innerCapBX = nodeB.centerX - signX * focusOffsetB
-        val innerCapBY = nodeB.centerY
-
-        val bridgeDx = innerCapBX - innerCapAX
-        val bridgeDy = innerCapBY - innerCapAY
-        val bridgeDist = sqrt(bridgeDx * bridgeDx + bridgeDy * bridgeDy)
+        val activeCount = min(nodes.size, SeaGlassSdfEngine.MAX_SDF_NODES)
         val targetD = -insetPx
 
-        // Check whether the spine connecting the facing inner caps is inside the target isosurface
-        var spineConnected = bridgeDist > 0.5f
-        if (spineConnected) {
-            for (k in 1..11) {
-                val u = k / 12f
-                val sx = innerCapAX + bridgeDx * u
-                val sy = innerCapAY + bridgeDy * u
-                val dSpine = evaluateCombinedDistance(sx, sy, nodes, smoothRadiusPx)
-                if (dSpine >= targetD - 0.8f) {
-                    spineConnected = false
-                    break
+        // Check whether every adjacent pair in the chain [0 .. activeCount - 1] is connected across its spine
+        var chainConnected = activeCount >= 2
+        if (chainConnected) {
+            for (pairIdx in 0 until activeCount - 1) {
+                val nA = nodes[pairIdx]
+                val nB = nodes[pairIdx + 1]
+                val sX = if (nB.centerX >= nA.centerX) 1f else -1f
+                val fA = max(0f, nA.halfWidth - nA.halfHeight)
+                val fB = max(0f, nB.halfWidth - nB.halfHeight)
+                val inAX = nA.centerX + sX * fA
+                val inAY = nA.centerY
+                val inBX = nB.centerX - sX * fB
+                val inBY = nB.centerY
+                val bDx = inBX - inAX
+                val bDy = inBY - inAY
+                val bDist = sqrt(bDx * bDx + bDy * bDy)
+                if (bDist <= 0.5f) continue
+                for (k in 1..11) {
+                    val u = k / 12f
+                    val sx = inAX + bDx * u
+                    val sy = inAY + bDy * u
+                    val dSpine = evaluateCombinedDistance(sx, sy, nodes, smoothRadiusPx)
+                    if (dSpine >= targetD - 0.8f) {
+                        chainConnected = false
+                        break
+                    }
                 }
+                if (!chainConnected) break
             }
         }
 
-        if (spineConnected) {
+        if (chainConnected) {
             traceConnectedStadiumIsosurface(
-                nodeA = nodeA,
-                nodeB = nodeB,
+                nodeA = nodes[0],
+                nodeB = nodes[activeCount - 1],
                 allNodes = nodes,
                 smoothRadiusPx = smoothRadiusPx,
                 targetD = targetD,
@@ -118,7 +120,7 @@ object SeaGlassContourPathBuilder {
             )
         } else {
             val lobePath = Path()
-            for (node in nodes.take(SeaGlassSdfEngine.MAX_SDF_NODES)) {
+            for (node in nodes.take(activeCount)) {
                 val centerD = evaluateCombinedDistance(node.centerX, node.centerY, nodes, smoothRadiusPx)
                 if (centerD < targetD - 1.0f) {
                     traceStarShapedLobeIsosurface(
@@ -170,7 +172,7 @@ object SeaGlassContourPathBuilder {
         val uInnerB = (1f - (focusOffsetB * 2f) / len).coerceIn((uInnerA + 0.05f).coerceAtMost(0.98f), 1f)
 
         val capSamples = 24
-        val bridgeSamples = 44
+        val bridgeSamples = if (allNodes.size > 2) 64 else 44
         val totalSamples = capSamples * 2 + bridgeSamples * 2
         val px = FloatArray(totalSamples)
         val py = FloatArray(totalSamples)
@@ -179,6 +181,7 @@ object SeaGlassContourPathBuilder {
         val uSamples = FloatArray(bridgeSamples) { i ->
             val t = i.toFloat() / (bridgeSamples - 1).toFloat()
             when {
+                allNodes.size > 2 -> t
                 uInnerA <= 0.02f && uInnerB >= 0.98f -> t
                 t <= 0.22f -> (t / 0.22f) * uInnerA
                 t <= 0.88f -> uInnerA + ((t - 0.22f) / 0.66f) * (uInnerB - uInnerA)
@@ -188,7 +191,7 @@ object SeaGlassContourPathBuilder {
 
         val maxSearchA = nodeA.halfHeight * 1.45f + smoothRadiusPx
         val maxSearchB = nodeB.halfHeight * 1.45f + smoothRadiusPx
-        val maxSearchBridge = max(nodeA.halfHeight, nodeB.halfHeight) * 1.45f + smoothRadiusPx
+        val maxSearchBridge = allNodes.maxOf { max(it.halfHeight, it.halfWidth * 0.6f) } * 1.45f + smoothRadiusPx
 
         var idx = 0
 

@@ -212,7 +212,8 @@ fun Modifier.seaGlass(
     nodesOptional: List<SeaGlassSdfEngine.SdfNode>? = null,
     smoothRadiusDp: Float = 28f,
     touchPointInLocal: Offset? = null,
-    touchIntensity: Float = 0f
+    touchIntensity: Float = 0f,
+    customContourPathBuilder: ((widthPx: Float, heightPx: Float, outPath: Path) -> Unit)? = null
 ): Modifier {
     val context = LocalContext.current
     val tierOverride = LocalSeaGlassTierOverride.current
@@ -287,13 +288,17 @@ fun Modifier.seaGlass(
                 )
             }
 
-            // Single exact outer boundary contour (zero inset paths -> zero double borders!)
-            SeaGlassContourPathBuilder.buildCoalescingScenePath(
-                nodes = activeNodes,
-                smoothRadiusPx = smoothRadiusPx,
-                outPath = outerAndroidPath,
-                insetPx = 0f
-            )
+            // Single exact outer boundary contour (either custom RoundedPolygon Morph or sminCubic SDF!)
+            if (customContourPathBuilder != null) {
+                customContourPathBuilder(widthPx, heightPx, outerAndroidPath)
+            } else {
+                SeaGlassContourPathBuilder.buildCoalescingScenePath(
+                    nodes = activeNodes,
+                    smoothRadiusPx = smoothRadiusPx,
+                    outPath = outerAndroidPath,
+                    insetPx = 0f
+                )
+            }
 
             val composeOuterPath: ComposePath = outerAndroidPath.asComposePath()
 

@@ -72,13 +72,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.compose.LocalSeaGlassMotionScheme
 import dev.seaglass.compose.LocalSeaGlassTiltState
+import dev.seaglass.compose.SeaGlassBuddingCluster
 import dev.seaglass.compose.SeaGlassButton
 import dev.seaglass.compose.SeaGlassCard
 import dev.seaglass.compose.SeaGlassFluidBar
+import dev.seaglass.compose.SeaGlassMorphMode
+import dev.seaglass.compose.SeaGlassMorphingButton
 import dev.seaglass.compose.SeaGlassPill
 import dev.seaglass.compose.SeaGlassStageState
 import dev.seaglass.compose.SeaGlassSurface
 import dev.seaglass.compose.SeaGlassTheme
+import dev.seaglass.compose.SeaGlassTwoElementMorph
 import dev.seaglass.compose.rememberSeaGlassStageState
 import dev.seaglass.compose.seaGlass
 import dev.seaglass.compose.seaGlassBackdrop
@@ -88,6 +92,7 @@ import dev.seaglass.core.SeaGlassHdrSupport
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
 import dev.seaglass.core.SeaGlassSdfEngine
+import dev.seaglass.core.SeaGlassShapeKind
 import dev.seaglass.core.SeaGlassTelemetry
 import dev.seaglass.core.backend.SeaGlassShaderCompiler
 import dev.seaglass.core.backend.ShaderDialect
@@ -949,7 +954,162 @@ private fun FluidCoalescingSection(
         )
     }
 
-    // 1. Hero Interactive Multi-Node SDF Arena at the top of Tab 2 with HDR Touch Caustic Flare
+    // 1. Dynamic 2-Element Morph Primitive (SeaGlassTwoElementMorph) + Budding Cluster + M3 Polygon Morphs
+    var twoElementExpanded by remember { mutableStateOf(false) }
+    var buddingExpanded by remember { mutableStateOf(true) }
+    var morphBtn0Active by remember { mutableStateOf(false) }
+    var morphBtn1Active by remember { mutableStateOf(true) }
+    var morphBtn2Active by remember { mutableStateOf(false) }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        SeaGlassTwoElementMorph(
+            expanded = twoElementExpanded,
+            onToggle = { twoElementExpanded = !twoElementExpanded },
+            stageState = stageState,
+            collapsedMaterial = primaryMaterial.copy(cornerRadiusDp = 28f),
+            expandedMaterial = surfaceMaterial.copy(cornerRadiusDp = 32f),
+            morphMode = SeaGlassMorphMode.LIQUID_COALESCE,
+            collapsedContent = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp)
+                ) {
+                    Text(
+                        text = "✦",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black)
+                    )
+                    Column {
+                        Text(
+                            text = "2-Element Dynamic Morph",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black)
+                        )
+                        Text(
+                            text = "Tap to auto-measure & morph into Sanctuary Sheet ↗",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = LocalContentColor.current.copy(alpha = 0.82f)
+                        )
+                    }
+                }
+            },
+            expandedContent = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "EXPANDED SANCTUARY SHEET",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 1.1.sp
+                            ),
+                            color = LocalContentColor.current.copy(alpha = 0.78f)
+                        )
+                        Text(
+                            text = "Tap to collapse ↙",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                        )
+                    }
+                    Text(
+                        text = "High Tide · 68° Coastal Swell",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black)
+                    )
+                    Text(
+                        text = "SeaGlassTwoElementMorph automatically measured both composables, synthesized a transient sminCubic liquid bridge, and flexed glass thickness & IOR lensing in flight.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalContentColor.current.copy(alpha = 0.88f)
+                    )
+                }
+            }
+        )
+    }
+
+    // 2. Apple Liquid Glass Style Budding Action Cluster (SeaGlassBuddingCluster)
+    SeaGlassBuddingCluster(
+        expanded = buddingExpanded,
+        onToggleExpanded = { buddingExpanded = !buddingExpanded },
+        items = listOf(
+            "♪" to "Surf",
+            "☀" to "68° UV",
+            "◈" to "Lens"
+        ),
+        onItemClick = { coalescedPreset = !coalescedPreset },
+        stageState = stageState,
+        anchorMaterial = primaryMaterial,
+        satelliteMaterial = tertiaryMaterial
+    )
+
+    // 3. Material 3 Expressive RoundedPolygon Shape-Morphing Buttons
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        SeaGlassMorphingButton(
+            active = morphBtn0Active,
+            onClick = { morphBtn0Active = !morphBtn0Active },
+            stageState = stageState,
+            restingShape = SeaGlassShapeKind.Cookie9,
+            activeShape = SeaGlassShapeKind.Squircle,
+            restingMaterial = primaryMaterial,
+            activeMaterial = tertiaryMaterial,
+            modifier = Modifier
+                .weight(1f)
+                .height(64.dp)
+        ) {
+            Text(
+                text = if (morphBtn0Active) "Squircle" else "Cookie9",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
+            )
+        }
+
+        SeaGlassMorphingButton(
+            active = morphBtn1Active,
+            onClick = { morphBtn1Active = !morphBtn1Active },
+            stageState = stageState,
+            restingShape = SeaGlassShapeKind.SoftBurst,
+            activeShape = SeaGlassShapeKind.Circle,
+            restingMaterial = tertiaryMaterial,
+            activeMaterial = primaryMaterial,
+            modifier = Modifier
+                .weight(1f)
+                .height(64.dp)
+        ) {
+            Text(
+                text = if (morphBtn1Active) "Droplet" else "Burst12",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
+            )
+        }
+
+        SeaGlassMorphingButton(
+            active = morphBtn2Active,
+            onClick = { morphBtn2Active = !morphBtn2Active },
+            stageState = stageState,
+            restingShape = SeaGlassShapeKind.Cookie4,
+            activeShape = SeaGlassShapeKind.Gem,
+            restingMaterial = primaryMaterial,
+            activeMaterial = tertiaryMaterial,
+            modifier = Modifier
+                .weight(1f)
+                .height(64.dp)
+        ) {
+            Text(
+                text = if (morphBtn2Active) "Gem8" else "Clover4",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
+            )
+        }
+    }
+
+    // 4. Hero Interactive Multi-Node SDF Arena with HDR Touch Caustic Flare
     val tiltState = LocalSeaGlassTiltState.current
     var arenaTouchPoint by remember { mutableStateOf<Offset?>(null) }
     var arenaPressed by remember { mutableStateOf(false) }

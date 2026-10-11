@@ -202,4 +202,42 @@ class SeaGlassCoreTest {
         assertTrue(agslBundle.seaGlassCompositeFragmentSource.contains("sgSandMicroFacet"))
         assertNotNull(agslBundle.sandGrainOverlayFragmentSource)
     }
+
+    @Test
+    fun dynamicFlexMaterialBoostsLensingAndDispersionAtPeakMorphVelocity() {
+        val start = SeaGlassPalette.SeafoamMint.primaryGlass
+        val end = SeaGlassPalette.CobaltTide.surfaceGlass
+
+        val atRestStart = SeaGlassShapeMorph.computeDynamicFlexMaterial(
+            startMaterial = start,
+            endMaterial = end,
+            progress = 0f,
+            areaExpansionRatio = 1f
+        )
+        val midFlight = SeaGlassShapeMorph.computeDynamicFlexMaterial(
+            startMaterial = start,
+            endMaterial = end,
+            progress = 0.5f,
+            velocityPxPerSec = 900f,
+            areaExpansionRatio = 2.25f
+        )
+
+        assertTrue(
+            "Mid-flight morph must boost IOR lensing (${midFlight.ior} > ${atRestStart.ior})",
+            midFlight.ior > atRestStart.ior
+        )
+        assertTrue(
+            "Mid-flight morph must boost chromatic dispersion (${midFlight.chromaticDispersion} > ${atRestStart.chromaticDispersion})",
+            midFlight.chromaticDispersion > atRestStart.chromaticDispersion
+        )
+        assertTrue(
+            "Expanded mid-flight morph must increase effective glass thickness",
+            midFlight.thicknessDp > atRestStart.thicknessDp
+        )
+
+        for (kind in SeaGlassShapeKind.entries) {
+            val poly = SeaGlassShapeMorph.createNormalizedPolygon(kind, aspectRatio = 1.4f)
+            assertNotNull("Polygon for $kind must be non-null", poly)
+        }
+    }
 }
