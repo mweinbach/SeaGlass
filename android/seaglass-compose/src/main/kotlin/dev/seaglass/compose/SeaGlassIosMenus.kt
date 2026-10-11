@@ -333,7 +333,7 @@ fun SeaGlassContextMenuOverlay(
 @Composable
 fun SeaGlassContextMenuCard(
     items: List<SeaGlassContextMenuItem>,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass.copy(
         cornerRadiusDp = 24f,
@@ -744,7 +744,7 @@ fun SeaGlassActionSheet(
 fun SeaGlassLiveActivityPill(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     title: String = "Shader Compile & UBO Sync",
     subtitle: String = "16×vec4 std140 · 0 Dirty Slots · 120 FPS",

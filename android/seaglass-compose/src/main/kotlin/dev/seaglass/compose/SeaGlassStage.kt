@@ -8,7 +8,11 @@ import android.graphics.RenderEffect as AndroidRenderEffect
 import android.graphics.Shader
 import android.graphics.SweepGradient as AndroidSweepGradient
 import android.os.Build
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -237,6 +241,32 @@ fun rememberSeaGlassStageState(): SeaGlassStageState {
             refractedGreenLayer = greenLayer,
             refractedBlueLayer = blueLayer
         )
+    }
+}
+
+/**
+ * Turnkey root stage container for Jetpack Compose apps: automatically records [background]
+ * into the zero-copy GPU [SeaGlassStageState] and provides [LocalSeaGlassStageState] to all
+ * descendants inside [foreground] so any SeaGlass component works out of the box without
+ * manually threading `stageState`.
+ */
+@Composable
+fun SeaGlassStageHost(
+    modifier: Modifier = Modifier,
+    stageState: SeaGlassStageState = rememberSeaGlassStageState(),
+    background: @Composable BoxScope.() -> Unit,
+    foreground: @Composable BoxScope.(SeaGlassStageState) -> Unit
+) {
+    CompositionLocalProvider(LocalSeaGlassStageState provides stageState) {
+        Box(modifier = modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .seaGlassBackdrop(stageState),
+                content = background
+            )
+            foreground(stageState)
+        }
     }
 }
 

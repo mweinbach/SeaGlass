@@ -94,7 +94,7 @@ import kotlin.math.sin
 fun SeaGlassMagnifierScrubber(
     value: Float,
     onValueChange: (Float) -> Unit,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     label: String = "OPTICAL TIMELINE & LOUPE SCRUBBER",
     valueFormatter: (Float) -> String = { v ->
@@ -351,7 +351,7 @@ data class SeaGlassNotificationItem(
 fun SeaGlassNotificationStack(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     items: List<SeaGlassNotificationItem> = defaultIos27Notifications(),
     primaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
@@ -589,7 +589,7 @@ fun SeaGlassWheelPicker(
     items: List<String>,
     selectedIndex: Int,
     onSelectIndex: (Int) -> Unit,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     title: String = "IOS 27 REFRACTIVE DRUM-WHEEL PICKER",
     containerMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
@@ -756,7 +756,7 @@ fun SeaGlassControlCenterGrid(
     onFrostFractionChange: (Float) -> Unit,
     refractFraction: Float,
     onRefractFractionChange: (Float) -> Unit,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     primaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
     surfaceMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,

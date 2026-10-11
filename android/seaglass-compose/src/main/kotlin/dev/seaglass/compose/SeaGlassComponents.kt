@@ -116,7 +116,7 @@ private fun Modifier.observeSeaGlassTouch(
  */
 @Composable
 fun SeaGlassSurface(
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
     onClick: (() -> Unit)? = null,
@@ -351,7 +351,7 @@ fun SeaGlassSurface(
 @Composable
 fun SeaGlassButton(
     onClick: () -> Unit,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
     contentPadding: PaddingValues = PaddingValues(horizontal = 22.dp, vertical = 13.dp),
@@ -452,7 +452,7 @@ fun SeaGlassPill(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     selectedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
     unselectedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
@@ -487,7 +487,7 @@ fun SeaGlassPill(
  */
 @Composable
 fun SeaGlassCard(
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
     onClick: (() -> Unit)? = null,

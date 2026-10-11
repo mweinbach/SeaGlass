@@ -1,7 +1,11 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.compose.compiler)
+    `maven-publish`
 }
+
+group = "dev.seaglass"
+version = "1.0.0"
 
 android {
     namespace = "dev.seaglass.compose"
@@ -10,6 +14,12 @@ android {
     defaultConfig {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
     }
 
     compileOptions {
@@ -43,4 +53,17 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "dev.seaglass"
+                artifactId = "seaglass-compose"
+                version = "1.0.0"
+            }
+        }
+    }
 }

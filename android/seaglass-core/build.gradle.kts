@@ -1,6 +1,10 @@
 plugins {
     alias(libs.plugins.android.library)
+    `maven-publish`
 }
+
+group = "dev.seaglass"
+version = "1.0.0"
 
 android {
     namespace = "dev.seaglass.core"
@@ -9,6 +13,12 @@ android {
     defaultConfig {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
     }
 
     compileOptions {
@@ -30,4 +40,17 @@ dependencies {
     api(libs.androidx.graphics.shapes)
 
     testImplementation(libs.junit)
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "dev.seaglass"
+                artifactId = "seaglass-core"
+                version = "1.0.0"
+            }
+        }
+    }
 }

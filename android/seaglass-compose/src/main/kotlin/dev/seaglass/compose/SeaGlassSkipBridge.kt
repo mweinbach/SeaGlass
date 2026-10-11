@@ -376,4 +376,98 @@ object SeaGlassSkipBridge {
             )
         }
     }
+
+    /**
+     * Skip-friendly iOS 27 Context Menu Overlay with lifted target preview platter,
+     * quick-reaction pill, and in-place submenu morphing.
+     */
+    @Composable
+    fun ContextMenuOverlay(
+        visible: Boolean,
+        onDismissRequest: () -> Unit,
+        previewTitle: String = "Pacific Surf & Sea Glass",
+        previewSubtitle: String = "Sand-Frosted Continuum · 64% Clear · 1.54 IOR",
+        previewMeta: String = "pinned · gemini-4-argon-eap · 199K tokens",
+        onItemSelectedId: (String) -> Unit = {}
+    ) {
+        SeaGlassContextMenuOverlay(
+            visible = visible,
+            onDismissRequest = onDismissRequest,
+            stageState = LocalSeaGlassStageState.current,
+            previewTitle = previewTitle,
+            previewSubtitle = previewSubtitle,
+            previewMeta = previewMeta,
+            onItemSelected = { onItemSelectedId(it.id) }
+        )
+    }
+
+    /**
+     * Skip-friendly iOS 27 Optical Magnifier Loupe Scrubber (`SeaGlassMagnifierScrubber`).
+     */
+    @Composable
+    fun MagnifierScrubber(
+        value: Float,
+        onValueChange: (Float) -> Unit,
+        label: String = "OPTICAL TIMELINE & LOUPE SCRUBBER"
+    ) {
+        SeaGlassMagnifierScrubber(
+            value = value,
+            onValueChange = onValueChange,
+            stageState = LocalSeaGlassStageState.current,
+            label = label
+        )
+    }
+
+    /**
+     * Skip-friendly iOS 27 3D Cylindrical Refractive Drum-Wheel Picker (`SeaGlassWheelPicker`).
+     */
+    @Composable
+    fun WheelPicker(
+        items: List<String>,
+        selectedIndex: Int,
+        onSelectIndex: (Int) -> Unit,
+        title: String = "IOS 27 REFRACTIVE DRUM-WHEEL PICKER"
+    ) {
+        SeaGlassWheelPicker(
+            items = items,
+            selectedIndex = selectedIndex,
+            onSelectIndex = onSelectIndex,
+            stageState = LocalSeaGlassStageState.current,
+            title = title
+        )
+    }
+
+    /**
+     * Skip-friendly iOS 27 Concentric Notification Rollup Stack (`SeaGlassNotificationStack`).
+     */
+    @Composable
+    fun NotificationStack(
+        expanded: Boolean,
+        onExpandedChange: (Boolean) -> Unit
+    ) {
+        SeaGlassNotificationStack(
+            expanded = expanded,
+            onExpandedChange = onExpandedChange,
+            stageState = LocalSeaGlassStageState.current
+        )
+    }
+
+    /**
+     * Skip-friendly iOS 27 Control Center Modular Platter Grid & Twin Vertical Pill Sliders.
+     */
+    @Composable
+    fun ControlCenterGrid(
+        frostFraction: Float,
+        onFrostFractionChange: (Float) -> Unit,
+        refractFraction: Float,
+        onRefractFractionChange: (Float) -> Unit
+    ) {
+        SeaGlassControlCenterGrid(
+            frostFraction = frostFraction,
+            onFrostFractionChange = onFrostFractionChange,
+            refractFraction = refractFraction,
+            onRefractFractionChange = onRefractFractionChange,
+            stageState = LocalSeaGlassStageState.current
+        )
+    }
 }

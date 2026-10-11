@@ -285,7 +285,7 @@ fun SeaGlassFloatingSheet(
  */
 @Composable
 fun SeaGlassFloatingSheetSurface(
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass.copy(
         cornerRadiusDp = 42f,
@@ -712,7 +712,7 @@ fun SeaGlassSheetActionButton(
  */
 @Composable
 fun SeaGlassInspectorSheetContent(
-    stageState: SeaGlassStageState?,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
     modifier: Modifier = Modifier,
     title: String = "Windows UI Redesign for SeaGlass Elements",
     subtitle: String = "C:\\Users\\maxw6\\Projects\\SeaGlass ...\\projects\\seaglass",
