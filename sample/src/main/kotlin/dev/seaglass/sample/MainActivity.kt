@@ -65,8 +65,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +80,7 @@ import dev.seaglass.compose.SeaGlassButton
 import dev.seaglass.compose.SeaGlassCard
 import dev.seaglass.compose.SeaGlassChoreographedShapeOrb
 import dev.seaglass.compose.SeaGlassFluidBar
+import dev.seaglass.compose.SeaGlassMiniPlayerBar
 import dev.seaglass.compose.SeaGlassMorphMode
 import dev.seaglass.compose.SeaGlassMorphingButton
 import dev.seaglass.compose.SeaGlassPill
@@ -214,7 +218,7 @@ fun SeaGlassShowcaseApp() {
                     .fillMaxSize()
                     .padding(
                         top = systemBarsPadding.calculateTopPadding() + 8.dp,
-                        bottom = systemBarsPadding.calculateBottomPadding() + 88.dp,
+                        bottom = systemBarsPadding.calculateBottomPadding() + 148.dp,
                         start = 16.dp,
                         end = 16.dp
                     )
@@ -307,26 +311,53 @@ fun SeaGlassShowcaseApp() {
                 }
             }
 
-            // 3. Bottom Adaptive Coalescing SeaGlass Fluid Bar
-            Box(
+            // 3. Bottom Stacked iOS 26 Apple Music Style Liquid SeaGlass Mini-Player + 5-Tab Bar
+            var miniPlayerPlaying by remember { mutableStateOf(true) }
+            var miniTrackIndex by remember { mutableIntStateOf(0) }
+            val miniTracks = remember {
+                listOf(
+                    "A Good Song Never Dies" to "Saint Motel",
+                    "Pacific Surf & Driftwood" to "SeaGlass Spatial",
+                    "Tropical House Essentials" to "Coastal Tide Mix"
+                )
+            }
+            val currentTrack = miniTracks[miniTrackIndex % miniTracks.size]
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(9.dp),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(
                         start = 16.dp,
                         end = 16.dp,
-                        bottom = systemBarsPadding.calculateBottomPadding() + 10.dp
+                        bottom = systemBarsPadding.calculateBottomPadding() + 8.dp
                     )
             ) {
+                SeaGlassMiniPlayerBar(
+                    title = currentTrack.first,
+                    subtitle = currentTrack.second,
+                    isPlaying = miniPlayerPlaying,
+                    onTogglePlay = { miniPlayerPlaying = !miniPlayerPlaying },
+                    onNextTrack = {
+                        miniTrackIndex = (miniTrackIndex + 1) % miniTracks.size
+                        val all = SeaGlassPalette.entries
+                        activePalette = all[(activePalette.ordinal + 1) % all.size]
+                    },
+                    stageState = stageState,
+                    material = customSurfaceMaterial
+                )
+
                 SeaGlassFluidBar(
-                    items = listOf("Optics", "Fluid SDF", "Palettes", "Backends"),
+                    items = listOf("Home", "Morph", "Palettes", "Library", "Search"),
                     selectedIndex = selectedTab,
-                    onSelect = { selectedTab = it },
+                    onSelect = { selectedTab = it.coerceAtMost(3) },
                     stageState = stageState,
                     barMaterial = customSurfaceMaterial,
                     indicatorMaterial = customPrimaryMaterial,
                     actionLabel = if (actionOrbDetached) "⇄" else "✦",
                     actionDetached = actionOrbDetached,
+                    showActionOrb = false,
                     onActionClick = { actionOrbDetached = !actionOrbDetached }
                 )
             }
@@ -1678,6 +1709,22 @@ private fun ExpressiveTidalBackdrop(
     val sunlitPeach = Color(0xFFFF8E6E)
     val goldenSand = Color(0xFFFFCA58)
     val aquaCaustic = Color(0xFF68F4FF)
+    val textMeasurer = rememberTextMeasurer()
+
+    val headlineStyle = remember(isDark) {
+        TextStyle(
+            fontSize = 18.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = if (isDark) Color.White.copy(alpha = 0.90f) else Color(0xFFFFFFFF).copy(alpha = 0.92f)
+        )
+    }
+    val subHeadlineStyle = remember(isDark) {
+        TextStyle(
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (isDark) Color.White.copy(alpha = 0.65f) else Color(0xFFE0F4FF).copy(alpha = 0.80f)
+        )
+    }
 
     Canvas(modifier = modifier) {
         val w = size.width
@@ -1837,5 +1884,69 @@ private fun ExpressiveTidalBackdrop(
                 style = Stroke(width = 3.dp.toPx())
             )
         }
+
+        // High-Contrast Editorial Media Cards & Headlines directly behind the Mini-Player & Bottom Tab Bar
+        // so you can clearly see the top/bottom 13.5dp meniscus bevels stretching & refracting the text
+        // and artwork while the frosted center keeps the bar's foreground UI legible!
+        val driftX = sin(phase * 0.7f) * 18.dp.toPx()
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFFFF6B98), Color(0xFF5A98FF))
+            ),
+            topLeft = Offset(w * 0.05f + driftX, h * 0.77f),
+            size = Size(w * 0.42f, 62.dp.toPx()),
+            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
+        )
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFF7AF5C8), Color(0xFF14A878))
+            ),
+            topLeft = Offset(w * 0.51f + driftX, h * 0.77f),
+            size = Size(w * 0.44f, 62.dp.toPx()),
+            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
+        )
+
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "Chill House Beats",
+            topLeft = Offset(w * 0.05f + driftX, h * 0.842f),
+            style = headlineStyle
+        )
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "Coastal Lounge",
+            topLeft = Offset(w * 0.05f + driftX, h * 0.865f),
+            style = subHeadlineStyle
+        )
+
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "Tropical House Essentials",
+            topLeft = Offset(w * 0.50f + driftX, h * 0.842f),
+            style = headlineStyle
+        )
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "SeaGlass Dance",
+            topLeft = Offset(w * 0.50f + driftX, h * 0.865f),
+            style = subHeadlineStyle
+        )
+
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFF3E8EFF), Color(0xFFA8DCFF))
+            ),
+            topLeft = Offset(w * 0.05f - driftX * 0.6f, h * 0.905f),
+            size = Size(w * 0.42f, 84.dp.toPx()),
+            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
+        )
+        drawRoundRect(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFFFFB248), Color(0xFF32D8B4))
+            ),
+            topLeft = Offset(w * 0.51f - driftX * 0.6f, h * 0.905f),
+            size = Size(w * 0.44f, 84.dp.toPx()),
+            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
+        )
     }
 }

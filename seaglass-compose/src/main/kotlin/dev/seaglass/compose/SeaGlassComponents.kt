@@ -3,6 +3,8 @@ package dev.seaglass.compose
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,8 +38,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -333,8 +344,185 @@ fun SeaGlassCard(
 }
 
 /**
- * Liquid-Glass-inspired adaptive Material 3 Expressive navigation & action bar rendered in
- * frosted SeaGlass.
+ * Floating Liquid SeaGlass Mini-Player Capsule modeled after the iOS 26 Apple Music Mini-Player.
+ *
+ * Features a full-capsule silhouette (`56.dp` tall) whose top and bottom `13.5dp` meniscus bevels
+ * stretch and refract background headlines & artwork, paired with an album cover thumbnail,
+ * track title/subtitle, and crisp vector Play (`▶`/`❚❚`) and Fast-Forward (`▶▶`) controls.
+ */
+@Composable
+fun SeaGlassMiniPlayerBar(
+    title: String,
+    subtitle: String,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onNextTrack: () -> Unit,
+    stageState: SeaGlassStageState?,
+    modifier: Modifier = Modifier,
+    material: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
+) {
+    val barHeight = 56.dp
+    val contentColor = remember(material.tintColorArgb, material.tintDensity) {
+        Color(
+            SeaGlassColorMath.optimalContentColorFor(
+                tintArgb = material.tintColorArgb,
+                tintDensity = material.tintDensity
+            )
+        )
+    }
+
+    SeaGlassSurface(
+        stageState = stageState,
+        material = material.copy(
+            cornerRadiusDp = 28f,
+            thicknessDp = 18f,
+            rimChalkiness = 0.88f
+        ),
+        onClick = onTogglePlay,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+        contentAlignment = Alignment.CenterStart,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(barHeight)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Album Artwork Thumbnail
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFFE86A50),
+                                Color(0xFFD84E38)
+                            )
+                        )
+                    )
+            ) {
+                Canvas(modifier = Modifier.size(22.dp)) {
+                    drawCircle(
+                        color = Color(0xFF28120C).copy(alpha = 0.82f),
+                        radius = size.minDimension * 0.42f,
+                        style = Stroke(width = 2.dp.toPx())
+                    )
+                    drawCircle(
+                        color = Color(0xFFFFDFC8),
+                        radius = size.minDimension * 0.14f
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Track Title & Artist Subtitle
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = title,
+                    color = contentColor,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        letterSpacing = (-0.1).sp
+                    )
+                )
+                Text(
+                    text = subtitle,
+                    color = contentColor.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Normal,
+                        fontSize = 12.sp
+                    )
+                )
+            }
+
+            // Play / Pause Vector Button
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onTogglePlay
+                    )
+            ) {
+                Canvas(modifier = Modifier.size(18.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    if (isPlaying) {
+                        drawRoundRect(
+                            color = contentColor,
+                            topLeft = Offset(w * 0.16f, h * 0.12f),
+                            size = Size(w * 0.24f, h * 0.76f),
+                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        )
+                        drawRoundRect(
+                            color = contentColor,
+                            topLeft = Offset(w * 0.60f, h * 0.12f),
+                            size = Size(w * 0.24f, h * 0.76f),
+                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        )
+                    } else {
+                        val playPath = Path().apply {
+                            moveTo(w * 0.18f, h * 0.10f)
+                            lineTo(w * 0.88f, h * 0.50f)
+                            lineTo(w * 0.18f, h * 0.90f)
+                            close()
+                        }
+                        drawPath(playPath, color = contentColor)
+                    }
+                }
+            }
+
+            // Fast-Forward (▶▶) Vector Button
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onNextTrack
+                    )
+            ) {
+                Canvas(modifier = Modifier.size(22.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val tri1 = Path().apply {
+                        moveTo(w * 0.06f, h * 0.16f)
+                        lineTo(w * 0.50f, h * 0.50f)
+                        lineTo(w * 0.06f, h * 0.84f)
+                        close()
+                    }
+                    val tri2 = Path().apply {
+                        moveTo(w * 0.50f, h * 0.16f)
+                        lineTo(w * 0.94f, h * 0.50f)
+                        lineTo(w * 0.50f, h * 0.84f)
+                        close()
+                    }
+                    drawPath(tri1, color = contentColor)
+                    drawPath(tri2, color = contentColor)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Liquid-Glass-inspired adaptive Material 3 Expressive navigation bar rendered in frosted SeaGlass.
+ *
+ * Features stacked custom vector icons + labels, a plump active-tab glass lozenge pill that
+ * glides with velocity stretch, and an optional coalescing action orb on the right.
  */
 @Composable
 fun SeaGlassFluidBar(
@@ -347,6 +535,7 @@ fun SeaGlassFluidBar(
     indicatorMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
     actionLabel: String = "✦",
     actionDetached: Boolean = false,
+    showActionOrb: Boolean = false,
     onActionClick: (() -> Unit)? = null
 ) {
     val motion = LocalSeaGlassMotionScheme.current
@@ -367,14 +556,18 @@ fun SeaGlassFluidBar(
     var totalWidthPx by remember { mutableFloatStateOf(0f) }
     var totalHeightPx by remember { mutableFloatStateOf(0f) }
 
-    val barHeight = 64.dp
-    val orbSize = 58.dp
+    val barHeight = 68.dp
+    val orbSize = 62.dp
     val barHeightPx = with(density) { barHeight.toPx() }
     val orbSizePx = with(density) { orbSize.toPx() }
     val gapPx = with(density) { actionSeparationDp.toPx() }
 
-    val mainBarWidthPx = (totalWidthPx - orbSizePx - gapPx.coerceAtLeast(0f) - with(density) { 4.dp.toPx() })
-        .coerceAtLeast(orbSizePx * 2f)
+    val mainBarWidthPx = if (showActionOrb) {
+        (totalWidthPx - orbSizePx - gapPx.coerceAtLeast(0f) - with(density) { 4.dp.toPx() })
+            .coerceAtLeast(orbSizePx * 2f)
+    } else {
+        totalWidthPx
+    }
 
     val coalescingNodes = remember(
         totalWidthPx,
@@ -384,10 +577,27 @@ fun SeaGlassFluidBar(
         orbSizePx,
         gapPx,
         barMaterial,
-        indicatorMaterial
+        indicatorMaterial,
+        showActionOrb
     ) {
         if (totalWidthPx <= 1f || totalHeightPx <= 1f) {
             emptyList()
+        } else if (!showActionOrb) {
+            val centerY = totalHeightPx * 0.5f
+            val barHalfW = totalWidthPx * 0.5f
+            val barHalfH = barHeightPx * 0.5f
+            listOf(
+                SeaGlassSdfEngine.SdfNode(
+                    centerX = barHalfW,
+                    centerY = centerY,
+                    halfWidth = barHalfW,
+                    halfHeight = barHalfH,
+                    uniformCornerRadius = barHalfH,
+                    cornerSmoothing = barMaterial.cornerSmoothing,
+                    tintColorArgb = barMaterial.tintColorArgb,
+                    thicknessPx = barHeightPx * 0.48f
+                )
+            )
         } else {
             val centerY = totalHeightPx * 0.5f
             val barHalfW = mainBarWidthPx * 0.5f
@@ -405,7 +615,7 @@ fun SeaGlassFluidBar(
                     uniformCornerRadius = barHalfH,
                     cornerSmoothing = barMaterial.cornerSmoothing,
                     tintColorArgb = barMaterial.tintColorArgb,
-                    thicknessPx = barHeightPx * 0.45f
+                    thicknessPx = barHeightPx * 0.48f
                 ),
                 SeaGlassSdfEngine.SdfNode(
                     centerX = orbCenterX,
@@ -431,14 +641,18 @@ fun SeaGlassFluidBar(
             }
             .seaGlass(
                 stageState = stageState,
-                material = barMaterial,
+                material = barMaterial.copy(
+                    cornerRadiusDp = 34f,
+                    thicknessDp = 20f,
+                    rimChalkiness = 0.90f
+                ),
                 nodesOptional = coalescingNodes,
                 smoothRadiusDp = 42f
             )
     ) {
         val mainBarWidthDp = with(density) { mainBarWidthPx.toDp() }
         val itemCount = items.size.coerceAtLeast(1)
-        val innerPadding = 5.dp
+        val innerPadding = 4.dp
         val trackWidthDp = (mainBarWidthDp - innerPadding * 2).coerceAtLeast(40.dp)
         val itemWidthDp = trackWidthDp / itemCount
 
@@ -453,22 +667,23 @@ fun SeaGlassFluidBar(
             }
             val motionStretch = kotlin.math.abs(selectedIndex - animatedIndex).coerceIn(0f, 1.2f)
 
+            // Plump iOS 26 Liquid Glass Active Tab Lozenge Pill
             Box(
                 modifier = Modifier
                     .offset { IntOffset(x = indicatorOffsetX, y = 0) }
                     .width(itemWidthDp)
                     .fillMaxHeight()
                     .graphicsLayer {
-                        scaleX = 1f + motionStretch * 0.34f
-                        scaleY = 1f - motionStretch * 0.14f
+                        scaleX = 1f + motionStretch * 0.30f
+                        scaleY = 1f - motionStretch * 0.12f
                     }
-                    .seaGlass(
-                        stageState = stageState,
-                        material = indicatorMaterial.copy(
-                            cornerRadiusDp = 26f,
-                            thicknessDp = 22f,
-                            transparency = (indicatorMaterial.transparency + 0.12f).coerceAtMost(0.92f),
-                            rimChalkiness = 0.95f
+                    .clip(RoundedCornerShape(30.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.32f),
+                                Color(0xFF0A1E30).copy(alpha = 0.16f)
+                            )
                         )
                     )
             )
@@ -477,23 +692,24 @@ fun SeaGlassFluidBar(
                 modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val baseInkColor = Color(
+                    SeaGlassColorMath.optimalContentColorFor(
+                        barMaterial.tintColorArgb,
+                        barMaterial.tintDensity
+                    )
+                )
+                // Vibrant active tab accent color (Apple Music Red/Coral or high-chroma palette accent)
+                val activeAccentColor = Color(
+                    SeaGlassColorMath.lerpOklab(
+                        indicatorMaterial.tintColorArgb,
+                        0xFFFF2D55.toInt(),
+                        0.42f
+                    )
+                )
+
                 items.forEachIndexed { index, title ->
                     val selected = index == selectedIndex
-                    val labelColor = if (selected) {
-                        Color(
-                            SeaGlassColorMath.optimalContentColorFor(
-                                indicatorMaterial.tintColorArgb,
-                                indicatorMaterial.tintDensity
-                            )
-                        )
-                    } else {
-                        Color(
-                            SeaGlassColorMath.optimalContentColorFor(
-                                barMaterial.tintColorArgb,
-                                barMaterial.tintDensity
-                            )
-                        ).copy(alpha = 0.78f)
-                    }
+                    val tint = if (selected) activeAccentColor else baseInkColor.copy(alpha = 0.86f)
 
                     Box(
                         contentAlignment = Alignment.Center,
@@ -506,46 +722,185 @@ fun SeaGlassFluidBar(
                                 onClick = { onSelect(index) }
                             )
                     ) {
-                        Text(
-                            text = title,
-                            color = labelColor,
-                            style = MaterialTheme.typography.labelLarge.copy(
-                                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                                fontSize = 13.sp
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            NavBarTabVectorIcon(
+                                index = index,
+                                color = tint,
+                                modifier = Modifier.size(21.dp)
                             )
-                        )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = title,
+                                color = tint,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
                     }
                 }
             }
         }
 
-        val orbLeftPx = (mainBarWidthPx + gapPx).coerceAtMost(totalWidthPx - orbSizePx)
-        val orbContentColor = Color(
-            SeaGlassColorMath.optimalContentColorFor(
-                indicatorMaterial.tintColorArgb,
-                indicatorMaterial.tintDensity
+        if (showActionOrb) {
+            val orbLeftPx = (mainBarWidthPx + gapPx).coerceAtMost(totalWidthPx - orbSizePx)
+            val orbContentColor = Color(
+                SeaGlassColorMath.optimalContentColorFor(
+                    indicatorMaterial.tintColorArgb,
+                    indicatorMaterial.tintDensity
+                )
             )
-        )
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .offset { IntOffset(x = orbLeftPx.roundToInt().coerceAtLeast(0), y = 0) }
-                .size(orbSize)
-                .align(Alignment.CenterStart)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { onActionClick?.invoke() }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .offset { IntOffset(x = orbLeftPx.roundToInt().coerceAtLeast(0), y = 0) }
+                    .size(orbSize)
+                    .align(Alignment.CenterStart)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onActionClick?.invoke() }
+                    )
+            ) {
+                Text(
+                    text = actionLabel,
+                    color = orbContentColor,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Black
+                    )
                 )
-        ) {
-            Text(
-                text = actionLabel,
-                color = orbContentColor,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Black
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavBarTabVectorIcon(
+    index: Int,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val strokeW = 2.1.dp.toPx()
+
+        when (index % 5) {
+            0 -> {
+                // Home House Icon
+                val house = Path().apply {
+                    moveTo(w * 0.50f, h * 0.10f)
+                    lineTo(w * 0.90f, h * 0.46f)
+                    lineTo(w * 0.80f, h * 0.46f)
+                    lineTo(w * 0.80f, h * 0.88f)
+                    lineTo(w * 0.58f, h * 0.88f)
+                    lineTo(w * 0.58f, h * 0.60f)
+                    lineTo(w * 0.42f, h * 0.60f)
+                    lineTo(w * 0.42f, h * 0.88f)
+                    lineTo(w * 0.20f, h * 0.88f)
+                    lineTo(w * 0.20f, h * 0.46f)
+                    lineTo(w * 0.10f, h * 0.46f)
+                    close()
+                }
+                drawPath(house, color = color)
+            }
+
+            1 -> {
+                // 4-Square Grid Icon ("New" / "Morph")
+                val r = CornerRadius(2.2.dp.toPx(), 2.2.dp.toPx())
+                val cell = w * 0.36f
+                drawRoundRect(color, Offset(w * 0.10f, h * 0.10f), Size(cell, cell), r)
+                drawRoundRect(color, Offset(w * 0.54f, h * 0.10f), Size(cell, cell), r)
+                drawRoundRect(color, Offset(w * 0.10f, h * 0.54f), Size(cell, cell), r)
+                drawRoundRect(color, Offset(w * 0.54f, h * 0.54f), Size(cell, cell), r)
+            }
+
+            2 -> {
+                // Radio Waves ((•)) Icon ("Palettes" / "Radio")
+                drawCircle(color = color, radius = w * 0.11f, center = Offset(w * 0.50f, h * 0.50f))
+                drawArc(
+                    color = color,
+                    startAngle = -50f,
+                    sweepAngle = 100f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.24f, h * 0.24f),
+                    size = Size(w * 0.52f, h * 0.52f),
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
                 )
-            )
+                drawArc(
+                    color = color,
+                    startAngle = 130f,
+                    sweepAngle = 100f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.24f, h * 0.24f),
+                    size = Size(w * 0.52f, h * 0.52f),
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = color,
+                    startAngle = -55f,
+                    sweepAngle = 110f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.06f, h * 0.06f),
+                    size = Size(w * 0.88f, h * 0.88f),
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = color,
+                    startAngle = 125f,
+                    sweepAngle = 110f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.06f, h * 0.06f),
+                    size = Size(w * 0.88f, h * 0.88f),
+                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                )
+            }
+
+            3 -> {
+                // Library Stack / Engine Icon
+                drawLine(
+                    color = color,
+                    start = Offset(w * 0.30f, h * 0.12f),
+                    end = Offset(w * 0.70f, h * 0.12f),
+                    strokeWidth = strokeW,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(w * 0.22f, h * 0.24f),
+                    end = Offset(w * 0.78f, h * 0.24f),
+                    strokeWidth = strokeW,
+                    cap = StrokeCap.Round
+                )
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(w * 0.14f, h * 0.34f),
+                    size = Size(w * 0.72f, h * 0.56f),
+                    cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx())
+                )
+            }
+
+            else -> {
+                // Search Magnifying Lens Icon
+                drawCircle(
+                    color = color,
+                    radius = w * 0.28f,
+                    center = Offset(w * 0.42f, h * 0.42f),
+                    style = Stroke(width = strokeW * 1.1f)
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(w * 0.63f, h * 0.63f),
+                    end = Offset(w * 0.88f, h * 0.88f),
+                    strokeWidth = strokeW * 1.2f,
+                    cap = StrokeCap.Round
+                )
+            }
         }
     }
 }
