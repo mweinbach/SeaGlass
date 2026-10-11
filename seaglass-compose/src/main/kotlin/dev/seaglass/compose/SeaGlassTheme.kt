@@ -206,3 +206,30 @@ fun Color.toSeaGlassMaterial(
         tintDensity = tintDensity
     )
 }
+
+/**
+ * Harmonized set of [SeaGlassMaterial] tokens derived dynamically from any Material 3 [ColorScheme]
+ * (including Android 12+ `dynamicLightColorScheme` / `dynamicDarkColorScheme`).
+ */
+@Immutable
+data class SeaGlassColorSchemeMaterials(
+    val primaryGlass: SeaGlassMaterial,
+    val secondaryGlass: SeaGlassMaterial,
+    val tertiaryGlass: SeaGlassMaterial,
+    val surfaceGlass: SeaGlassMaterial,
+    val elevatedGlass: SeaGlassMaterial
+)
+
+/**
+ * Derives a complete [SeaGlassColorSchemeMaterials] bundle from any Material 3 [ColorScheme]
+ * by harmonizing its tonal accents in perceptual Oklab space.
+ */
+fun ColorScheme.toSeaGlassMaterials(): SeaGlassColorSchemeMaterials {
+    return SeaGlassColorSchemeMaterials(
+        primaryGlass = primary.toSeaGlassMaterial(coarseness = 0.38f, frostRadiusDp = 24f, tintDensity = 0.64f),
+        secondaryGlass = secondary.toSeaGlassMaterial(coarseness = 0.44f, frostRadiusDp = 22f, tintDensity = 0.56f),
+        tertiaryGlass = tertiary.toSeaGlassMaterial(coarseness = 0.36f, frostRadiusDp = 24f, tintDensity = 0.66f),
+        surfaceGlass = surfaceVariant.toSeaGlassMaterial(coarseness = 0.48f, frostRadiusDp = 28f, tintDensity = 0.50f),
+        elevatedGlass = primaryContainer.toSeaGlassMaterial(coarseness = 0.42f, frostRadiusDp = 30f, tintDensity = 0.60f)
+    )
+}

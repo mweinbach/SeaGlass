@@ -34,9 +34,17 @@ SeaGlass/
 │                        # 2D SDF coalescing engine, AGSL & GLSL shaders, device tier detector
 ├── seaglass-compose/    # Jetpack Compose & Material 3 Expressive UI foundation:
 │                        # SeaGlassStage, Modifier.seaGlass, SeaGlassFluidGroup,
-│                        # SeaGlassSurface, SeaGlassFluidBar, SeaGlassButton, SeaGlassPill, SeaGlassCard
+│                        # SeaGlassSurface, SeaGlassCard, SeaGlassButton, SeaGlassIconButton,
+│                        # SeaGlassExtendedFab, SeaGlassPill, SeaGlassFilterChip, SeaGlassBadge,
+│                        # SeaGlassTopAppBar, SeaGlassFluidBar, SeaGlassMiniPlayerBar,
+│                        # SeaGlassFloatingToolbar, SeaGlassSearchBar, SeaGlassTextField,
+│                        # SeaGlassSwitch, SeaGlassCheckbox, SeaGlassRadioButton,
+│                        # SeaGlassSegmentedButtonRow, SeaGlassLiquidSlider,
+│                        # SeaGlassLinearProgressIndicator, SeaGlassCircularProgressIndicator,
+│                        # SeaGlassListItem, SeaGlassSnackbar, SeaGlassDialogCard,
+│                        # SeaGlassBottomSheetSurface, SeaGlassTwoElementMorph, SeaGlassBuddingCluster
 ├── seaglass-view/       # Classic Android View & Drawable interop:
-│                        # SeaGlassFrameLayout, SeaGlassDrawable
+│                        # SeaGlassFrameLayout, SeaGlassCardView, SeaGlassButtonView, SeaGlassDrawable
 ├── sample/              # Interactive SeaGlass Optical Lab & M3 Expressive Fluid Showcase app
 └── docs/agents/         # Deep technical & mathematical blueprints
 ```

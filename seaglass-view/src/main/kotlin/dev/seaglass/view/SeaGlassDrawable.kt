@@ -3,24 +3,30 @@ package dev.seaglass.view
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.Shader
+import android.graphics.SweepGradient
 import android.graphics.drawable.Drawable
 import dev.seaglass.core.SeaGlassColorMath
 import dev.seaglass.core.SeaGlassContourPathBuilder
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
+import dev.seaglass.core.SeaGlassSandGrainTexture
 import dev.seaglass.core.SeaGlassSdfEngine
+import dev.seaglass.core.SeaGlassShapeKind
+import dev.seaglass.core.SeaGlassShapeMorph
 import dev.seaglass.core.backend.SeaGlassUniformBlock
 import kotlin.math.min
 
 /**
  * Hardware-accelerated Android [Drawable] that renders a SeaGlass surface with
- * analytical SDF contours, Oklab Beer-Lambert volumetric body tinting, and a
- * chalky Oren-Nayar / rough-Fresnel tumbled rim bevel.
+ * analytical SDF contours (including multi-node `sminCubic` coalescing and 20-shape
+ * M3 Expressive polygon morphing), Oklab Beer-Lambert volumetric body tinting,
+ * toroidal sand-grain micro-facet texture, and a prismatic meniscus rim bevel.
  */
 class SeaGlassDrawable(
     material: SeaGlassMaterial = SeaGlassPalette.SeafoamMint.primaryGlass,
@@ -36,14 +42,57 @@ class SeaGlassDrawable(
             }
         }
 
+    private var customNodes: List<SeaGlassSdfEngine.SdfNode>? = null
+    private var smoothRadiusPx: Float = 28f * density
+    private var morphStartShape: SeaGlassShapeKind? = null
+    private var morphEndShape: SeaGlassShapeKind? = null
+    private var morphProgress: Float = 0f
+
     val uniformBlock: SeaGlassUniformBlock = SeaGlassUniformBlock()
 
     private val contourPath = Path()
     private val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
+    private val sandGrainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        shader = SeaGlassSandGrainTexture.obtainShader()
+    }
+    private val grainMatrix = Matrix()
+    private val innerSlopePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
     private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+
+    /**
+     * Configures multi-node liquid SDF coalescing (`sminCubic`) for this drawable.
+     */
+    fun setSdfNodes(nodes: List<SeaGlassSdfEngine.SdfNode>?, smoothRadiusDp: Float = 28f) {
+        customNodes = nodes
+        smoothRadiusPx = smoothRadiusDp * density
+        rebuildShaders(bounds)
+        invalidateSelf()
+    }
+
+    /**
+     * Configures Material 3 Expressive 20-shape polygon morphing for this drawable.
+     */
+    fun setShapeMorph(
+        startShape: SeaGlassShapeKind?,
+        endShape: SeaGlassShapeKind? = startShape,
+        progress: Float = 0f
+    ) {
+        morphStartShape = startShape
+        morphEndShape = endShape
+        morphProgress = progress
+        rebuildShaders(bounds)
+        invalidateSelf()
     }
 
     override fun onBoundsChange(bounds: Rect) {
@@ -57,18 +106,40 @@ class SeaGlassDrawable(
         val cornerPx = min(material.cornerRadiusDp * density, min(w, h) * 0.5f)
         val thicknessPx = material.thicknessDp * density
 
-        val node = SeaGlassSdfEngine.SdfNode(
-            centerX = bounds.left + w * 0.5f,
-            centerY = bounds.top + h * 0.5f,
-            halfWidth = w * 0.5f,
-            halfHeight = h * 0.5f,
-            uniformCornerRadius = cornerPx,
-            cornerSmoothing = material.cornerSmoothing,
-            tintColorArgb = material.tintColorArgb,
-            thicknessPx = thicknessPx
+        val activeNodes = customNodes?.takeIf { it.isNotEmpty() } ?: listOf(
+            SeaGlassSdfEngine.SdfNode(
+                centerX = bounds.left + w * 0.5f,
+                centerY = bounds.top + h * 0.5f,
+                halfWidth = w * 0.5f,
+                halfHeight = h * 0.5f,
+                uniformCornerRadius = cornerPx,
+                cornerSmoothing = material.cornerSmoothing,
+                tintColorArgb = material.tintColorArgb,
+                thicknessPx = thicknessPx
+            )
         )
 
-        SeaGlassContourPathBuilder.buildSingleNodePath(node, contourPath)
+        val startKind = morphStartShape
+        val endKind = morphEndShape
+        if (startKind != null && endKind != null) {
+            SeaGlassShapeMorph.buildMorphedPolygonPath(
+                startKind = startKind,
+                endKind = endKind,
+                progress = morphProgress,
+                widthPx = w,
+                heightPx = h,
+                outPath = contourPath
+            )
+            contourPath.offset(bounds.left.toFloat(), bounds.top.toFloat())
+        } else {
+            SeaGlassContourPathBuilder.buildCoalescingScenePath(
+                nodes = activeNodes,
+                smoothRadiusPx = if (activeNodes.size >= 2) smoothRadiusPx else 0f,
+                outPath = contourPath,
+                insetPx = 0f
+            )
+        }
+
         uniformBlock.pack(
             widthPx = w,
             heightPx = h,
@@ -76,27 +147,31 @@ class SeaGlassDrawable(
             backdropOffsetY = bounds.top.toFloat(),
             material = material,
             density = density,
-            nodes = listOf(node),
-            smoothRadiusPx = 0f
+            nodes = activeNodes,
+            smoothRadiusPx = smoothRadiusPx
         )
 
+        val primaryTint = activeNodes.first().tintColorArgb
+        val secondaryTint = if (activeNodes.size >= 2) activeNodes[1].tintColorArgb else primaryTint
+
         val transmittedTop = SeaGlassColorMath.computeBeerLambertTransmission(
-            backdropArgb = 0xFFEAF3FA.toInt(),
-            tintArgb = material.tintColorArgb,
+            backdropArgb = 0xFFF2F8FC.toInt(),
+            tintArgb = primaryTint,
             tintDensity = material.tintDensity,
             coarseness = material.coarseness,
             normalizedThickness = 0.85f
         )
         val transmittedBottom = SeaGlassColorMath.computeBeerLambertTransmission(
-            backdropArgb = 0xFFCCE0F0.toInt(),
-            tintArgb = material.tintColorArgb,
+            backdropArgb = 0xFFDCEBF6.toInt(),
+            tintArgb = secondaryTint,
             tintDensity = material.tintDensity,
             coarseness = material.coarseness,
             normalizedThickness = 1.25f
         )
 
-        val bodyAlpha = ((0.46f + material.tintDensity * 0.32f + material.coarseness * 0.14f)
-            .coerceIn(0.30f, 0.90f) * 255f).toInt()
+        val frostOpacity = (1f - material.transparency).coerceIn(0.08f, 0.96f)
+        val bodyAlpha = ((0.48f + material.tintDensity * 0.30f + frostOpacity * 0.16f)
+            .coerceIn(0.38f, 0.92f) * 255f).toInt()
         val topWithAlpha = (bodyAlpha shl 24) or (transmittedTop and 0x00FFFFFF)
         val bottomWithAlpha = (bodyAlpha shl 24) or (transmittedBottom and 0x00FFFFFF)
 
@@ -110,33 +185,70 @@ class SeaGlassDrawable(
             Shader.TileMode.CLAMP
         )
 
-        val windwardRim = SeaGlassColorMath.lerpOklab(
-            material.tintColorArgb,
-            0xFFFFFFFF.toInt(),
-            (0.70f + material.coarseness * 0.20f).coerceIn(0f, 0.95f)
-        )
-        val leewardRim = SeaGlassColorMath.lerpOklab(
-            material.tintColorArgb,
-            0xFFFFFFFF.toInt(),
-            0.30f
-        )
-        val rimAlpha = ((0.42f + material.rimChalkiness * 0.48f).coerceIn(0.25f, 0.92f) * 255f).toInt()
+        val grainScale = (density * 0.55f).coerceIn(0.8f, 2.2f)
+        grainMatrix.reset()
+        grainMatrix.setScale(grainScale, grainScale)
+        sandGrainPaint.shader?.setLocalMatrix(grainMatrix)
+        sandGrainPaint.alpha = (material.coarseness * (0.28f + 0.72f * frostOpacity) * 195f)
+            .toInt()
+            .coerceIn(0, 200)
 
-        rimPaint.strokeWidth = (1.4f + material.coarseness * 0.85f) * density
-        rimPaint.shader = LinearGradient(
-            bounds.left.toFloat(),
-            bounds.top.toFloat(),
-            bounds.right.toFloat(),
-            bounds.bottom.toFloat(),
-            (rimAlpha shl 24) or (windwardRim and 0x00FFFFFF),
-            ((rimAlpha * 0.65f).toInt() shl 24) or (leewardRim and 0x00FFFFFF),
-            Shader.TileMode.CLAMP
+        val cx = bounds.exactCenterX()
+        val cy = bounds.exactCenterY()
+        val rimLight = (0.46f + material.rimChalkiness * 0.54f).coerceIn(0.28f, 0.98f)
+        val windwardRim = SeaGlassColorMath.lerpOklab(primaryTint, 0xFFFFFFFF.toInt(), 0.88f) and 0x00FFFFFF
+        val leewardRim = SeaGlassColorMath.lerpOklab(secondaryTint, 0xFFFFFFFF.toInt(), 0.60f) and 0x00FFFFFF
+
+        fun argb(rgb: Int, aFloat: Float): Int {
+            val a = (aFloat.coerceIn(0f, 1f) * 255f).toInt()
+            return (a shl 24) or rgb
+        }
+
+        innerSlopePaint.strokeWidth = 6.2f * density
+        innerSlopePaint.shader = SweepGradient(
+            cx,
+            cy,
+            intArrayOf(
+                argb(0x0032F4FF, rimLight * 0.36f),
+                argb(0x00FF5C92, rimLight * 0.54f),
+                argb(leewardRim, rimLight * 0.68f),
+                argb(windwardRim, 0.04f),
+                argb(0x0032F4FF, rimLight * 0.58f),
+                argb(windwardRim, rimLight * 0.76f),
+                argb(windwardRim, 0.04f),
+                argb(0x0032F4FF, rimLight * 0.36f)
+            ),
+            floatArrayOf(0.0f, 0.10f, 0.20f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
+        )
+
+        rimPaint.strokeWidth = 1.5f * density
+        rimPaint.shader = SweepGradient(
+            cx,
+            cy,
+            intArrayOf(
+                argb(0x00FFFFFF, rimLight * 0.72f),
+                argb(leewardRim, rimLight * 0.74f),
+                argb(windwardRim, 0.06f),
+                argb(0x00FFFFFF, rimLight * 0.78f),
+                argb(0x00FFFFFF, (rimLight * 0.94f).coerceAtMost(0.98f)),
+                argb(windwardRim, 0.06f),
+                argb(0x00FFFFFF, rimLight * 0.72f)
+            ),
+            floatArrayOf(0.0f, 0.15f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
         )
     }
 
     override fun draw(canvas: Canvas) {
         canvas.drawPath(contourPath, bodyPaint)
+        canvas.save()
+        canvas.clipPath(contourPath)
+        if (sandGrainPaint.alpha > 4) {
+            canvas.drawRect(bounds, sandGrainPaint)
+        }
+        innerSlopePaint.alpha = 48
+        canvas.drawPath(contourPath, innerSlopePaint)
         canvas.drawPath(contourPath, rimPaint)
+        canvas.restore()
     }
 
     override fun setAlpha(alpha: Int) {
