@@ -219,11 +219,11 @@ object SeaGlassColorMath {
         val lab = argbToOklab(tintArgb)
         val hue = kotlin.math.atan2(lab.b, lab.a)
         val subtleChroma = min(0.045f, sqrt(lab.a * lab.a + lab.b * lab.b) * 0.4f)
-        return if (lab.l >= 0.62f || tintDensity < 0.35f) {
+        return if (lab.l >= 0.48f || tintDensity < 0.35f) {
             // Deep coastal slate-ink harmonized with the glass hue
             oklabToArgb(
                 OklabColor(
-                    l = 0.23f,
+                    l = 0.19f,
                     a = subtleChroma * cos(hue),
                     b = subtleChroma * sin(hue),
                     alpha = 1f
@@ -233,9 +233,9 @@ object SeaGlassColorMath {
             // Luminous frosted chalk-white harmonized with the glass hue
             oklabToArgb(
                 OklabColor(
-                    l = 0.95f,
+                    l = 0.96f,
                     a = subtleChroma * 0.5f * cos(hue),
-                    b = subtleChroma * 0.5f * sin(hue),
+                    b = subtleChroma * sin(hue),
                     alpha = 1f
                 )
             )
