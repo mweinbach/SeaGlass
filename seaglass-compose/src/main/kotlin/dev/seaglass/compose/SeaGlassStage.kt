@@ -1,12 +1,12 @@
 package dev.seaglass.compose
 
 import android.graphics.BlurMaskFilter
-import android.graphics.LinearGradient as AndroidLinearGradient
 import android.graphics.Matrix as AndroidMatrix
 import android.graphics.Paint as AndroidPaint
 import android.graphics.Path
 import android.graphics.RenderEffect as AndroidRenderEffect
 import android.graphics.Shader
+import android.graphics.SweepGradient as AndroidSweepGradient
 import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -87,7 +87,7 @@ class SeaGlassStageState internal constructor(
                 Shader.TileMode.CLAMP
             ).asComposeRenderEffect()
 
-            val edgeBlur = (target * 0.24f).coerceAtLeast(1.0f)
+            val edgeBlur = (target * 0.22f).coerceAtLeast(1.0f)
             refractedEdgeBackdropLayer.renderEffect = AndroidRenderEffect.createBlurEffect(
                 edgeBlur,
                 edgeBlur,
@@ -146,9 +146,19 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
 }
 
 /**
- * Renders a 100% edge-to-edge transparent **Liquid Sea Glass** surface over [stageState]
- * with zero inner contour seams, strong Oklab Beer-Lambert color tinting, tactile sand-tumbled
- * micro-coarseness, and Gaussian-feathered Liquid Glass refractive edge light.
+ * Renders a 100% edge-to-edge transparent **Liquid Sea Glass** surface over [stageState]:
+ *
+ * 1. **Continuous Edge-to-Edge Refraction & Volumetric Sea-Glass Tint**:
+ *    - Samples from full-stage [SeaGlassStageState.frostedBackdropLayer] and
+ *      [SeaGlassStageState.refractedEdgeBackdropLayer] with zero border crop.
+ *    - Applies spectral Oklab color-filter absorption (`BlendMode.Modulate`) + frosted pastel
+ *      body scatter (`BlendMode.SrcOver`) + toroidal sand-grain micro-facets.
+ * 2. **Angular Optical Rim (Zero "Sticker Border" Look)**:
+ *    - Instead of a uniform stroke drawn around all 4 sides, uses an angular `SweepGradient`
+ *      refractive bevel that gleams along the top-left windward curve ($\sim 225^\circ$) and
+ *      concentrates a colored internal caustic along the bottom-right curve ($\sim 45^\circ$),
+ *      while **tapering to near-zero opacity (`0.03`) along the tangential flanks** so the edge
+ *      dissolves organically into the refracted glass.
  */
 @Composable
 fun Modifier.seaGlass(
@@ -171,7 +181,12 @@ fun Modifier.seaGlass(
             style = AndroidPaint.Style.FILL
         }
     }
-    val meniscusGlowPaint = remember {
+    val innerRefractSheenPaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.STROKE
+        }
+    }
+    val outerSpecularLipPaint = remember {
         AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
             style = AndroidPaint.Style.STROKE
         }
@@ -220,7 +235,7 @@ fun Modifier.seaGlass(
                 )
             }
 
-            // Build exact C^2-continuous sminCubic outer contour only (zero inset sub-paths!)
+            // Build exact C^2-continuous sminCubic outer contour
             SeaGlassContourPathBuilder.buildCoalescingScenePath(
                 nodes = activeNodes,
                 smoothRadiusPx = smoothRadiusPx,
@@ -234,52 +249,90 @@ fun Modifier.seaGlass(
             val shadowColorArgb = SeaGlassColorMath.lerpOklab(
                 material.tintColorArgb,
                 0xFF04111E.toInt(),
-                0.70f
+                0.72f
             )
-            val shadowAlpha = ((0.10f + frostOpacity * 0.14f) * 255f).toInt().coerceIn(12, 56)
+            val shadowAlpha = ((0.12f + frostOpacity * 0.14f) * 255f).toInt().coerceIn(14, 58)
             ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
-            ambientShadowPaint.maskFilter = BlurMaskFilter(10f * density, BlurMaskFilter.Blur.NORMAL)
+            ambientShadowPaint.maskFilter = BlurMaskFilter(11f * density, BlurMaskFilter.Blur.NORMAL)
 
-            // Gaussian-feathered refractive edge light bloom (zero hard inner stroke line!)
-            val rimLight = (0.44f + material.rimChalkiness * 0.54f).coerceIn(0.26f, 0.98f)
-            val glowStartArgb = SeaGlassColorMath.lerpOklab(
-                material.tintColorArgb,
-                0xFFFFFFFF.toInt(),
-                0.84f
-            )
-            val glowMidCyanArgb = SeaGlassColorMath.lerpOklab(
-                material.tintColorArgb,
-                0xFF64F6FF.toInt(),
-                0.76f
-            )
-            val secondaryNodeTint = if (activeNodes.size >= 2) {
+            // Angular SweepGradient Optical Rim:
+            // In Android SweepGradient: 0° = Right, 45° = Bottom-Right (leeward internal caustic),
+            // 90° = Bottom, 135° = Bottom-Left (tangent zero), 180° = Left,
+            // 225° = Top-Left (windward specular crest), 270° = Top, 315° = Top-Right (tangent zero).
+            val rimLight = (0.42f + material.rimChalkiness * 0.56f).coerceIn(0.24f, 0.98f)
+            val primaryTintArgb = activeNodes.firstOrNull()?.tintColorArgb ?: material.tintColorArgb
+            val secondaryTintArgb = if (activeNodes.size >= 2) {
                 activeNodes[1].tintColorArgb
             } else {
-                material.tintColorArgb
+                primaryTintArgb
             }
-            val glowEndCoralArgb = SeaGlassColorMath.lerpOklab(
-                secondaryNodeTint,
-                0xFFFFB48A.toInt(),
-                0.70f
-            )
-            val glowAlpha = (rimLight * 145f).toInt().coerceIn(32, 165)
 
-            meniscusGlowPaint.strokeWidth = 6.5f * density
-            meniscusGlowPaint.maskFilter = BlurMaskFilter(8.5f * density, BlurMaskFilter.Blur.NORMAL)
-            meniscusGlowPaint.shader = AndroidLinearGradient(
-                0f,
-                0f,
-                widthPx,
-                heightPx,
+            val windwardCrestRgb = SeaGlassColorMath.lerpOklab(
+                primaryTintArgb,
+                0xFFFFFFFF.toInt(),
+                0.88f
+            ) and 0x00FFFFFF
+            val prismaticCyanRgb = SeaGlassColorMath.lerpOklab(
+                primaryTintArgb,
+                0xFF72F8FF.toInt(),
+                0.78f
+            ) and 0x00FFFFFF
+            val leewardCausticRgb = SeaGlassColorMath.lerpOklab(
+                secondaryTintArgb,
+                0xFFFFFFFF.toInt(),
+                0.54f
+            ) and 0x00FFFFFF
+            val warmDispersionRgb = SeaGlassColorMath.lerpOklab(
+                secondaryTintArgb,
+                0xFFFFB894.toInt(),
+                0.68f
+            ) and 0x00FFFFFF
+
+            fun argbWithAlpha(rgb: Int, aFloat: Float): Int {
+                val a = (aFloat.coerceIn(0f, 1f) * 255f).toInt()
+                return (a shl 24) or rgb
+            }
+
+            val cx = widthPx * 0.5f
+            val cy = heightPx * 0.5f
+
+            // Layer A: Soft Gaussian-feathered inner refractive sheen (gives 3D lens bevel depth)
+            innerRefractSheenPaint.strokeWidth = 4.2f * density
+            innerRefractSheenPaint.maskFilter = BlurMaskFilter(5.0f * density, BlurMaskFilter.Blur.NORMAL)
+            innerRefractSheenPaint.shader = AndroidSweepGradient(
+                cx,
+                cy,
                 intArrayOf(
-                    (glowAlpha shl 24) or (glowStartArgb and 0x00FFFFFF),
-                    ((glowAlpha * 0.68f).toInt() shl 24) or (glowMidCyanArgb and 0x00FFFFFF),
-                    ((glowAlpha * 0.22f).toInt() shl 24) or (glowStartArgb and 0x00FFFFFF),
-                    ((glowAlpha * 0.68f).toInt() shl 24) or (glowEndCoralArgb and 0x00FFFFFF),
-                    (glowAlpha shl 24) or (glowStartArgb and 0x00FFFFFF)
+                    argbWithAlpha(warmDispersionRgb, rimLight * 0.24f),  // 0° Right
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.54f),  // 45° Bottom-Right Caustic
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.18f),  // 90° Bottom
+                    argbWithAlpha(primaryTintArgb and 0x00FFFFFF, 0.02f),// 135° Bottom-Left Tangent (vanishes!)
+                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.32f),   // 180° Left
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.68f),   // 225° Top-Left Windward Crest
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.36f),   // 270° Top
+                    argbWithAlpha(primaryTintArgb and 0x00FFFFFF, 0.02f),// 315° Top-Right Tangent (vanishes!)
+                    argbWithAlpha(warmDispersionRgb, rimLight * 0.24f)   // 360° Right
                 ),
-                floatArrayOf(0f, 0.26f, 0.50f, 0.74f, 1f),
-                Shader.TileMode.CLAMP
+                floatArrayOf(0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f)
+            )
+
+            // Layer B: Razor-thin (0.95dp) directional specular lip that tapers to near-zero on tangents
+            outerSpecularLipPaint.strokeWidth = 0.95f * density
+            outerSpecularLipPaint.shader = AndroidSweepGradient(
+                cx,
+                cy,
+                intArrayOf(
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.30f),  // 0° Right
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.76f),  // 45° Bottom-Right Caustic Crest
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.26f),  // 90° Bottom
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.04f),   // 135° Bottom-Left Tangent (almost 0!)
+                    argbWithAlpha(prismaticCyanRgb, rimLight * 0.42f),   // 180° Left
+                    argbWithAlpha(0x00FFFFFF, (rimLight * 0.94f).coerceAtMost(0.96f)), // 225° Top-Left Specular Peak
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.52f),   // 270° Top
+                    argbWithAlpha(windwardCrestRgb, rimLight * 0.04f),   // 315° Top-Right Tangent (almost 0!)
+                    argbWithAlpha(leewardCausticRgb, rimLight * 0.30f)   // 360° Right
+                ),
+                floatArrayOf(0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f)
             )
 
             onDrawWithContent {
@@ -359,7 +412,7 @@ fun Modifier.seaGlass(
                     }
                 }
 
-                // Pass 2: Seamless Edge-to-Edge Tint, Sand Coarseness, & Gaussian-Feathered Liquid Glass Rim
+                // Pass 2: Seamless Edge-to-Edge Tint, Sand Coarseness, & Angular Optical Rim
                 drawContinuousLiquidSeaGlass(
                     composeOuterPath = composeOuterPath,
                     outerAndroidPath = outerAndroidPath,
@@ -368,7 +421,8 @@ fun Modifier.seaGlass(
                     widthPx = widthPx,
                     heightPx = heightPx,
                     frostOpacity = frostOpacity,
-                    meniscusGlowPaint = meniscusGlowPaint,
+                    innerRefractSheenPaint = innerRefractSheenPaint,
+                    outerSpecularLipPaint = outerSpecularLipPaint,
                     sandGrainPaint = sandGrainPaint,
                     shaderLocalMatrix = shaderLocalMatrix
                 )
@@ -387,7 +441,8 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
     widthPx: Float,
     heightPx: Float,
     frostOpacity: Float,
-    meniscusGlowPaint: AndroidPaint,
+    innerRefractSheenPaint: AndroidPaint,
+    outerSpecularLipPaint: AndroidPaint,
     sandGrainPaint: AndroidPaint,
     shaderLocalMatrix: AndroidMatrix
 ) {
@@ -455,7 +510,7 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
         )
     )
 
-    // 2. Continuous Edge-to-Edge Sand-Tumbled Micro-Facet Texture + Gaussian-Feathered Meniscus Light
+    // 2. Continuous Edge-to-Edge Sand-Tumbled Micro-Facet Texture + Angular Optical Rim
     val grainScale = (density * 0.55f).coerceIn(0.8f, 2.2f)
     shaderLocalMatrix.reset()
     shaderLocalMatrix.setScale(grainScale, grainScale)
@@ -471,32 +526,10 @@ private fun DrawScope.drawContinuousLiquidSeaGlass(
         sandGrainPaint.alpha = grainAlpha
         nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
     }
-    // Gaussian-feathered refractive light bloom along the curved rim (melts seamlessly inward!)
-    nCanvas.drawPath(outerAndroidPath, meniscusGlowPaint)
+    // Soft Gaussian-feathered angular refractive sheen inside the curved bevel
+    nCanvas.drawPath(outerAndroidPath, innerRefractSheenPaint)
     nCanvas.restore()
 
-    // 3. Crisp 1.5dp Directional Specular-Refraction Lip
-    val windwardSpecColor = Color(
-        SeaGlassColorMath.lerpOklab(primaryTintArgb, 0xFFFFFFFF.toInt(), 0.86f)
-    )
-    val leewardCausticColor = Color(
-        SeaGlassColorMath.lerpOklab(secondaryTintArgb, 0xFFFFFFFF.toInt(), 0.56f)
-    )
-    val rimLight = (0.44f + material.rimChalkiness * 0.54f).coerceIn(0.26f, 0.98f)
-
-    drawPath(
-        path = composeOuterPath,
-        brush = Brush.linearGradient(
-            colorStops = arrayOf(
-                0.00f to Color.White.copy(alpha = (rimLight * 0.95f).coerceAtMost(0.98f)),
-                0.24f to windwardSpecColor.copy(alpha = rimLight * 0.64f),
-                0.50f to windwardSpecColor.copy(alpha = rimLight * 0.18f),
-                0.76f to leewardCausticColor.copy(alpha = rimLight * 0.60f),
-                1.00f to windwardSpecColor.copy(alpha = rimLight * 0.90f)
-            ),
-            start = Offset.Zero,
-            end = Offset(widthPx, heightPx)
-        ),
-        style = Stroke(width = 1.5f * density)
-    )
+    // Razor-thin (0.95dp) angular specular lip (gleams at 225°/45°, vanishes at 135°/315° tangents)
+    nCanvas.drawPath(outerAndroidPath, outerSpecularLipPaint)
 }

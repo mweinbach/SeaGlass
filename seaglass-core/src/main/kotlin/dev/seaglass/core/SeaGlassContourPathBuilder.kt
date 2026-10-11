@@ -175,13 +175,13 @@ object SeaGlassContourPathBuilder {
         val px = FloatArray(totalSamples)
         val py = FloatArray(totalSamples)
 
-        // Pack 70% of bridge rays into the [uInnerA..uInnerB] neck so wide bars have high neck resolution!
+        // Pack 70% of bridge rays into the [uInnerA..uInnerB] neck while explicitly anchoring u = 0f and u = 1f
         val uSamples = FloatArray(bridgeSamples) { i ->
-            val t = (i + 0.5f) / bridgeSamples.toFloat()
+            val t = i.toFloat() / (bridgeSamples - 1).toFloat()
             when {
                 uInnerA <= 0.02f && uInnerB >= 0.98f -> t
-                t < 0.18f -> (t / 0.18f) * uInnerA
-                t < 0.88f -> uInnerA + ((t - 0.18f) / 0.70f) * (uInnerB - uInnerA)
+                t <= 0.22f -> (t / 0.22f) * uInnerA
+                t <= 0.88f -> uInnerA + ((t - 0.22f) / 0.66f) * (uInnerB - uInnerA)
                 else -> uInnerB + ((t - 0.88f) / 0.12f) * (1f - uInnerB)
             }
         }
@@ -194,7 +194,7 @@ object SeaGlassContourPathBuilder {
 
         // 1. Outer Cap A around (startCapX, startCapY)
         for (i in 0 until capSamples) {
-            val frac = i.toFloat() / capSamples.toFloat()
+            val frac = (i + 1).toFloat() / (capSamples + 1).toFloat()
             val angle = baseAngle + (PI * 0.5 + PI * frac).toFloat()
             val dirX = cos(angle)
             val dirY = sin(angle)
@@ -237,7 +237,7 @@ object SeaGlassContourPathBuilder {
 
         // 3. Outer Cap B around (endCapX, endCapY)
         for (i in 0 until capSamples) {
-            val frac = i.toFloat() / capSamples.toFloat()
+            val frac = (i + 1).toFloat() / (capSamples + 1).toFloat()
             val angle = baseAngle + (-PI * 0.5 + PI * frac).toFloat()
             val dirX = cos(angle)
             val dirY = sin(angle)
@@ -386,10 +386,30 @@ object SeaGlassContourPathBuilder {
             val p2 = (i + 1) % count
             val p3 = (i + 2) % count
 
-            val c1x = px[p1] + (px[p2] - px[p0]) / 6f
-            val c1y = py[p1] + (py[p2] - py[p0]) / 6f
-            val c2x = px[p2] - (px[p3] - px[p1]) / 6f
-            val c2y = py[p2] - (py[p3] - py[p1]) / 6f
+            val dx01 = px[p1] - px[p0]
+            val dy01 = py[p1] - py[p0]
+            val d01 = sqrt(dx01 * dx01 + dy01 * dy01).coerceAtLeast(1e-3f)
+
+            val dx12 = px[p2] - px[p1]
+            val dy12 = py[p2] - py[p1]
+            val d12 = sqrt(dx12 * dx12 + dy12 * dy12).coerceAtLeast(1e-3f)
+
+            val dx23 = px[p3] - px[p2]
+            val dy23 = py[p3] - py[p2]
+            val d23 = sqrt(dx23 * dx23 + dy23 * dy23).coerceAtLeast(1e-3f)
+
+            // Chord-length-weighted unit tangents scaled by current segment length d12 / 3f
+            val t1x = ((dx12 / d12) * d01 + (dx01 / d01) * d12) / (d01 + d12)
+            val t1y = ((dy12 / d12) * d01 + (dy01 / d01) * d12) / (d01 + d12)
+
+            val t2x = ((dx23 / d23) * d12 + (dx12 / d12) * d23) / (d12 + d23)
+            val t2y = ((dy23 / d23) * d12 + (dy12 / d12) * d23) / (d12 + d23)
+
+            val segScale = d12 / 3f
+            val c1x = px[p1] + t1x * segScale
+            val c1y = py[p1] + t1y * segScale
+            val c2x = px[p2] - t2x * segScale
+            val c2y = py[p2] - t2y * segScale
 
             outPath.cubicTo(c1x, c1y, c2x, c2y, px[p2], py[p2])
         }

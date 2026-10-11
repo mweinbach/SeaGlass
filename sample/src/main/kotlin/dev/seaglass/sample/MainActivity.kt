@@ -475,61 +475,60 @@ private fun OpticsLabSection(
 ) {
     val density = LocalDensity.current
 
-    // Interactive 3-State Coalescing Hero Lens Deck:
-    // State 0 = Sculpted Hourglass Liquid Bridge (90dp separation on 93dp sum of radii + 54dp smin)
-    // State 1 = Pinching Surface-Tension Neck (101dp separation)
-    // State 2 = Split Teardrops (138dp separation)
+    // 1. Flagship Material 3 Expressive × Liquid Sea Glass Coalescing Media & Soundscape Deck
+    var isPlaying by remember { mutableStateOf(true) }
     var heroFlowState by remember { mutableIntStateOf(0) }
-    val heroSeparationDp by animateFloatAsState(
+    val playOrbGapDp by animateFloatAsState(
         targetValue = when (heroFlowState) {
-            0 -> 90f
-            1 -> 101f
-            else -> 138f
+            0 -> -2f
+            1 -> 9f
+            else -> 22f
         },
         animationSpec = spring(dampingRatio = 0.54f, stiffness = 300f),
-        label = "heroCoalesce"
+        label = "playOrbGap"
     )
 
     var deckWidthPx by remember { mutableFloatStateOf(960f) }
-    val deckHeight = 136.dp
+    val deckHeight = 112.dp
     val deckHeightPx = with(density) { deckHeight.toPx() }
-    val rAPx = with(density) { 50.dp.toPx() }
-    val rBPx = with(density) { 43.dp.toPx() }
-    val sepPx = with(density) { heroSeparationDp.dp.toPx() }
+    val orbRadiusPx = with(density) { 46.dp.toPx() }
+    val gapPx = with(density) { playOrbGapDp.dp.toPx() }
 
-    val centerAX = deckWidthPx * 0.36f
+    val capsuleWidthPx = (deckWidthPx - orbRadiusPx * 2f - gapPx.coerceAtLeast(0f) - with(density) { 8.dp.toPx() })
+        .coerceAtLeast(orbRadiusPx * 3f)
+    val capsuleHalfW = capsuleWidthPx * 0.5f
+    val capsuleHalfH = deckHeightPx * 0.46f
     val centerAY = deckHeightPx * 0.50f
-    val centerBX = (centerAX + sepPx).coerceAtMost(deckWidthPx - rBPx - 16f)
+    val orbCenterX = (capsuleWidthPx + gapPx + orbRadiusPx).coerceAtMost(deckWidthPx - orbRadiusPx - 4f)
 
-    // Both nodes are circular squircles so sminCubic forms a deep concave hourglass liquid waist!
     val heroNodes = remember(
         deckWidthPx,
         deckHeightPx,
-        centerAX,
+        capsuleHalfW,
+        capsuleHalfH,
         centerAY,
-        centerBX,
-        rAPx,
-        rBPx,
+        orbCenterX,
+        orbRadiusPx,
         primaryMaterial,
         tertiaryMaterial
     ) {
         listOf(
             SeaGlassSdfEngine.SdfNode(
-                centerX = centerAX,
+                centerX = capsuleHalfW,
                 centerY = centerAY,
-                halfWidth = rAPx,
-                halfHeight = rAPx,
-                uniformCornerRadius = rAPx,
+                halfWidth = capsuleHalfW,
+                halfHeight = capsuleHalfH,
+                uniformCornerRadius = capsuleHalfH,
                 cornerSmoothing = 2.2f,
                 tintColorArgb = primaryMaterial.tintColorArgb,
                 thicknessPx = primaryMaterial.thicknessDp * 2.8f
             ),
             SeaGlassSdfEngine.SdfNode(
-                centerX = centerBX,
+                centerX = orbCenterX,
                 centerY = centerAY,
-                halfWidth = rBPx,
-                halfHeight = rBPx,
-                uniformCornerRadius = rBPx,
+                halfWidth = orbRadiusPx,
+                halfHeight = orbRadiusPx,
+                uniformCornerRadius = orbRadiusPx,
                 cornerSmoothing = 2.2f,
                 tintColorArgb = tertiaryMaterial.tintColorArgb,
                 thicknessPx = tertiaryMaterial.thicknessDp * 2.8f
@@ -537,7 +536,7 @@ private fun OpticsLabSection(
         )
     }
 
-    // Live Coalescing SeaGlass Specimen Lens
+    // Coalescing Media & Soundscape Capsule + Play Droplet
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -546,13 +545,16 @@ private fun OpticsLabSection(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = { heroFlowState = (heroFlowState + 1) % 3 }
+                onClick = {
+                    heroFlowState = (heroFlowState + 1) % 3
+                    isPlaying = heroFlowState != 2
+                }
             )
             .seaGlass(
                 stageState = stageState,
                 material = primaryMaterial,
                 nodesOptional = heroNodes,
-                smoothRadiusDp = 54f
+                smoothRadiusDp = 44f
             )
     ) {
         val labelColor = Color(
@@ -562,44 +564,61 @@ private fun OpticsLabSection(
             )
         )
 
-        Box(
-            contentAlignment = Alignment.Center,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
-                .offset {
-                    IntOffset(
-                        (centerAX - rAPx).roundToInt(),
-                        (centerAY - rAPx).roundToInt()
-                    )
-                }
-                .size(with(density) { (rAPx * 2f).toDp() })
+                .width(with(density) { capsuleWidthPx.toDp() })
+                .height(deckHeight)
+                .padding(horizontal = 20.dp)
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = when (heroFlowState) {
-                        0 -> "LIQUID BRIDGE"
-                        1 -> "PINCH NECK"
-                        else -> "SPLIT ORBS"
+                        0 -> "COALESCED SOUNDSCAPE · 432 HZ"
+                        1 -> "SURFACE TENSION NECK"
+                        else -> "DETACHED ORB MODE"
                     },
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 10.sp,
-                        letterSpacing = 0.8.sp
+                        fontSize = 9.sp,
+                        letterSpacing = 1.0.sp
                     ),
-                    color = labelColor.copy(alpha = 0.82f)
+                    color = labelColor.copy(alpha = 0.78f)
                 )
                 Text(
-                    text = String.format(Locale.US, "%.0f%% Clear", transparency * 100f),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Black),
+                    text = "Pacific Surf & Sea Glass",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
                     color = labelColor
                 )
                 Text(
-                    text = "Tap to morph ⇄",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp
+                    text = String.format(
+                        Locale.US,
+                        "%.0f%% Clear · %.2f IOR · Tap to flow ⇄",
+                        transparency * 100f,
+                        ior
                     ),
-                    color = labelColor.copy(alpha = 0.88f)
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = labelColor.copy(alpha = 0.86f)
                 )
+            }
+
+            // Expressive 5-Bar Audio Waveform Pill
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                modifier = Modifier.padding(start = 8.dp)
+            ) {
+                val heights = listOf(12.dp, 24.dp, 18.dp, 28.dp, 15.dp)
+                heights.forEach { barH ->
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .height(if (isPlaying) barH else 8.dp)
+                            .clip(CircleShape)
+                            .background(labelColor.copy(alpha = 0.82f))
+                    )
+                }
             }
         }
 
@@ -608,25 +627,25 @@ private fun OpticsLabSection(
             modifier = Modifier
                 .offset {
                     IntOffset(
-                        (centerBX - rBPx).roundToInt(),
-                        (centerAY - rBPx).roundToInt()
+                        (orbCenterX - orbRadiusPx).roundToInt(),
+                        (centerAY - orbRadiusPx).roundToInt()
                     )
                 }
-                .size(with(density) { (rBPx * 2f).toDp() })
+                .size(with(density) { (orbRadiusPx * 2f).toDp() })
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "IOR",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 9.sp
-                    ),
-                    color = labelColor.copy(alpha = 0.78f)
+                    text = if (isPlaying) "❚❚" else "▶",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
+                    color = labelColor
                 )
                 Text(
-                    text = String.format(Locale.US, "%.2f", ior),
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Black),
-                    color = labelColor
+                    text = if (heroFlowState == 2) "SPLIT" else "FLOW",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 8.sp
+                    ),
+                    color = labelColor.copy(alpha = 0.80f)
                 )
             }
         }
