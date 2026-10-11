@@ -133,6 +133,9 @@ fun SeaGlassShowcaseApp() {
     var ior by remember(activePalette) {
         mutableFloatStateOf(activePalette.primaryGlass.ior)
     }
+    var chromaticDispersion by remember(activePalette) {
+        mutableFloatStateOf(0.58f)
+    }
     var rimChalkiness by remember(activePalette) {
         mutableFloatStateOf(activePalette.primaryGlass.rimChalkiness)
     }
@@ -145,6 +148,7 @@ fun SeaGlassShowcaseApp() {
         tintDensity,
         thicknessDp,
         ior,
+        chromaticDispersion,
         rimChalkiness
     ) {
         activePalette.primaryGlass.copy(
@@ -154,6 +158,7 @@ fun SeaGlassShowcaseApp() {
             tintDensity = tintDensity,
             thicknessDp = thicknessDp,
             ior = ior,
+            chromaticDispersion = chromaticDispersion,
             rimChalkiness = rimChalkiness
         )
     }
@@ -166,6 +171,7 @@ fun SeaGlassShowcaseApp() {
         tintDensity,
         thicknessDp,
         ior,
+        chromaticDispersion,
         rimChalkiness
     ) {
         activePalette.surfaceGlass.copy(
@@ -175,6 +181,7 @@ fun SeaGlassShowcaseApp() {
             tintDensity = (tintDensity * 0.84f).coerceIn(0.24f, 0.92f),
             thicknessDp = thicknessDp,
             ior = ior,
+            chromaticDispersion = chromaticDispersion,
             rimChalkiness = (rimChalkiness + 0.06f).coerceIn(0f, 1f)
         )
     }
@@ -235,6 +242,7 @@ fun SeaGlassShowcaseApp() {
                             coarseness = coarseness,
                             frostRadiusDp = frostRadiusDp,
                             ior = ior,
+                            chromaticDispersion = chromaticDispersion,
                             thicknessDp = thicknessDp
                         ),
                         surfaceMaterial = customSurfaceMaterial,
@@ -250,16 +258,16 @@ fun SeaGlassShowcaseApp() {
                         onThicknessChange = { thicknessDp = it },
                         ior = ior,
                         onIorChange = { ior = it },
-                        rimChalkiness = rimChalkiness,
-                        onRimChalkinessChange = { rimChalkiness = it },
-                        onApplyPreset = { tr, c, f, d, t, i, r ->
+                        chromaticDispersion = chromaticDispersion,
+                        onChromaticDispersionChange = { chromaticDispersion = it },
+                        onApplyPreset = { tr, c, f, d, t, i, disp ->
                             transparency = tr
                             coarseness = c
                             frostRadiusDp = f
                             tintDensity = d
                             thicknessDp = t
                             ior = i
-                            rimChalkiness = r
+                            chromaticDispersion = disp
                         }
                     )
 
@@ -271,6 +279,7 @@ fun SeaGlassShowcaseApp() {
                             coarseness = coarseness,
                             frostRadiusDp = frostRadiusDp,
                             ior = ior,
+                            chromaticDispersion = chromaticDispersion,
                             thicknessDp = thicknessDp
                         ),
                         surfaceMaterial = customSurfaceMaterial
@@ -472,8 +481,8 @@ private fun OpticsLabSection(
     onThicknessChange: (Float) -> Unit,
     ior: Float,
     onIorChange: (Float) -> Unit,
-    rimChalkiness: Float,
-    onRimChalkinessChange: (Float) -> Unit,
+    chromaticDispersion: Float,
+    onChromaticDispersionChange: (Float) -> Unit,
     onApplyPreset: (Float, Float, Float, Float, Float, Float, Float) -> Unit
 ) {
     val density = LocalDensity.current
@@ -805,7 +814,7 @@ private fun OpticsLabSection(
             )
 
             OpticalSliderRow(
-                title = "Lens Refraction (IOR)",
+                title = "Edge Lens Refraction (IOR)",
                 valueText = String.format(Locale.US, "%.2f", ior),
                 value = ior,
                 valueRange = 1.08f..1.80f,
@@ -813,11 +822,11 @@ private fun OpticsLabSection(
             )
 
             OpticalSliderRow(
-                title = "Meniscus Bevel & Rim Light",
-                valueText = String.format(Locale.US, "%.0f%%", rimChalkiness * 100f),
-                value = rimChalkiness,
-                valueRange = 0.15f..1.0f,
-                onValueChange = onRimChalkinessChange
+                title = "Chromatic Aberration (Prismatic)",
+                valueText = String.format(Locale.US, "%.0f%%", chromaticDispersion * 100f),
+                value = chromaticDispersion,
+                valueRange = 0.0f..1.0f,
+                onValueChange = onChromaticDispersionChange
             )
         }
     }
