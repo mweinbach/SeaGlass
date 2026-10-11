@@ -238,6 +238,42 @@ class SeaGlassCoreTest {
         for (kind in SeaGlassShapeKind.entries) {
             val poly = SeaGlassShapeMorph.createNormalizedPolygon(kind, aspectRatio = 1.4f)
             assertNotNull("Polygon for $kind must be non-null", poly)
+            val polarScale = SeaGlassShapeMorph.evaluatePolarRadiusScale(
+                startKind = kind,
+                endKind = SeaGlassShapeKind.Circle,
+                progress = 0.5f,
+                angleRad = 0.78f
+            )
+            assertTrue("Polar scale for $kind must be in [0.35, 1.15], was $polarScale", polarScale in 0.35f..1.15f)
         }
+
+        // Verify polar polygon SDF nodes coalesce via sminCubic
+        val cookieNode = SeaGlassSdfEngine.SdfNode(
+            centerX = 100f,
+            centerY = 100f,
+            halfWidth = 45f,
+            halfHeight = 45f,
+            uniformCornerRadius = 45f,
+            startShapeKind = SeaGlassShapeKind.Cookie9,
+            endShapeKind = SeaGlassShapeKind.Clover4,
+            shapeMorphProgress = 0.4f
+        )
+        val flowerNode = SeaGlassSdfEngine.SdfNode(
+            centerX = 180f,
+            centerY = 100f,
+            halfWidth = 45f,
+            halfHeight = 45f,
+            uniformCornerRadius = 45f,
+            startShapeKind = SeaGlassShapeKind.Flower,
+            endShapeKind = SeaGlassShapeKind.Heart,
+            shapeMorphProgress = 0.4f
+        )
+        val eval = SeaGlassSdfEngine.evaluateScene(
+            px = 140f,
+            py = 100f,
+            nodes = listOf(cookieNode, flowerNode),
+            smoothRadiusPx = 42f
+        )
+        assertTrue("Coalescing Cookie9 + Flower bridge midpoint must be inside (d=${eval.signedDistancePx})", eval.isInside)
     }
 }

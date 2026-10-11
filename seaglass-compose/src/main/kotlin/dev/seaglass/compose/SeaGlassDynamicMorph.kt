@@ -635,7 +635,7 @@ fun SeaGlassMorphingButton(
                         SeaGlassShapeMorph.buildMorphedPolygonPath(
                             startKind = restingShape,
                             endKind = activeShape,
-                            progress = morphProgress.coerceIn(0f, 1f),
+                            progress = morphProgress,
                             widthPx = wPx,
                             heightPx = hPx,
                             outPath = outPath
@@ -977,5 +977,123 @@ fun SeaGlassLiquidSlider(
                     )
             )
         }
+    }
+}
+
+/**
+ * Multi-Stage Material 3 Expressive Shape Sequence Morpher.
+ *
+ * Smoothly morphs through an arbitrary ordered sequence of [shapes] (`List<SeaGlassShapeKind>`)
+ * driven either by [activeShapeIndex] (animated with an under-damped spatial spring that allows
+ * elastic vertex overshoot!) or a continuous [continuousIndexOverride] float.
+ */
+@Composable
+fun SeaGlassMultiShapeMorph(
+    shapes: List<SeaGlassShapeKind>,
+    activeShapeIndex: Int,
+    stageState: SeaGlassStageState?,
+    modifier: Modifier = Modifier,
+    continuousIndexOverride: Float? = null,
+    onClick: (() -> Unit)? = null,
+    primaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
+    secondaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.tertiaryGlass,
+    content: @Composable BoxScope.(currentShape: SeaGlassShapeKind) -> Unit
+) {
+    require(shapes.isNotEmpty()) { "shapes must not be empty" }
+    val motion = LocalSeaGlassMotionScheme.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val pressFraction by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = motion.fastSpatial,
+        label = "multiShapePress"
+    )
+
+    val safeIndex = activeShapeIndex.coerceIn(0, shapes.size - 1)
+    val animatedIndex by animateFloatAsState(
+        targetValue = safeIndex.toFloat(),
+        animationSpec = spring(dampingRatio = 0.54f, stiffness = 340f),
+        label = "multiShapeContinuousIndex"
+    )
+
+    val effectiveContinuousIndex = continuousIndexOverride ?: animatedIndex
+    val fractionalPart = abs(effectiveContinuousIndex - effectiveContinuousIndex.roundToInt())
+
+    val blendedMaterial = remember(
+        primaryMaterial,
+        secondaryMaterial,
+        effectiveContinuousIndex,
+        fractionalPart,
+        pressFraction
+    ) {
+        val colorWave = (kotlin.math.sin(effectiveContinuousIndex * Math.PI * 0.5).toFloat() * 0.5f + 0.5f)
+            .coerceIn(0f, 1f)
+        SeaGlassShapeMorph.computeDynamicFlexMaterial(
+            startMaterial = primaryMaterial,
+            endMaterial = secondaryMaterial,
+            progress = colorWave,
+            velocityPxPerSec = fractionalPart * 1200f
+        ).pressed(pressFraction)
+    }
+
+    val contentColor = remember(blendedMaterial.tintColorArgb, blendedMaterial.tintDensity) {
+        Color(
+            SeaGlassColorMath.optimalContentColorFor(
+                tintArgb = blendedMaterial.tintColorArgb,
+                tintDensity = blendedMaterial.tintDensity
+            )
+        )
+    }
+
+    var touchOffset by remember { mutableStateOf<Offset?>(null) }
+    val currentDisplayShape = shapes[safeIndex]
+
+    CompositionLocalProvider(LocalContentColor provides contentColor) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val down = event.changes.firstOrNull { it.pressed }
+                            if (down != null) touchOffset = down.position
+                        }
+                    }
+                }
+                .graphicsLayer {
+                    val pulse = 1f + 0.04f * pressFraction
+                    scaleX = pulse
+                    scaleY = 1f - 0.03f * pressFraction
+                }
+                .then(
+                    if (onClick != null) {
+                        Modifier.clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onClick
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+                .seaGlass(
+                    stageState = stageState,
+                    material = blendedMaterial,
+                    touchPointInLocal = touchOffset,
+                    touchIntensity = max(pressFraction, fractionalPart * 0.8f),
+                    customContourPathBuilder = { wPx, hPx, outPath ->
+                        SeaGlassShapeMorph.buildSequenceMorphedPolygonPath(
+                            shapes = shapes,
+                            continuousIndex = effectiveContinuousIndex,
+                            widthPx = wPx,
+                            heightPx = hPx,
+                            outPath = outPath
+                        )
+                    }
+                ),
+            content = { content(currentDisplayShape) }
+        )
     }
 }

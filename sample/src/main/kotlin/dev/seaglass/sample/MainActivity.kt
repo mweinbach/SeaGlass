@@ -1109,7 +1109,76 @@ private fun FluidCoalescingSection(
         }
     }
 
-    // 4. Hero Interactive Multi-Node SDF Arena with HDR Touch Caustic Flare
+    // 4. Hero Interactive Multi-Node SDF Arena with Polar Polygon Shape Morphing + sminCubic Coalescing!
+    val morphShapeTour = remember {
+        listOf(
+            SeaGlassShapeKind.Circle,
+            SeaGlassShapeKind.Cookie9,
+            SeaGlassShapeKind.Clover4,
+            SeaGlassShapeKind.Flower,
+            SeaGlassShapeKind.Heart,
+            SeaGlassShapeKind.SoftBurst,
+            SeaGlassShapeKind.Sunny,
+            SeaGlassShapeKind.Gem,
+            SeaGlassShapeKind.Squircle
+        )
+    }
+    var dropletShapeIdx by remember { mutableIntStateOf(1) } // Default Cookie9 + Clover4 coalescing!
+    val nextDropletShapeIdx = (dropletShapeIdx + 1) % morphShapeTour.size
+    val dropletShapeProgress by animateFloatAsState(
+        targetValue = dropletShapeIdx.toFloat(),
+        animationSpec = spring(dampingRatio = 0.54f, stiffness = 320f),
+        label = "dropletPolygonMorph"
+    )
+    val baseIdx = kotlin.math.floor(
+        dropletShapeProgress.coerceIn(0f, (morphShapeTour.size - 1).toFloat())
+    ).toInt().coerceIn(0, morphShapeTour.size - 1)
+    val nextIdx = (baseIdx + 1).coerceAtMost(morphShapeTour.size - 1)
+    val localMorphFrac = dropletShapeProgress - baseIdx.toFloat()
+
+    val arenaMorphNodes = remember(
+        centerAX,
+        centerAY,
+        centerBX,
+        centerBY,
+        dropletARadiusPx,
+        dropletBRadiusPx,
+        primaryMaterial,
+        tertiaryMaterial,
+        baseIdx,
+        nextIdx,
+        localMorphFrac
+    ) {
+        listOf(
+            SeaGlassSdfEngine.SdfNode(
+                centerX = centerAX,
+                centerY = centerAY,
+                halfWidth = dropletARadiusPx,
+                halfHeight = dropletARadiusPx,
+                uniformCornerRadius = dropletARadiusPx,
+                cornerSmoothing = 2.2f,
+                tintColorArgb = primaryMaterial.tintColorArgb,
+                thicknessPx = dropletARadiusPx * 0.62f,
+                startShapeKind = morphShapeTour[baseIdx],
+                endShapeKind = morphShapeTour[nextIdx],
+                shapeMorphProgress = localMorphFrac
+            ),
+            SeaGlassSdfEngine.SdfNode(
+                centerX = centerBX,
+                centerY = centerBY,
+                halfWidth = dropletBRadiusPx,
+                halfHeight = dropletBRadiusPx,
+                uniformCornerRadius = dropletBRadiusPx,
+                cornerSmoothing = 2.2f,
+                tintColorArgb = tertiaryMaterial.tintColorArgb,
+                thicknessPx = dropletBRadiusPx * 0.65f,
+                startShapeKind = morphShapeTour[(baseIdx + 2) % morphShapeTour.size],
+                endShapeKind = morphShapeTour[(nextIdx + 2) % morphShapeTour.size],
+                shapeMorphProgress = localMorphFrac
+            )
+        )
+    }
+
     val tiltState = LocalSeaGlassTiltState.current
     var arenaTouchPoint by remember { mutableStateOf<Offset?>(null) }
     var arenaPressed by remember { mutableStateOf(false) }
@@ -1143,7 +1212,7 @@ private fun FluidCoalescingSection(
             .seaGlass(
                 stageState = stageState,
                 material = primaryMaterial,
-                nodesOptional = arenaNodes,
+                nodesOptional = arenaMorphNodes,
                 smoothRadiusDp = smoothBridgeDp,
                 touchPointInLocal = arenaTouchPoint,
                 touchIntensity = arenaTouchIntensity
@@ -1165,15 +1234,20 @@ private fun FluidCoalescingSection(
                     )
                 }
                 .size(with(density) { (dropletARadiusPx * 2f).toDp() })
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { dropletShapeIdx = nextDropletShapeIdx }
+                )
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "ANCHOR",
+                    text = morphShapeTour[dropletShapeIdx].shortLabel.uppercase(Locale.US),
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
                     color = labelColor
                 )
                 Text(
-                    text = "Primary Tint",
+                    text = "Tap Shape ↻",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = labelColor.copy(alpha = 0.80f)
                 )
@@ -1190,15 +1264,20 @@ private fun FluidCoalescingSection(
                     )
                 }
                 .size(with(density) { (dropletBRadiusPx * 2f).toDp() })
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { dropletShapeIdx = nextDropletShapeIdx }
+                )
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "DRAG ME",
+                    text = morphShapeTour[(dropletShapeIdx + 2) % morphShapeTour.size].shortLabel.uppercase(Locale.US),
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
                     color = labelColor
                 )
                 Text(
-                    text = "Tertiary Tint",
+                    text = "Drag / Morph",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = labelColor.copy(alpha = 0.80f)
                 )

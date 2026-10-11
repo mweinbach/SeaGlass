@@ -49,7 +49,10 @@ object SeaGlassSdfEngine {
         val cornerTopLeft: Float,
         val cornerSmoothing: Float = 2.45f,
         val tintColorArgb: Int = 0xFF6EE7C8.toInt(),
-        val thicknessPx: Float = 28f
+        val thicknessPx: Float = 28f,
+        val startShapeKind: SeaGlassShapeKind? = null,
+        val endShapeKind: SeaGlassShapeKind? = null,
+        val shapeMorphProgress: Float = 0f
     ) {
         constructor(
             centerX: Float,
@@ -59,7 +62,10 @@ object SeaGlassSdfEngine {
             uniformCornerRadius: Float,
             cornerSmoothing: Float = 2.45f,
             tintColorArgb: Int = 0xFF6EE7C8.toInt(),
-            thicknessPx: Float = 28f
+            thicknessPx: Float = 28f,
+            startShapeKind: SeaGlassShapeKind? = null,
+            endShapeKind: SeaGlassShapeKind? = null,
+            shapeMorphProgress: Float = 0f
         ) : this(
             centerX = centerX,
             centerY = centerY,
@@ -71,7 +77,10 @@ object SeaGlassSdfEngine {
             cornerTopLeft = uniformCornerRadius,
             cornerSmoothing = cornerSmoothing,
             tintColorArgb = tintColorArgb,
-            thicknessPx = thicknessPx
+            thicknessPx = thicknessPx,
+            startShapeKind = startShapeKind,
+            endShapeKind = endShapeKind,
+            shapeMorphProgress = shapeMorphProgress
         )
     }
 
@@ -99,6 +108,28 @@ object SeaGlassSdfEngine {
     fun evaluateNodeSdf(px: Float, py: Float, node: SdfNode): Float {
         val dx = px - node.centerX
         val dy = py - node.centerY
+
+        // If this node carries a Material 3 Expressive polygon shape (or active shape morph),
+        // evaluate its polar star-shaped distance field so Cookie/Clover/Flower/Heart shapes
+        // can coalesce via sminCubic liquid bridges while morphing their lobes!
+        val sKind = node.startShapeKind
+        if (sKind != null) {
+            val eKind = node.endShapeKind ?: sKind
+            val angle = kotlin.math.atan2(dy, dx)
+            val polarScale = SeaGlassShapeMorph.evaluatePolarRadiusScale(
+                startKind = sKind,
+                endKind = eKind,
+                progress = node.shapeMorphProgress,
+                angleRad = angle
+            )
+            val rx = (node.halfWidth * polarScale).coerceAtLeast(2f)
+            val ry = (node.halfHeight * polarScale).coerceAtLeast(2f)
+            val nx = dx / rx
+            val ny = dy / ry
+            val normDist = sqrt(nx * nx + ny * ny)
+            val avgR = min(rx, ry)
+            return (normDist - 1f) * avgR
+        }
 
         // Select quadrant corner radius: (dx > 0, dy > 0) = bottom-right in screen Y-down coords
         val rRight = if (dy > 0f) node.cornerBottomRight else node.cornerTopRight
