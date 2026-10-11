@@ -28,6 +28,7 @@ Read the relevant blueprint before modifying shaders, optical physics, motion sp
 - [`docs/agents/optical-physics-and-shaders.md`](docs/agents/optical-physics-and-shaders.md) — Exact equations and uniform layouts for SDF smooth-union (`smin`), analytical bevel normals, procedural sand-grain micro-coarseness, Oklab Beer-Lambert volumetric absorption, and rough-Fresnel chalky rim glow.
 - [`docs/agents/material3-expressive-tokens.md`](docs/agents/material3-expressive-tokens.md) — Material 3 Expressive color harmonization, sea-glass pastel palettes, squircle/corner-morphing geometry, and `spatial` vs. `effects` spring physics invariants.
 - [`docs/agents/device-compatibility-and-performance.md`](docs/agents/device-compatibility-and-performance.md) — Android API 26–37+ tier matrix, TBDR GPU tile-memory rules (Adreno, Mali, Xclipse, PowerVR), frame-time budgets, and verification procedures.
+- [`docs/agents/adaptive-corner-optics-and-skip-interop.md`](docs/agents/adaptive-corner-optics-and-skip-interop.md) — 4-tier hardware display corner detection (`WindowInsets.getRoundedCorner` / `Display.getRoundedCorner` / `SystemUI dimen` / `Build.MODEL`), concentric & asymmetric per-corner math, collision-free corner pod layout (`solveCornerPodLayoutPx`), and Swift / Skip (`skip.tools`) interop (`SeaGlassSkipBridge` & [`docs/skip/SeaGlassSkipUI.swift`](docs/skip/SeaGlassSkipUI.swift)).
 
 ---
 

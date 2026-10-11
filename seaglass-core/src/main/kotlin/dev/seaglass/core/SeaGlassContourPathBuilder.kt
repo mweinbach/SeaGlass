@@ -39,12 +39,34 @@ object SeaGlassContourPathBuilder {
             node.centerX + hw,
             node.centerY + hh
         )
-        val maxR = min(hw, hh).coerceAtLeast(0f)
+        val fullW = (hw * 2f).coerceAtLeast(1f)
+        val fullH = (hh * 2f).coerceAtLeast(1f)
+        val maxSingleR = min(fullW, fullH).coerceAtLeast(0f)
         val rInset = insetPx * 0.85f
-        val tl = (node.cornerTopLeft - rInset).coerceIn(0f, maxR)
-        val tr = (node.cornerTopRight - rInset).coerceIn(0f, maxR)
-        val br = (node.cornerBottomRight - rInset).coerceIn(0f, maxR)
-        val bl = (node.cornerBottomLeft - rInset).coerceIn(0f, maxR)
+
+        var tl = (node.cornerTopLeft - rInset).coerceIn(0f, maxSingleR)
+        var tr = (node.cornerTopRight - rInset).coerceIn(0f, maxSingleR)
+        var br = (node.cornerBottomRight - rInset).coerceIn(0f, maxSingleR)
+        var bl = (node.cornerBottomLeft - rInset).coerceIn(0f, maxSingleR)
+
+        // Normalize adjacent corner pairs only if their sum exceeds the shared edge length.
+        // This allows an asymmetric outer corner (e.g. 52dp inside a 55dp bezel) to use up to
+        // (H - r_inner) on a 70dp pod when the opposite inner corner is small (e.g. 14dp)!
+        val normScale = min(
+            min(
+                if (tl + tr > fullW) fullW / (tl + tr) else 1f,
+                if (bl + br > fullW) fullW / (bl + br) else 1f
+            ),
+            min(
+                if (tl + bl > fullH) fullH / (tl + bl) else 1f,
+                if (tr + br > fullH) fullH / (tr + br) else 1f
+            )
+        ).coerceAtMost(1f)
+
+        tl *= normScale
+        tr *= normScale
+        br *= normScale
+        bl *= normScale
 
         scratchRadii[0] = tl
         scratchRadii[1] = tl

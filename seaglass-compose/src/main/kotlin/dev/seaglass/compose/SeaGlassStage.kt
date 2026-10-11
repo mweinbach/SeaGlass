@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
@@ -189,6 +190,13 @@ class SeaGlassStageState internal constructor(
 }
 
 /**
+ * Ambient [SeaGlassStageState] provided by `SeaGlassStageHost` or `SeaGlassSkipBridge.StageRoot`
+ * so child Compose and Swift/Skip (`ComposeView`) elements can automatically sample the GPU
+ * backdrop without manually threading `stageState` through every intermediate layer.
+ */
+val LocalSeaGlassStageState = staticCompositionLocalOf<SeaGlassStageState?> { null }
+
+/**
  * Creates and remembers a [SeaGlassStageState] backed by shared hardware-accelerated [GraphicsLayer]s.
  */
 @Composable
@@ -265,8 +273,8 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
  */
 @Composable
 fun Modifier.seaGlass(
-    stageState: SeaGlassStageState?,
-    material: SeaGlassMaterial,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
+    material: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
     nodesOptional: List<SeaGlassSdfEngine.SdfNode>? = null,
     smoothRadiusDp: Float = 28f,
     touchPointInLocal: Offset? = null,

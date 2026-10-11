@@ -2796,10 +2796,35 @@ fun SeaGlassAdaptiveCornerLabCard(
         }
 
         CompositionLocalProvider(LocalSeaGlassContainerCornerScope provides frameScope) {
+            val requestedInsetPx = with(density) { animatedInsetDp.dp.toPx() }
+            val solvedLayout = remember(frameSize, bezelRadiiPx, requestedInsetPx, density) {
+                SeaGlassCornerAdaptationSolver.solveCornerPodLayoutPx(
+                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(320f),
+                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(210f),
+                    containerCornersPx = bezelRadiiPx,
+                    requestedInsetPx = requestedInsetPx,
+                    minHorizontalGapPx = with(density) { 14.dp.toPx() },
+                    minVerticalGapPx = with(density) { 14.dp.toPx() },
+                    preferredPodWidthPx = with(density) { 148.dp.toPx() },
+                    preferredTopPodHeightPx = with(density) { 78.dp.toPx() },
+                    preferredBottomDockHeightPx = with(density) { 68.dp.toPx() }
+                )
+            }
+
+            val effectiveInsetDp = with(density) { solvedLayout.effectiveInsetPx.toDp() }
+            val podW = with(density) { solvedLayout.podWidthPx.toDp() }
+            val podH = with(density) { solvedLayout.topPodHeightPx.toDp() }
+            val dockH = with(density) { solvedLayout.bottomDockHeightPx.toDp() }
+            val podWPx = solvedLayout.podWidthPx
+            val podHPx = solvedLayout.topPodHeightPx
+            val dockHPx = solvedLayout.bottomDockHeightPx
+            val insetPx = solvedLayout.effectiveInsetPx
+            val basePodCornerPx = with(density) { 18.dp.toPx() }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(198.dp)
+                    .height(206.dp)
                     .onGloballyPositioned { coords ->
                         frameOriginInRoot = coords.positionInRoot()
                         frameSize = coords.size
@@ -2807,23 +2832,16 @@ fun SeaGlassAdaptiveCornerLabCard(
                     .clip(bezelShape)
                     .background(Color.Black.copy(alpha = 0.16f))
                     .border(2.dp, Color.White.copy(alpha = 0.68f), bezelShape)
-                    .padding(animatedInsetDp.dp)
+                    .padding(effectiveInsetDp)
             ) {
-                val podW = 138.dp
-                val podH = 68.dp
-                val podWPx = with(density) { podW.toPx() }
-                val podHPx = with(density) { podH.toPx() }
-                val insetPx = with(density) { animatedInsetDp.dp.toPx() }
-                val basePodCornerPx = with(density) { 18.dp.toPx() }
-
-                // Compute live solved radii for Top-Left and Top-Right pods to display in labels
+                // Compute live solved radii for Top-Left, Top-Right, and Bottom Dock to display in labels
                 val tlPodSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
                     elementLeftPx = insetPx,
                     elementTopPx = insetPx,
                     elementRightPx = insetPx + podWPx,
                     elementBottomPx = insetPx + podHPx,
-                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(300f),
-                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(200f),
+                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(320f),
+                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(206f),
                     containerCornersPx = bezelRadiiPx,
                     baseCornerRadiusPx = basePodCornerPx,
                     minCornerFloorPx = with(density) { 8.dp.toPx() },
@@ -2835,8 +2853,21 @@ fun SeaGlassAdaptiveCornerLabCard(
                     elementTopPx = insetPx,
                     elementRightPx = (frameSize.width - insetPx).coerceAtLeast(podWPx),
                     elementBottomPx = insetPx + podHPx,
-                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(300f),
-                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(200f),
+                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(320f),
+                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(206f),
+                    containerCornersPx = bezelRadiiPx,
+                    baseCornerRadiusPx = basePodCornerPx,
+                    minCornerFloorPx = with(density) { 8.dp.toPx() },
+                    influenceDistancePx = with(density) { 96.dp.toPx() },
+                    mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+                )
+                val dockSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+                    elementLeftPx = insetPx,
+                    elementTopPx = (frameSize.height - insetPx - dockHPx).coerceAtLeast(0f),
+                    elementRightPx = (frameSize.width - insetPx).coerceAtLeast(podWPx),
+                    elementBottomPx = (frameSize.height - insetPx).coerceAtLeast(dockHPx),
+                    containerWidthPx = frameSize.width.toFloat().coerceAtLeast(320f),
+                    containerHeightPx = frameSize.height.toFloat().coerceAtLeast(206f),
                     containerCornersPx = bezelRadiiPx,
                     baseCornerRadiusPx = basePodCornerPx,
                     minCornerFloorPx = with(density) { 8.dp.toPx() },
@@ -2848,12 +2879,15 @@ fun SeaGlassAdaptiveCornerLabCard(
                 val tlInnerDp = (tlPodSolved.bottomRightPx / density.density).roundToInt()
                 val trOuterDp = (trPodSolved.topRightPx / density.density).roundToInt()
                 val trInnerDp = (trPodSolved.bottomLeftPx / density.density).roundToInt()
+                val blDockDp = (dockSolved.bottomLeftPx / density.density).roundToInt()
+                val brDockDp = (dockSolved.bottomRightPx / density.density).roundToInt()
 
                 // 1. Top-Left Corner-Embedded Pod
                 SeaGlassCornerEmbeddedPod(
                     stageState = stageState,
                     material = primaryMaterial.copy(cornerRadiusDp = 18f, thicknessDp = 18f),
                     onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .size(width = podW, height = podH)
@@ -2861,6 +2895,7 @@ fun SeaGlassAdaptiveCornerLabCard(
                     Column(horizontalAlignment = Alignment.Start) {
                         Text(
                             text = "↖ TL Corner Pod",
+                            maxLines = 1,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Black,
                                 fontSize = 11.sp
@@ -2868,8 +2903,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                         )
                         Text(
                             text = "Outer ${tlOuterDp}dp · Inner ${tlInnerDp}dp",
+                            maxLines = 1,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            color = LocalContentColor.current.copy(alpha = 0.84f)
+                            color = LocalContentColor.current.copy(alpha = 0.86f)
                         )
                     }
                 }
@@ -2879,6 +2915,7 @@ fun SeaGlassAdaptiveCornerLabCard(
                     stageState = stageState,
                     material = tertiaryMaterial.copy(cornerRadiusDp = 18f, thicknessDp = 18f),
                     onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .size(width = podW, height = podH)
@@ -2886,6 +2923,7 @@ fun SeaGlassAdaptiveCornerLabCard(
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
                             text = "TR Corner Pod ↗",
+                            maxLines = 1,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Black,
                                 fontSize = 11.sp
@@ -2893,8 +2931,9 @@ fun SeaGlassAdaptiveCornerLabCard(
                         )
                         Text(
                             text = "Outer ${trOuterDp}dp · Inner ${trInnerDp}dp",
+                            maxLines = 1,
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            color = LocalContentColor.current.copy(alpha = 0.84f)
+                            color = LocalContentColor.current.copy(alpha = 0.86f)
                         )
                     }
                 }
@@ -2904,10 +2943,11 @@ fun SeaGlassAdaptiveCornerLabCard(
                     stageState = stageState,
                     material = primaryMaterial.copy(cornerRadiusDp = 22f, thicknessDp = 18f),
                     onClick = { insetPresetIndex = (insetPresetIndex + 1) % 3 },
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(54.dp)
+                        .height(dockH)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2915,14 +2955,16 @@ fun SeaGlassAdaptiveCornerLabCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "↙ BL ${tlOuterDp}dp Concentric Page Dock",
+                            text = "↙ BL ${blDockDp}dp Concentric Page Dock",
+                            maxLines = 1,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 11.sp
                             )
                         )
                         Text(
-                            text = "BR ${trOuterDp}dp ↘",
+                            text = "BR ${brDockDp}dp ↘",
+                            maxLines = 1,
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.Black,
                                 fontSize = 11.sp

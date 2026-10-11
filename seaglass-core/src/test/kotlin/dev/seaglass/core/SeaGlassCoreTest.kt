@@ -362,5 +362,41 @@ class SeaGlassCoreTest {
             "Right outer bezel corner (${fullWidthHeader.topRightPx}) must curve more deeply than left hinge corner (${fullWidthHeader.topLeftPx})",
             fullWidthHeader.topRightPx > fullWidthHeader.topLeftPx + 30f
         )
+
+        // 3. Verify asymmetric edge-sum capacity (> 0.5 * H) and collision-free pod layout solver:
+        // On a 200px tall pod (halfHeight = 100px) inside a 145px (55dp) bezel at 8px inset,
+        // the outer corner reaches 137px (> 100px halfHeight!) because the inner corner is 40px (137 + 40 = 177 <= 200).
+        val deepBezel = SeaGlassCornerRadiiPx.uniform(145f)
+        val deepPodRadii = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 8f,
+            elementTopPx = 8f,
+            elementRightPx = 398f,
+            elementBottomPx = 208f,
+            containerWidthPx = 900f,
+            containerHeightPx = 540f,
+            containerCornersPx = deepBezel,
+            baseCornerRadiusPx = 48f,
+            minCornerFloorPx = 20f,
+            influenceDistancePx = 250f,
+            mode = SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
+        )
+        assertTrue(
+            "Asymmetric outer corner (${deepPodRadii.topLeftPx}) must exceed 0.5*H (100px) to match the 145px bezel without protruding",
+            deepPodRadii.topLeftPx > 125f
+        )
+
+        val podLayout = SeaGlassCornerAdaptationSolver.solveCornerPodLayoutPx(
+            containerWidthPx = 600f,
+            containerHeightPx = 360f,
+            containerCornersPx = deepBezel,
+            requestedInsetPx = 80f,
+            minHorizontalGapPx = 32f,
+            minVerticalGapPx = 28f,
+            preferredPodWidthPx = 340f,
+            preferredTopPodHeightPx = 180f,
+            preferredBottomDockHeightPx = 160f
+        )
+        assertTrue("Horizontal gap (${podLayout.horizontalGapPx}) must be >= 32px", podLayout.horizontalGapPx >= 31.9f)
+        assertTrue("Vertical gap (${podLayout.verticalGapPx}) must be >= 28px", podLayout.verticalGapPx >= 27.9f)
     }
 }

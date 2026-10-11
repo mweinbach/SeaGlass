@@ -135,7 +135,7 @@ object SeaGlassSdfEngine {
         val rRight = if (dy > 0f) node.cornerBottomRight else node.cornerTopRight
         val rLeft = if (dy > 0f) node.cornerBottomLeft else node.cornerTopLeft
         val rawRadius = if (dx > 0f) rRight else rLeft
-        val maxRadius = min(node.halfWidth, node.halfHeight).coerceAtLeast(0f)
+        val maxRadius = (min(node.halfWidth, node.halfHeight) * 1.65f).coerceAtLeast(0f)
         val r = rawRadius.coerceIn(0f, maxRadius)
 
         val qx = abs(dx) - node.halfWidth + r

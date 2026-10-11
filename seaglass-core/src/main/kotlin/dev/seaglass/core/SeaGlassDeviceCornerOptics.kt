@@ -154,6 +154,30 @@ data class SeaGlassCornerRadiiPx(
 }
 
 /**
+ * Resolved corner-safe content padding in pixels (`leftPx`, `topPx`, `rightPx`, `bottomPx`)
+ * that prevents foreground text and icons from colliding with deeply curved concentric corners.
+ */
+data class SeaGlassSafePaddingPx(
+    val leftPx: Float,
+    val topPx: Float,
+    val rightPx: Float,
+    val bottomPx: Float
+)
+
+/**
+ * Dynamically solved, guaranteed non-overlapping layout dimensions in pixels for corner-embedded
+ * pods and bottom docks inside an enclosing bezel or page frame.
+ */
+data class SeaGlassCornerPodLayoutPx(
+    val effectiveInsetPx: Float,
+    val podWidthPx: Float,
+    val topPodHeightPx: Float,
+    val bottomDockHeightPx: Float,
+    val horizontalGapPx: Float,
+    val verticalGapPx: Float
+)
+
+/**
  * Resolved physical display corner geometry for the active Android device or window.
  */
 data class SeaGlassDeviceCornerSpec(
@@ -415,8 +439,11 @@ object SeaGlassCornerAdaptationSolver {
     ): SeaGlassCornerRadiiPx {
         val elemW = (elementRightPx - elementLeftPx).coerceAtLeast(1f)
         val elemH = (elementBottomPx - elementTopPx).coerceAtLeast(1f)
-        val maxAllowedRadiusPx = min(elemW, elemH) * 0.5f
-        val clampedBase = baseCornerRadiusPx.coerceIn(0f, maxAllowedRadiusPx)
+        val halfMinDimPx = min(elemW, elemH) * 0.5f
+        // An asymmetric outer corner can safely use up to 78% of min(elemW, elemH) when the
+        // opposite inner corner on that edge is small (e.g., 52dp outer + 14dp inner <= 70dp height)
+        val maxAsymmetricCornerPx = min(elemW, elemH) * 0.78f
+        val clampedBase = baseCornerRadiusPx.coerceIn(0f, halfMinDimPx)
 
         if (mode == SeaGlassCornerAdaptationMode.FIXED ||
             containerWidthPx <= 1f ||
@@ -431,7 +458,7 @@ object SeaGlassCornerAdaptationSolver {
         val rightInset = (containerWidthPx - elementRightPx).coerceAtLeast(0f)
         val bottomInset = (containerHeightPx - elementBottomPx).coerceAtLeast(0f)
 
-        val floorPx = min(minCornerFloorPx, maxAllowedRadiusPx)
+        val floorPx = min(minCornerFloorPx, halfMinDimPx)
         val invInfluence = 1f / influenceDistancePx.coerceAtLeast(1f)
         val strength = adaptationStrength.coerceIn(0f, 1f)
 
@@ -441,46 +468,57 @@ object SeaGlassCornerAdaptationSolver {
             outerRadiusPx: Float
         ): Float {
             if (outerRadiusPx <= 0.5f) return clampedBase
-            // Diagonal distance from this element corner to the corresponding screen/page corner
             val dist = sqrt(dx * dx + dy * dy)
             val rawT = (1f - dist * invInfluence).coerceIn(0f, 1f)
-            // C^1 smoothstep weight: 1.0 at the corner, 0.0 outside influenceDistancePx
             val proximityWeight = rawT * rawT * (3f - 2f * rawT) * strength
 
             if (proximityWeight <= 0.001f && mode != SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) {
                 return clampedBase
             }
 
-            // Concentric offset: R_concentric = max(floor, R_outer - inset)
-            // Using harmonic/balanced inset so both flush-corner (dx=0, dy=0 -> R_outer)
-            // and padded-inset (dx=16dp, dy=16dp -> R_outer - 16dp) are geometrically exact!
             val effectiveInset = (min(dx, dy) * 0.65f + max(dx, dy) * 0.35f)
             val concentricTarget = (outerRadiusPx - effectiveInset)
-                .coerceIn(floorPx, maxAllowedRadiusPx)
+                .coerceIn(floorPx, maxAsymmetricCornerPx)
 
             return when (mode) {
                 SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED -> {
                     if (dist < influenceDistancePx * 0.85f) {
                         concentricTarget
                     } else {
-                        // Inner page-facing corner stays crisper when outer corner is embedded
-                        min(clampedBase, maxAllowedRadiusPx * 0.55f).coerceAtLeast(floorPx)
+                        min(clampedBase, halfMinDimPx * 0.45f).coerceAtLeast(floorPx)
                     }
                 }
                 else -> {
                     (clampedBase + (concentricTarget - clampedBase) * proximityWeight)
-                        .coerceIn(0f, maxAllowedRadiusPx)
+                        .coerceIn(0f, maxAsymmetricCornerPx)
                 }
             }
         }
 
-        val tl = solveSingleCorner(leftInset, topInset, containerCornersPx.topLeftPx)
-        val tr = solveSingleCorner(rightInset, topInset, containerCornersPx.topRightPx)
-        val br = solveSingleCorner(rightInset, bottomInset, containerCornersPx.bottomRightPx)
-        val bl = solveSingleCorner(leftInset, bottomInset, containerCornersPx.bottomLeftPx)
+        var tl = solveSingleCorner(leftInset, topInset, containerCornersPx.topLeftPx)
+        var tr = solveSingleCorner(rightInset, topInset, containerCornersPx.topRightPx)
+        var br = solveSingleCorner(rightInset, bottomInset, containerCornersPx.bottomRightPx)
+        var bl = solveSingleCorner(leftInset, bottomInset, containerCornersPx.bottomLeftPx)
+
+        // Normalize adjacent corner sums so no pair of corners on the same edge exceeds elemW or elemH
+        val edgeScale = min(
+            min(
+                if (tl + tr > elemW) elemW / (tl + tr) else 1f,
+                if (bl + br > elemW) elemW / (bl + br) else 1f
+            ),
+            min(
+                if (tl + bl > elemH) elemH / (tl + bl) else 1f,
+                if (tr + br > elemH) elemH / (tr + br) else 1f
+            )
+        ).coerceAtMost(1f)
+
+        tl *= edgeScale
+        tr *= edgeScale
+        br *= edgeScale
+        bl *= edgeScale
 
         if (mode == SeaGlassCornerAdaptationMode.UNIFORM_CONCENTRIC) {
-            val avg = (tl + tr + br + bl) * 0.25f
+            val avg = min((tl + tr + br + bl) * 0.25f, halfMinDimPx)
             return SeaGlassCornerRadiiPx.uniform(avg)
         }
 
@@ -489,6 +527,85 @@ object SeaGlassCornerAdaptationSolver {
             topRightPx = tr,
             bottomRightPx = br,
             bottomLeftPx = bl
+        )
+    }
+
+    /**
+     * Computes the minimum safe corner-cleared content padding so foreground text and icons
+     * never collide with deeply rounded concentric corners (`R * (1 - cos 45°) ≈ 0.293 R`).
+     */
+    fun computeCornerSafePaddingPx(
+        corners: SeaGlassCornerRadiiPx,
+        baseLeftPx: Float,
+        baseTopPx: Float,
+        baseRightPx: Float,
+        baseBottomPx: Float
+    ): SeaGlassSafePaddingPx {
+        val leftCornerMax = max(corners.topLeftPx, corners.bottomLeftPx)
+        val rightCornerMax = max(corners.topRightPx, corners.bottomRightPx)
+        val topCornerMax = max(corners.topLeftPx, corners.topRightPx)
+        val bottomCornerMax = max(corners.bottomLeftPx, corners.bottomRightPx)
+
+        return SeaGlassSafePaddingPx(
+            leftPx = max(baseLeftPx, leftCornerMax * 0.34f),
+            topPx = max(baseTopPx, topCornerMax * 0.22f),
+            rightPx = max(baseRightPx, rightCornerMax * 0.34f),
+            bottomPx = max(baseBottomPx, bottomCornerMax * 0.22f)
+        )
+    }
+
+    /**
+     * Dynamically solves collision-free dimensions and safe bezel inset for corner-embedded pods
+     * and bottom docks inside an enclosing bezel or page frame of size `(containerWidthPx, containerHeightPx)`.
+     *
+     * Guarantees:
+     * 1. **Zero Bezel Protrusion**: If `requestedInsetPx` is smaller than the diagonal clearance
+     *    needed for the pod's corner radius inside `containerCornersPx`, `effectiveInsetPx` is
+     *    automatically increased so the pod never crosses or gets clipped by the bezel curve.
+     * 2. **Zero Inter-Pod Overlap**: `podWidthPx` is clamped to `(innerW - minHorizontalGapPx) / 2`
+     *    and `topPodHeightPx + bottomDockHeightPx <= innerH - minVerticalGapPx` at all insets.
+     */
+    fun solveCornerPodLayoutPx(
+        containerWidthPx: Float,
+        containerHeightPx: Float,
+        containerCornersPx: SeaGlassCornerRadiiPx,
+        requestedInsetPx: Float,
+        minHorizontalGapPx: Float,
+        minVerticalGapPx: Float,
+        preferredPodWidthPx: Float,
+        preferredTopPodHeightPx: Float,
+        preferredBottomDockHeightPx: Float
+    ): SeaGlassCornerPodLayoutPx {
+        val maxBezelR = containerCornersPx.maxRadiusPx
+        val maxPodR = min(preferredPodWidthPx, preferredTopPodHeightPx) * 0.75f
+        // Diagonal arc protrusion protection: ensure (d + r_pod * 0.293 >= R_bezel * 0.293)
+        val minArcSafeInsetPx = max(0f, (maxBezelR - maxPodR) * 0.30f)
+        val maxSafeInsetX = (containerWidthPx * 0.18f).coerceAtLeast(0f)
+        val maxSafeInsetY = (containerHeightPx * 0.16f).coerceAtLeast(0f)
+        val effectiveInsetPx = max(requestedInsetPx, minArcSafeInsetPx)
+            .coerceAtMost(min(maxSafeInsetX, maxSafeInsetY).coerceAtLeast(requestedInsetPx))
+
+        val innerW = (containerWidthPx - 2f * effectiveInsetPx).coerceAtLeast(64f)
+        val innerH = (containerHeightPx - 2f * effectiveInsetPx).coerceAtLeast(64f)
+
+        val maxNonOverlappingPodW = ((innerW - minHorizontalGapPx) * 0.5f).coerceAtLeast(36f)
+        val solvedPodW = min(preferredPodWidthPx, maxNonOverlappingPodW)
+        val actualHorizontalGap = (innerW - solvedPodW * 2f).coerceAtLeast(0f)
+
+        val availVertForPods = (innerH - minVerticalGapPx).coerceAtLeast(48f)
+        val totalPrefH = (preferredTopPodHeightPx + preferredBottomDockHeightPx).coerceAtLeast(1f)
+        val vertScale = min(1f, availVertForPods / totalPrefH)
+        val solvedTopH = preferredTopPodHeightPx * vertScale
+        val solvedBottomH = preferredBottomDockHeightPx * vertScale
+        val actualVerticalGap = (innerH - solvedTopH - solvedBottomH).coerceAtLeast(0f)
+
+        return SeaGlassCornerPodLayoutPx(
+            effectiveInsetPx = effectiveInsetPx,
+            podWidthPx = solvedPodW,
+            topPodHeightPx = solvedTopH,
+            bottomDockHeightPx = solvedBottomH,
+            horizontalGapPx = actualHorizontalGap,
+            verticalGapPx = actualVerticalGap
         )
     }
 }

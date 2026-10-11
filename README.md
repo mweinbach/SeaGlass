@@ -129,3 +129,4 @@ val seaGlassLayout = SeaGlassFrameLayout(context).apply {
 - [Optical Physics & Shaders](docs/agents/optical-physics-and-shaders.md) — SDF `smin` coalescing, Oklab Beer-Lambert absorption, and micro-facet frost shaders.
 - [Material 3 Expressive Tokens](docs/agents/material3-expressive-tokens.md) — Shape morphing, tonal palettes, and dual-spring physics.
 - [Device Compatibility & Performance](docs/agents/device-compatibility-and-performance.md) — API 26–37+ tier matrix and TBDR GPU optimization guide.
+- [Adaptive Device/Page Corner Optics & Swift/Skip Interop](docs/agents/adaptive-corner-optics-and-skip-interop.md) — Concentric bezel/page corner matching, collision-free corner pod layout, and Swift/Skip (`skip.tools`) integration via `SeaGlassSkipBridge` & [`docs/skip/SeaGlassSkipUI.swift`](docs/skip/SeaGlassSkipUI.swift).

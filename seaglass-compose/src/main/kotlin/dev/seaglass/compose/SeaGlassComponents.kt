@@ -186,11 +186,14 @@ fun SeaGlassSurface(
         Modifier
     }
 
+    val parentScope = LocalSeaGlassContainerCornerScope.current
+
     val containerScope = remember(
         surfaceOriginInRoot,
         surfaceSize,
         effectiveMaterial.cornerRadiusDp,
         deviceCornerSpec,
+        parentScope,
         cornerAdaptationMode
     ) {
         val wPx = surfaceSize.width.toFloat().coerceAtLeast(1f)
@@ -204,7 +207,7 @@ fun SeaGlassSurface(
         val leftInStage = surfaceOriginInRoot.x - stageOrigin.x
         val topInStage = surfaceOriginInRoot.y - stageOrigin.y
 
-        val solvedRadii = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+        val deviceSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
             elementLeftPx = leftInStage,
             elementTopPx = topInStage,
             elementRightPx = leftInStage + wPx,
@@ -217,12 +220,61 @@ fun SeaGlassSurface(
             influenceDistancePx = 136f * density.density,
             mode = cornerAdaptationMode
         )
+
+        val solvedRadii = if (
+            parentScope != null &&
+            parentScope.widthPx > wPx + 4f &&
+            parentScope.heightPx > hPx + 4f &&
+            cornerAdaptationMode != SeaGlassCornerAdaptationMode.FIXED
+        ) {
+            val relLeft = surfaceOriginInRoot.x - parentScope.originInRoot.x
+            val relTop = surfaceOriginInRoot.y - parentScope.originInRoot.y
+            SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+                elementLeftPx = relLeft,
+                elementTopPx = relTop,
+                elementRightPx = relLeft + wPx,
+                elementBottomPx = relTop + hPx,
+                containerWidthPx = parentScope.widthPx,
+                containerHeightPx = parentScope.heightPx,
+                containerCornersPx = parentScope.cornerRadiiPx,
+                baseCornerRadiusPx = deviceSolved.maxRadiusPx,
+                minCornerFloorPx = 7f * density.density,
+                influenceDistancePx = 92f * density.density,
+                mode = cornerAdaptationMode
+            )
+        } else {
+            deviceSolved
+        }
+
         SeaGlassContainerCornerScope(
             originInRoot = surfaceOriginInRoot,
             widthPx = wPx,
             heightPx = hPx,
             cornerRadiiPx = solvedRadii
         )
+    }
+
+    val effectivePadding = if (cornerAdaptationMode == SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) {
+        val layoutDir = androidx.compose.ui.platform.LocalLayoutDirection.current
+        val baseL = with(density) { contentPadding.calculateLeftPadding(layoutDir).toPx() }
+        val baseT = with(density) { contentPadding.calculateTopPadding().toPx() }
+        val baseR = with(density) { contentPadding.calculateRightPadding(layoutDir).toPx() }
+        val baseB = with(density) { contentPadding.calculateBottomPadding().toPx() }
+        val safe = SeaGlassCornerAdaptationSolver.computeCornerSafePaddingPx(
+            corners = containerScope.cornerRadiiPx,
+            baseLeftPx = baseL,
+            baseTopPx = baseT,
+            baseRightPx = baseR,
+            baseBottomPx = baseB
+        )
+        PaddingValues(
+            start = with(density) { safe.leftPx.toDp() },
+            top = with(density) { safe.topPx.toDp() },
+            end = with(density) { safe.rightPx.toDp() },
+            bottom = with(density) { safe.bottomPx.toDp() }
+        )
+    } else {
+        contentPadding
     }
 
     ProvideSeaGlassLegibleContent(contentColor = contentColor) {
@@ -254,7 +306,7 @@ fun SeaGlassSurface(
                         contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
                         cornerAdaptationMode = cornerAdaptationMode
                     )
-                    .padding(contentPadding),
+                    .padding(effectivePadding),
                 content = content
             )
         }
