@@ -6,14 +6,18 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,10 +62,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,7 +82,6 @@ import dev.seaglass.compose.SeaGlassPill
 import dev.seaglass.compose.SeaGlassStageState
 import dev.seaglass.compose.SeaGlassSurface
 import dev.seaglass.compose.SeaGlassTheme
-import dev.seaglass.compose.animateSeaGlassMaterialAsState
 import dev.seaglass.compose.rememberSeaGlassStageState
 import dev.seaglass.compose.seaGlass
 import dev.seaglass.compose.seaGlassBackdrop
@@ -108,9 +115,9 @@ fun SeaGlassShowcaseApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
     var actionOrbDetached by remember { mutableStateOf(false) }
 
-    // Live adjustable optical parameters initialized from the selected palette
+    // Live adjustable optical parameters initialized for rich sea-glass grit + liquid meniscus refraction
     var coarseness by remember(activePalette) {
-        mutableFloatStateOf(activePalette.primaryGlass.coarseness)
+        mutableFloatStateOf((activePalette.primaryGlass.coarseness + 0.10f).coerceIn(0f, 1f))
     }
     var frostRadiusDp by remember(activePalette) {
         mutableFloatStateOf(activePalette.primaryGlass.frostRadiusDp)
@@ -119,13 +126,13 @@ fun SeaGlassShowcaseApp() {
         mutableFloatStateOf(activePalette.primaryGlass.tintDensity)
     }
     var thicknessDp by remember(activePalette) {
-        mutableFloatStateOf(activePalette.primaryGlass.thicknessDp)
+        mutableFloatStateOf(18f)
     }
     var ior by remember(activePalette) {
-        mutableFloatStateOf(activePalette.primaryGlass.ior)
+        mutableFloatStateOf(1.56f)
     }
     var rimChalkiness by remember(activePalette) {
-        mutableFloatStateOf(activePalette.primaryGlass.rimChalkiness)
+        mutableFloatStateOf(0.84f)
     }
 
     val customPrimaryMaterial = remember(
@@ -159,10 +166,10 @@ fun SeaGlassShowcaseApp() {
         activePalette.surfaceGlass.copy(
             coarseness = (coarseness + 0.08f).coerceIn(0f, 1f),
             frostRadiusDp = (frostRadiusDp + 4f).coerceAtMost(56f),
-            tintDensity = (tintDensity * 0.72f).coerceIn(0.15f, 0.90f),
+            tintDensity = (tintDensity * 0.68f).coerceIn(0.14f, 0.85f),
             thicknessDp = thicknessDp,
             ior = ior,
-            rimChalkiness = (rimChalkiness + 0.06f).coerceIn(0f, 1f)
+            rimChalkiness = (rimChalkiness + 0.08f).coerceIn(0f, 1f)
         )
     }
 
@@ -174,7 +181,7 @@ fun SeaGlassShowcaseApp() {
         val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
 
         Box(modifier = Modifier.fillMaxSize()) {
-            // 1. Expressive high-contrast coastal background captured into the GPU stage
+            // 1. Vibrant, high-contrast Material 3 Expressive coastal artwork captured into the GPU stage
             ExpressiveTidalBackdrop(
                 palette = activePalette,
                 modifier = Modifier
@@ -187,15 +194,15 @@ fun SeaGlassShowcaseApp() {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(
-                        top = systemBarsPadding.calculateTopPadding() + 12.dp,
-                        bottom = systemBarsPadding.calculateBottomPadding() + 92.dp,
+                        top = systemBarsPadding.calculateTopPadding() + 10.dp,
+                        bottom = systemBarsPadding.calculateBottomPadding() + 94.dp,
                         start = 16.dp,
                         end = 16.dp
                     )
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Top Header Bar in frosted SeaGlass
+                // Top Morphing Header Specimen Card
                 HeaderSpecimenBanner(
                     stageState = stageState,
                     palette = activePalette,
@@ -206,7 +213,7 @@ fun SeaGlassShowcaseApp() {
                     }
                 )
 
-                // Quick Palette Pill Strip
+                // Expressive Palette Strip
                 PaletteQuickStrip(
                     stageState = stageState,
                     activePalette = activePalette,
@@ -217,6 +224,12 @@ fun SeaGlassShowcaseApp() {
                     0 -> OpticsLabSection(
                         stageState = stageState,
                         primaryMaterial = customPrimaryMaterial,
+                        tertiaryMaterial = activePalette.tertiaryGlass.copy(
+                            coarseness = coarseness,
+                            frostRadiusDp = frostRadiusDp,
+                            ior = ior,
+                            thicknessDp = thicknessDp
+                        ),
                         surfaceMaterial = customSurfaceMaterial,
                         coarseness = coarseness,
                         onCoarsenessChange = { coarseness = it },
@@ -229,7 +242,15 @@ fun SeaGlassShowcaseApp() {
                         ior = ior,
                         onIorChange = { ior = it },
                         rimChalkiness = rimChalkiness,
-                        onRimChalkinessChange = { rimChalkiness = it }
+                        onRimChalkinessChange = { rimChalkiness = it },
+                        onApplyPreset = { c, f, d, t, i, r ->
+                            coarseness = c
+                            frostRadiusDp = f
+                            tintDensity = d
+                            thicknessDp = t
+                            ior = i
+                            rimChalkiness = r
+                        }
                     )
 
                     1 -> FluidCoalescingSection(
@@ -237,7 +258,9 @@ fun SeaGlassShowcaseApp() {
                         primaryMaterial = customPrimaryMaterial,
                         tertiaryMaterial = activePalette.tertiaryGlass.copy(
                             coarseness = coarseness,
-                            frostRadiusDp = frostRadiusDp
+                            frostRadiusDp = frostRadiusDp,
+                            ior = ior,
+                            thicknessDp = thicknessDp
                         ),
                         surfaceMaterial = customSurfaceMaterial
                     )
@@ -292,9 +315,25 @@ private fun HeaderSpecimenBanner(
     material: SeaGlassMaterial,
     onCyclePalette: () -> Unit
 ) {
+    var morphedExpanded by remember { mutableStateOf(false) }
+    val cornerRadius by animateFloatAsState(
+        targetValue = if (morphedExpanded) 44f else 30f,
+        animationSpec = spring(dampingRatio = 0.58f, stiffness = 340f),
+        label = "headerCornerMorph"
+    )
+    val extraThickness by animateFloatAsState(
+        targetValue = if (morphedExpanded) 8f else 0f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 360f),
+        label = "headerThicknessMorph"
+    )
+
     SeaGlassCard(
         stageState = stageState,
-        material = material.copy(cornerRadiusDp = 32f),
+        material = material.copy(
+            cornerRadiusDp = cornerRadius,
+            thicknessDp = (material.thicknessDp + extraThickness).coerceAtMost(34f)
+        ),
+        onClick = { morphedExpanded = !morphedExpanded },
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -304,12 +343,12 @@ private fun HeaderSpecimenBanner(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "SEAGLASS FOUNDATION",
+                    text = "LIQUID SEA GLASS · M3 EXPRESSIVE",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.6.sp
+                        letterSpacing = 1.5.sp
                     ),
-                    color = LocalContentColor.current.copy(alpha = 0.75f)
+                    color = LocalContentColor.current.copy(alpha = 0.78f)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -324,7 +363,11 @@ private fun HeaderSpecimenBanner(
             SeaGlassButton(
                 onClick = onCyclePalette,
                 stageState = stageState,
-                material = palette.tertiaryGlass.copy(cornerRadiusDp = 22f),
+                material = palette.tertiaryGlass.copy(
+                    cornerRadiusDp = 24f,
+                    thicknessDp = 18f,
+                    rimChalkiness = 0.88f
+                ),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
             ) {
                 Text(
@@ -338,8 +381,8 @@ private fun HeaderSpecimenBanner(
 
         Text(
             text = palette.tagline,
-            style = MaterialTheme.typography.bodyMedium,
-            color = LocalContentColor.current.copy(alpha = 0.88f)
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+            color = LocalContentColor.current.copy(alpha = 0.90f)
         )
     }
 }
@@ -370,7 +413,7 @@ private fun PaletteQuickStrip(
                 selected = selected,
                 onClick = { onSelectPalette(palette) },
                 stageState = stageState,
-                selectedMaterial = palette.primaryGlass,
+                selectedMaterial = palette.primaryGlass.copy(thicknessDp = 18f),
                 unselectedMaterial = palette.surfaceGlass,
                 modifier = Modifier.weight(1f)
             )
@@ -382,6 +425,7 @@ private fun PaletteQuickStrip(
 private fun OpticsLabSection(
     stageState: SeaGlassStageState,
     primaryMaterial: SeaGlassMaterial,
+    tertiaryMaterial: SeaGlassMaterial,
     surfaceMaterial: SeaGlassMaterial,
     coarseness: Float,
     onCoarsenessChange: (Float) -> Unit,
@@ -394,76 +438,182 @@ private fun OpticsLabSection(
     ior: Float,
     onIorChange: (Float) -> Unit,
     rimChalkiness: Float,
-    onRimChalkinessChange: (Float) -> Unit
+    onRimChalkinessChange: (Float) -> Unit,
+    onApplyPreset: (Float, Float, Float, Float, Float, Float) -> Unit
 ) {
-    // Live Dual-Lens Specimen Comparing Heavy Sanded Frost vs Lightly Tumbled Edge Refraction
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    val motion = LocalSeaGlassMotionScheme.current
+    val density = LocalDensity.current
+
+    // Interactive 3-State Coalescing Hero Lens Deck right on the main tab!
+    // State 0 = Hourglass Liquid Bridge, State 1 = Pinching Surface-Tension Neck, State 2 = Split Teardrops
+    var heroFlowState by remember { mutableIntStateOf(0) }
+    val heroSeparationDp by animateFloatAsState(
+        targetValue = when (heroFlowState) {
+            0 -> 114f
+            1 -> 132f
+            else -> 172f
+        },
+        animationSpec = spring(dampingRatio = 0.54f, stiffness = 300f),
+        label = "heroCoalesce"
+    )
+
+    var deckWidthPx by remember { mutableFloatStateOf(960f) }
+    val deckHeight = 172.dp
+    val deckHeightPx = with(density) { deckHeight.toPx() }
+    val rAPx = with(density) { 58.dp.toPx() }
+    val rBPx = with(density) { 50.dp.toPx() }
+    val sepPx = with(density) { heroSeparationDp.dp.toPx() }
+
+    val centerAX = deckWidthPx * 0.33f
+    val centerAY = deckHeightPx * 0.50f
+    val centerBX = (centerAX + sepPx).coerceAtMost(deckWidthPx - rBPx - 16f)
+
+    val heroNodes = remember(
+        deckWidthPx,
+        deckHeightPx,
+        centerAX,
+        centerAY,
+        centerBX,
+        rAPx,
+        rBPx,
+        primaryMaterial,
+        tertiaryMaterial
     ) {
-        SeaGlassCard(
-            stageState = stageState,
-            material = primaryMaterial.copy(cornerRadiusDp = 30f),
+        listOf(
+            SeaGlassSdfEngine.SdfNode(
+                centerX = centerAX,
+                centerY = centerAY,
+                halfWidth = rAPx * 1.22f,
+                halfHeight = rAPx * 0.96f,
+                uniformCornerRadius = rAPx * 0.90f,
+                cornerSmoothing = 2.4f,
+                tintColorArgb = primaryMaterial.tintColorArgb,
+                thicknessPx = primaryMaterial.thicknessDp * 2.8f
+            ),
+            SeaGlassSdfEngine.SdfNode(
+                centerX = centerBX,
+                centerY = centerAY,
+                halfWidth = rBPx,
+                halfHeight = rBPx,
+                uniformCornerRadius = rBPx,
+                cornerSmoothing = 2.4f,
+                tintColorArgb = tertiaryMaterial.tintColorArgb,
+                thicknessPx = tertiaryMaterial.thicknessDp * 2.8f
+            )
+        )
+    }
+
+    // Live Coalescing SeaGlass Specimen Lens
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(deckHeight)
+            .onSizeChanged { deckWidthPx = it.width.toFloat() }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { heroFlowState = (heroFlowState + 1) % 3 }
+            )
+            .seaGlass(
+                stageState = stageState,
+                material = primaryMaterial,
+                nodesOptional = heroNodes,
+                smoothRadiusDp = 52f
+            )
+    ) {
+        val labelColor = Color(
+            SeaGlassColorMath.optimalContentColorFor(
+                primaryMaterial.tintColorArgb,
+                primaryMaterial.tintDensity
+            )
+        )
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
-                .weight(1f)
-                .height(148.dp)
+                .offset {
+                    IntOffset(
+                        (centerAX - rAPx * 1.05f).roundToInt().coerceAtLeast(12),
+                        (centerAY - rAPx * 0.56f).roundToInt()
+                    )
+                }
+                .width(with(density) { (rAPx * 2.1f).toDp() })
         ) {
             Text(
-                text = "PRIMARY SPECIMEN",
+                text = when (heroFlowState) {
+                    0 -> "LIQUID BRIDGE"
+                    1 -> "PINCH NECK"
+                    else -> "TEARDROP SPLIT"
+                },
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.1.sp
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.0.sp
                 ),
-                color = LocalContentColor.current.copy(alpha = 0.72f)
+                color = labelColor.copy(alpha = 0.78f)
             )
-            Spacer(modifier = Modifier.weight(1f))
             Text(
                 text = String.format(Locale.US, "Grit %.0f%%", coarseness * 100f),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black)
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
+                color = labelColor
             )
             Text(
-                text = String.format(
-                    Locale.US,
-                    "IOR %.2f · %.0fdp frost",
-                    ior,
-                    frostRadiusDp
-                ),
-                style = MaterialTheme.typography.labelMedium,
-                color = LocalContentColor.current.copy(alpha = 0.82f)
+                text = "Tap to morph ⇄",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = labelColor.copy(alpha = 0.85f)
             )
         }
 
-        SeaGlassCard(
-            stageState = stageState,
-            material = LocalSeaGlassPalette.current.secondaryGlass.copy(
-                coarseness = (coarseness + 0.18f).coerceAtMost(1f),
-                frostRadiusDp = (frostRadiusDp + 10f).coerceAtMost(56f),
-                tintDensity = tintDensity,
-                cornerRadiusDp = 38f
-            ),
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
-                .weight(1f)
-                .height(148.dp)
+                .offset {
+                    IntOffset(
+                        (centerBX - rBPx).roundToInt(),
+                        (centerAY - 18f).roundToInt()
+                    )
+                }
+                .width(with(density) { (rBPx * 2f).toDp() })
         ) {
             Text(
-                text = "HEAVY SURF FROST",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.1.sp
-                ),
-                color = LocalContentColor.current.copy(alpha = 0.72f)
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = "Chalky Matte",
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black)
-            )
-            Text(
-                text = "Oklab Beer-Lambert",
-                style = MaterialTheme.typography.labelMedium,
-                color = LocalContentColor.current.copy(alpha = 0.82f)
+                text = String.format(Locale.US, "%.2f", ior),
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
+                color = labelColor
             )
         }
+    }
+
+    // 1-Tap Optical Finish Presets (Sanded Beach Glass vs Liquid Meniscus vs Heavy Surf)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        SeaGlassPill(
+            label = "Sanded Beach",
+            selected = coarseness in 0.45f..0.68f,
+            onClick = { onApplyPreset(0.56f, 24f, 0.50f, 18f, 1.54f, 0.86f) },
+            stageState = stageState,
+            selectedMaterial = primaryMaterial,
+            unselectedMaterial = surfaceMaterial,
+            modifier = Modifier.weight(1f)
+        )
+        SeaGlassPill(
+            label = "Liquid Lens",
+            selected = coarseness < 0.30f,
+            onClick = { onApplyPreset(0.18f, 14f, 0.42f, 24f, 1.68f, 0.78f) },
+            stageState = stageState,
+            selectedMaterial = primaryMaterial,
+            unselectedMaterial = surfaceMaterial,
+            modifier = Modifier.weight(1f)
+        )
+        SeaGlassPill(
+            label = "Heavy Frost",
+            selected = coarseness > 0.70f,
+            onClick = { onApplyPreset(0.84f, 34f, 0.58f, 16f, 1.46f, 0.94f) },
+            stageState = stageState,
+            selectedMaterial = primaryMaterial,
+            unselectedMaterial = surfaceMaterial,
+            modifier = Modifier.weight(1f)
+        )
     }
 
     // Optical Parameter Controls Card
@@ -506,18 +656,18 @@ private fun OpticsLabSection(
         )
 
         OpticalSliderRow(
-            title = "Glass Slab Thickness",
+            title = "3D Meniscus Thickness",
             valueText = String.format(Locale.US, "%.0f dp", thicknessDp),
             value = thicknessDp,
-            valueRange = 4f..32f,
+            valueRange = 6f..34f,
             onValueChange = onThicknessChange
         )
 
         OpticalSliderRow(
-            title = "Edge Refraction (IOR)",
+            title = "Lens Refraction (IOR)",
             valueText = String.format(Locale.US, "%.2f", ior),
             value = ior,
-            valueRange = 1.05f..1.75f,
+            valueRange = 1.08f..1.80f,
             onValueChange = onIorChange
         )
 
@@ -567,7 +717,7 @@ private fun OpticalSliderRow(
                 activeTrackColor = LocalContentColor.current.copy(alpha = 0.78f),
                 inactiveTrackColor = LocalContentColor.current.copy(alpha = 0.20f)
             ),
-            modifier = Modifier.height(28.dp)
+            modifier = Modifier.height(26.dp)
         )
     }
 }
@@ -579,17 +729,16 @@ private fun FluidCoalescingSection(
     tertiaryMaterial: SeaGlassMaterial,
     surfaceMaterial: SeaGlassMaterial
 ) {
-    val motion = LocalSeaGlassMotionScheme.current
     val density = LocalDensity.current
 
     var coalescedPreset by remember { mutableStateOf(true) }
-    var smoothBridgeDp by remember { mutableFloatStateOf(34f) }
+    var smoothBridgeDp by remember { mutableFloatStateOf(52f) }
     var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
 
-    val targetSeparationDp = if (coalescedPreset) 74f else 172f
+    val targetSeparationDp = if (coalescedPreset) 118f else 186f
     val animatedSepDp by animateFloatAsState(
         targetValue = targetSeparationDp,
-        animationSpec = motion.defaultSpatial,
+        animationSpec = spring(dampingRatio = 0.56f, stiffness = 320f),
         label = "dropletSeparation"
     )
 
@@ -607,9 +756,9 @@ private fun FluidCoalescingSection(
             color = LocalContentColor.current.copy(alpha = 0.75f)
         )
         Text(
-            text = "Drag the right droplet or tap Merge/Split. Both shapes share a single 256-byte std140 UBO and blend their Oklab tints across the cubic smooth-minimum bridge.",
+            text = "Drag the right sea-glass droplet or tap Merge/Split. Newton-Raphson SDF isosurface projection traces a C²-continuous liquid bridge with dual-zone meniscus lens refraction.",
             style = MaterialTheme.typography.bodySmall,
-            color = LocalContentColor.current.copy(alpha = 0.85f)
+            color = LocalContentColor.current.copy(alpha = 0.88f)
         )
 
         Row(
@@ -644,15 +793,15 @@ private fun FluidCoalescingSection(
             title = "Smooth-Min Bridge Radius (k)",
             valueText = String.format(Locale.US, "%.0f dp", smoothBridgeDp),
             value = smoothBridgeDp,
-            valueRange = 4f..56f,
+            valueRange = 8f..60f,
             onValueChange = { smoothBridgeDp = it }
         )
     }
 
     // Live Multi-Node SDF Arena rendered directly over the animated backdrop
-    val arenaHeight = 210.dp
+    val arenaHeight = 220.dp
     val arenaHeightPx = with(density) { arenaHeight.toPx() }
-    var arenaWidthPx by remember { mutableFloatStateOf(900f) }
+    var arenaWidthPx by remember { mutableFloatStateOf(960f) }
 
     val centerAX = arenaWidthPx * 0.34f
     val centerAY = arenaHeightPx * 0.50f
@@ -660,8 +809,8 @@ private fun FluidCoalescingSection(
     val centerBX = (centerAX + sepPx + dragOffsetPx.x).coerceIn(80f, arenaWidthPx - 80f)
     val centerBY = (centerAY + dragOffsetPx.y).coerceIn(65f, arenaHeightPx - 65f)
 
-    val dropletARadiusPx = with(density) { 58.dp.toPx() }
-    val dropletBRadiusPx = with(density) { 50.dp.toPx() }
+    val dropletARadiusPx = with(density) { 62.dp.toPx() }
+    val dropletBRadiusPx = with(density) { 54.dp.toPx() }
 
     val arenaNodes = remember(
         centerAX,
@@ -678,11 +827,11 @@ private fun FluidCoalescingSection(
                 centerX = centerAX,
                 centerY = centerAY,
                 halfWidth = dropletARadiusPx * 1.18f,
-                halfHeight = dropletARadiusPx * 0.92f,
-                uniformCornerRadius = dropletARadiusPx * 0.72f,
+                halfHeight = dropletARadiusPx * 0.94f,
+                uniformCornerRadius = dropletARadiusPx * 0.82f,
                 cornerSmoothing = 2.6f,
                 tintColorArgb = primaryMaterial.tintColorArgb,
-                thicknessPx = dropletARadiusPx * 0.55f
+                thicknessPx = dropletARadiusPx * 0.62f
             ),
             SeaGlassSdfEngine.SdfNode(
                 centerX = centerBX,
@@ -692,7 +841,7 @@ private fun FluidCoalescingSection(
                 uniformCornerRadius = dropletBRadiusPx,
                 cornerSmoothing = 2.5f,
                 tintColorArgb = tertiaryMaterial.tintColorArgb,
-                thicknessPx = dropletBRadiusPx * 0.60f
+                thicknessPx = dropletBRadiusPx * 0.65f
             )
         )
     }
@@ -701,6 +850,7 @@ private fun FluidCoalescingSection(
         modifier = Modifier
             .fillMaxWidth()
             .height(arenaHeight)
+            .onSizeChanged { arenaWidthPx = it.width.toFloat() }
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
@@ -774,13 +924,14 @@ private fun PaletteGallerySection(
                 SeaGlassCard(
                     stageState = stageState,
                     material = palette.primaryGlass.copy(
-                        cornerRadiusDp = if (isSelected) 32f else 24f,
-                        rimChalkiness = if (isSelected) 0.92f else palette.primaryGlass.rimChalkiness
+                        cornerRadiusDp = if (isSelected) 34f else 26f,
+                        thicknessDp = if (isSelected) 20f else 15f,
+                        rimChalkiness = if (isSelected) 0.94f else palette.primaryGlass.rimChalkiness
                     ),
                     onClick = { onSelectPalette(palette) },
                     modifier = Modifier
                         .weight(1f)
-                        .height(136.dp)
+                        .height(138.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -789,7 +940,7 @@ private fun PaletteGallerySection(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(18.dp)
+                                .size(20.dp)
                                 .clip(CircleShape)
                                 .background(Color(palette.primaryGlass.tintColorArgb))
                         )
@@ -817,7 +968,7 @@ private fun PaletteGallerySection(
                             palette.primaryGlass.tintDensity * 100f
                         ),
                         style = MaterialTheme.typography.labelSmall,
-                        color = LocalContentColor.current.copy(alpha = 0.80f)
+                        color = LocalContentColor.current.copy(alpha = 0.82f)
                     )
                 }
             }
@@ -958,9 +1109,10 @@ private fun BackendArchitectureSection(
 }
 
 /**
- * Rich, animated Material 3 Expressive coastal backdrop with high-contrast geometric ribbons,
- * floating pastel orbs, and editorial grid lines so real-time sea-glass refraction, frosted
- * sand-grain coarseness, and Beer-Lambert volumetric tinting are immediately visible.
+ * Rich, high-contrast Material 3 Expressive coastal artwork canvas with vivid organic ribbons,
+ * floating coral/amber/cobalt/jade pebbles, and bold typographic watermarks positioned behind
+ * the glass cards so 3D meniscus lens refraction and sand-tumbled frost diffusion are
+ * immediately striking.
  */
 @Composable
 private fun ExpressiveTidalBackdrop(
@@ -972,21 +1124,38 @@ private fun ExpressiveTidalBackdrop(
         initialValue = 0f,
         targetValue = (2.0 * Math.PI).toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 14000, easing = LinearEasing),
+            animation = tween(durationMillis = 16000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "tidalPhase"
     )
 
+    val textMeasurer = rememberTextMeasurer()
     val isDark = palette == SeaGlassPalette.ObsidianTide
-    val bgTop = if (isDark) Color(0xFF0A1520) else Color(0xFFEAF4F8)
-    val bgBottom = if (isDark) Color(0xFF13283C) else Color(0xFFD5E9F2)
+    val bgTop = if (isDark) Color(0xFF07131E) else Color(0xFFDCEEF8)
+    val bgMid = if (isDark) Color(0xFF0E2236) else Color(0xFFC8E4F4)
+    val bgBottom = if (isDark) Color(0xFF15304A) else Color(0xFFB8DCF0)
 
     val orbPrimary = Color(palette.primaryGlass.tintColorArgb)
     val orbTertiary = Color(palette.tertiaryGlass.tintColorArgb)
-    val coralAccent = Color(0xFFFF7D6B)
-    val goldAccent = Color(0xFFFFC857)
-    val cobaltAccent = Color(0xFF3B7BFF)
+    val vividCoral = Color(0xFFFF5E4D)
+    val sunlitAmber = Color(0xFFFFB224)
+    val deepCobalt = Color(0xFF2868FF)
+    val coastalJade = Color(0xFF0FD6A0)
+    val seaAmethyst = Color(0xFF9C5CFF)
+
+    val watermarkStyle = remember(isDark) {
+        TextStyle(
+            fontSize = 54.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 2.sp,
+            color = if (isDark) {
+                Color.White.copy(alpha = 0.16f)
+            } else {
+                Color(0xFF0A2840).copy(alpha = 0.16f)
+            }
+        )
+    }
 
     Canvas(modifier = modifier) {
         val w = size.width
@@ -994,16 +1163,16 @@ private fun ExpressiveTidalBackdrop(
 
         drawRect(
             brush = Brush.verticalGradient(
-                colors = listOf(bgTop, bgBottom)
+                colors = listOf(bgTop, bgMid, bgBottom)
             )
         )
 
-        // Subtle optical calibration grid so IOR edge refraction bending is clearly observable
-        val gridStep = 44.dp.toPx()
+        // Optical calibration grid so 3D meniscus lens magnification & refraction are unmistakable
+        val gridStep = 38.dp.toPx()
         val gridColor = if (isDark) {
-            Color.White.copy(alpha = 0.07f)
+            Color.White.copy(alpha = 0.08f)
         } else {
-            Color(0xFF10324A).copy(alpha = 0.08f)
+            Color(0xFF0B2D48).copy(alpha = 0.09f)
         }
         var gx = 0f
         while (gx < w) {
@@ -1016,85 +1185,121 @@ private fun ExpressiveTidalBackdrop(
             gy += gridStep
         }
 
-        // Animated Material 3 Expressive organic ribbons and pebbles behind the glass
-        val dx1 = cos(phase) * w * 0.14f
-        val dy1 = sin(phase) * h * 0.08f
+        val dx = cos(phase) * w * 0.12f
+        val dy = sin(phase) * h * 0.06f
 
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(orbPrimary.copy(alpha = 0.85f), orbPrimary.copy(alpha = 0.0f)),
-                center = Offset(w * 0.25f + dx1, h * 0.22f + dy1),
-                radius = w * 0.48f
-            ),
-            radius = w * 0.48f,
-            center = Offset(w * 0.25f + dx1, h * 0.22f + dy1)
-        )
-
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(coralAccent.copy(alpha = 0.78f), coralAccent.copy(alpha = 0.0f)),
-                center = Offset(w * 0.78f - dx1 * 0.8f, h * 0.36f + dy1 * 0.6f),
-                radius = w * 0.42f
-            ),
-            radius = w * 0.42f,
-            center = Offset(w * 0.78f - dx1 * 0.8f, h * 0.36f + dy1 * 0.6f)
-        )
-
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(cobaltAccent.copy(alpha = 0.72f), cobaltAccent.copy(alpha = 0.0f)),
-                center = Offset(w * 0.30f - dy1, h * 0.68f - dx1 * 0.5f),
-                radius = w * 0.46f
-            ),
-            radius = w * 0.46f,
-            center = Offset(w * 0.30f - dy1, h * 0.68f - dx1 * 0.5f)
-        )
-
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(goldAccent.copy(alpha = 0.80f), goldAccent.copy(alpha = 0.0f)),
-                center = Offset(w * 0.75f + dy1 * 0.7f, h * 0.82f + dx1 * 0.4f),
-                radius = w * 0.40f
-            ),
-            radius = w * 0.40f,
-            center = Offset(w * 0.75f + dy1 * 0.7f, h * 0.82f + dx1 * 0.4f)
-        )
-
-        // Crisp high-contrast M3 Expressive geometric pills behind the glass to demonstrate blur & refraction
-        rotate(degrees = -14f, pivot = Offset(w * 0.5f, h * 0.32f)) {
+        // Vivid Material 3 Expressive Diagonal Color-Field Ribbons
+        rotate(degrees = -16f, pivot = Offset(w * 0.5f, h * 0.24f)) {
             drawRoundRect(
-                color = orbTertiary.copy(alpha = 0.88f),
-                topLeft = Offset(w * 0.12f + dx1 * 0.3f, h * 0.26f),
-                size = Size(w * 0.76f, 68.dp.toPx()),
-                cornerRadius = CornerRadius(34.dp.toPx(), 34.dp.toPx())
+                brush = Brush.horizontalGradient(
+                    colors = listOf(vividCoral, sunlitAmber)
+                ),
+                topLeft = Offset(w * 0.04f + dx * 0.4f, h * 0.16f),
+                size = Size(w * 0.92f, 82.dp.toPx()),
+                cornerRadius = CornerRadius(41.dp.toPx(), 41.dp.toPx())
             )
         }
 
-        rotate(degrees = 11f, pivot = Offset(w * 0.5f, h * 0.58f)) {
+        rotate(degrees = 14f, pivot = Offset(w * 0.5f, h * 0.42f)) {
             drawRoundRect(
-                color = coralAccent.copy(alpha = 0.82f),
-                topLeft = Offset(w * 0.10f - dx1 * 0.25f, h * 0.54f),
-                size = Size(w * 0.80f, 64.dp.toPx()),
-                cornerRadius = CornerRadius(32.dp.toPx(), 32.dp.toPx())
+                brush = Brush.horizontalGradient(
+                    colors = listOf(deepCobalt, coastalJade)
+                ),
+                topLeft = Offset(w * 0.02f - dx * 0.35f, h * 0.36f),
+                size = Size(w * 0.96f, 88.dp.toPx()),
+                cornerRadius = CornerRadius(44.dp.toPx(), 44.dp.toPx())
             )
         }
 
-        // Bold wave contour lines
-        val wavePath = Path().apply {
-            moveTo(0f, h * 0.44f)
-            cubicTo(
-                w * 0.33f,
-                h * (0.36f + 0.04f * sin(phase)),
-                w * 0.66f,
-                h * (0.52f - 0.04f * cos(phase)),
-                w,
-                h * 0.44f
+        rotate(degrees = -11f, pivot = Offset(w * 0.5f, h * 0.66f)) {
+            drawRoundRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(seaAmethyst, vividCoral)
+                ),
+                topLeft = Offset(w * 0.06f + dx * 0.3f, h * 0.60f),
+                size = Size(w * 0.88f, 78.dp.toPx()),
+                cornerRadius = CornerRadius(39.dp.toPx(), 39.dp.toPx())
             )
         }
-        drawPath(
-            path = wavePath,
-            color = if (isDark) Color.White.copy(alpha = 0.35f) else Color(0xFF0D2B3E).copy(alpha = 0.28f),
-            style = Stroke(width = 5.dp.toPx())
+
+        rotate(degrees = 9f, pivot = Offset(w * 0.5f, h * 0.88f)) {
+            drawRoundRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(sunlitAmber, orbPrimary)
+                ),
+                topLeft = Offset(w * 0.04f - dx * 0.3f, h * 0.84f),
+                size = Size(w * 0.92f, 76.dp.toPx()),
+                cornerRadius = CornerRadius(38.dp.toPx(), 38.dp.toPx())
+            )
+        }
+
+        // Crisp Floating Expressive Pebbles & Orbs
+        drawCircle(
+            color = sunlitAmber.copy(alpha = 0.92f),
+            radius = 56.dp.toPx(),
+            center = Offset(w * 0.22f - dx * 0.5f, h * 0.30f + dy)
         )
+        drawCircle(
+            color = vividCoral.copy(alpha = 0.90f),
+            radius = 64.dp.toPx(),
+            center = Offset(w * 0.78f + dx * 0.4f, h * 0.48f - dy)
+        )
+        drawCircle(
+            color = coastalJade.copy(alpha = 0.90f),
+            radius = 58.dp.toPx(),
+            center = Offset(w * 0.28f + dy, h * 0.76f + dx * 0.3f)
+        )
+        drawCircle(
+            color = orbTertiary.copy(alpha = 0.92f),
+            radius = 52.dp.toPx(),
+            center = Offset(w * 0.76f - dy, h * 0.91f)
+        )
+
+        // High-Contrast Editorial Watermark Typography (makes lens refraction & frost blur pop!)
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "SEA GLASS",
+            topLeft = Offset(w * 0.08f, h * 0.11f),
+            style = watermarkStyle
+        )
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "LIQUID × M3",
+            topLeft = Offset(w * 0.10f, h * 0.31f),
+            style = watermarkStyle
+        )
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "TUMBLED FROST",
+            topLeft = Offset(w * 0.06f, h * 0.52f),
+            style = watermarkStyle
+        )
+        drawText(
+            textMeasurer = textMeasurer,
+            text = "OKLAB OPTICS",
+            topLeft = Offset(w * 0.08f, h * 0.74f),
+            style = watermarkStyle
+        )
+
+        // Crisp Caustic Wave Contours
+        for (i in 0..2) {
+            val yBase = h * (0.26f + i * 0.25f)
+            val wavePath = Path().apply {
+                moveTo(0f, yBase)
+                cubicTo(
+                    w * 0.33f,
+                    yBase - 36.dp.toPx() * sin(phase + i),
+                    w * 0.66f,
+                    yBase + 36.dp.toPx() * cos(phase + i),
+                    w,
+                    yBase
+                )
+            }
+            drawPath(
+                path = wavePath,
+                color = Color.White.copy(alpha = if (isDark) 0.42f else 0.68f),
+                style = Stroke(width = 4.dp.toPx())
+            )
+        }
     }
 }

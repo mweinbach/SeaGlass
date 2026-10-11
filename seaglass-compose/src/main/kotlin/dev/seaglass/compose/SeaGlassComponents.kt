@@ -280,21 +280,21 @@ fun SeaGlassFluidBar(
     )
 
     val actionSeparationDp by animateDpAsState(
-        targetValue = if (actionDetached) 18.dp else (-6).dp,
-        animationSpec = spring(dampingRatio = 0.62f, stiffness = 360f),
+        targetValue = if (actionDetached) 18.dp else (-3).dp,
+        animationSpec = spring(dampingRatio = 0.56f, stiffness = 320f),
         label = "actionOrbSeparation"
     )
 
     var totalWidthPx by remember { mutableFloatStateOf(0f) }
     var totalHeightPx by remember { mutableFloatStateOf(0f) }
 
-    val barHeight = 64.dp
-    val orbSize = 58.dp
+    val barHeight = 66.dp
+    val orbSize = 60.dp
     val barHeightPx = with(density) { barHeight.toPx() }
     val orbSizePx = with(density) { orbSize.toPx() }
     val gapPx = with(density) { actionSeparationDp.toPx() }
 
-    val mainBarWidthPx = (totalWidthPx - orbSizePx - gapPx.coerceAtLeast(0f) - with(density) { 8.dp.toPx() })
+    val mainBarWidthPx = (totalWidthPx - orbSizePx - gapPx.coerceAtLeast(0f) - with(density) { 6.dp.toPx() })
         .coerceAtLeast(orbSizePx * 2f)
 
     // Construct the two coalescing SDF nodes: main capsule (Node 0) + action orb (Node 1)
@@ -355,7 +355,7 @@ fun SeaGlassFluidBar(
                 stageState = stageState,
                 material = barMaterial,
                 nodesOptional = coalescingNodes,
-                smoothRadiusDp = 28f
+                smoothRadiusDp = 36f
             )
     ) {
         val mainBarWidthDp = with(density) { mainBarWidthPx.toDp() }
@@ -364,7 +364,7 @@ fun SeaGlassFluidBar(
         val trackWidthDp = (mainBarWidthDp - innerPadding * 2).coerceAtLeast(40.dp)
         val itemWidthDp = trackWidthDp / itemCount
 
-        // Expressive sliding SeaGlass indicator pill inside the main bar
+        // Expressive sliding SeaGlass indicator pill inside the main bar with liquid velocity stretch
         Box(
             modifier = Modifier
                 .width(mainBarWidthDp)
@@ -374,18 +374,23 @@ fun SeaGlassFluidBar(
             val indicatorOffsetX = with(density) {
                 (itemWidthDp.toPx() * animatedIndex).roundToInt()
             }
+            val motionStretch = kotlin.math.abs(selectedIndex - animatedIndex).coerceIn(0f, 1.2f)
 
             Box(
                 modifier = Modifier
                     .offset { IntOffset(x = indicatorOffsetX, y = 0) }
                     .width(itemWidthDp)
                     .fillMaxHeight()
+                    .graphicsLayer {
+                        scaleX = 1f + motionStretch * 0.34f
+                        scaleY = 1f - motionStretch * 0.14f
+                    }
                     .seaGlass(
                         stageState = stageState,
                         material = indicatorMaterial.copy(
-                            cornerRadiusDp = 26f,
+                            cornerRadiusDp = 28f,
                             thicknessDp = 18f,
-                            rimChalkiness = (indicatorMaterial.rimChalkiness + 0.14f).coerceAtMost(1f)
+                            rimChalkiness = (indicatorMaterial.rimChalkiness + 0.18f).coerceAtMost(1f)
                         )
                     )
             )

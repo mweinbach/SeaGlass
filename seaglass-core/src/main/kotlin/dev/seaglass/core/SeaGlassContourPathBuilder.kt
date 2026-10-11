@@ -2,6 +2,8 @@ package dev.seaglass.core
 
 import android.graphics.Path
 import android.graphics.RectF
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -10,8 +12,19 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Generates analytical contours (`android.graphics.Path`) for single or coalescing
- * [SeaGlassSdfEngine.SdfNode] shapes when rendering on Hybrid (API 31–32) or Canvas Fallback tiers.
+ * Generates exact, $C^2$-continuous analytical contours (`android.graphics.Path`) for single
+ * or coalescing [SeaGlassSdfEngine.SdfNode] shapes.
+ *
+ * Uses **Stadium Spine-Normal & Radial 1D Bisection** on the exact [SeaGlassSdfEngine.sminCubic]
+ * Signed Distance Field:
+ * - When two or more nodes are merged (`d(spine) < -insetPx`), emits rays perpendicular to the
+ *   connecting spine segment and radially around the outer caps, finding the exact root
+ *   $d(\mathbf{o} + t\mathbf{n}) = -\text{insetPx}$ along each ray. This captures the deep,
+ *   sculptural concave hourglass neck of coalescing Liquid Glass droplets without points sliding
+ *   sideways off the saddle point.
+ * - When two nodes are separated but within `sminCubic` influence range, traces each node
+ *   radially from its center on the combined `sminCubic` field so facing edges bulge toward
+ *   each other like surface-tension teardrops before snapping together.
  */
 object SeaGlassContourPathBuilder {
 
@@ -19,21 +32,29 @@ object SeaGlassContourPathBuilder {
     private val scratchRadii = FloatArray(8)
 
     /**
-     * Populates [outPath] with the contour for a single [SeaGlassSdfEngine.SdfNode].
+     * Populates [outPath] with the contour for a single isolated [SeaGlassSdfEngine.SdfNode]
+     * at the specified inward [insetPx] (`0f` = outer boundary, `>0f` = inner meniscus plateau).
      */
-    fun buildSingleNodePath(node: SeaGlassSdfEngine.SdfNode, outPath: Path) {
+    fun buildSingleNodePath(
+        node: SeaGlassSdfEngine.SdfNode,
+        outPath: Path,
+        insetPx: Float = 0f
+    ) {
         outPath.reset()
+        val hw = (node.halfWidth - insetPx).coerceAtLeast(2f)
+        val hh = (node.halfHeight - insetPx).coerceAtLeast(2f)
         scratchRect.set(
-            node.centerX - node.halfWidth,
-            node.centerY - node.halfHeight,
-            node.centerX + node.halfWidth,
-            node.centerY + node.halfHeight
+            node.centerX - hw,
+            node.centerY - hh,
+            node.centerX + hw,
+            node.centerY + hh
         )
-        val maxR = min(node.halfWidth, node.halfHeight).coerceAtLeast(0f)
-        val tl = node.cornerTopLeft.coerceIn(0f, maxR)
-        val tr = node.cornerTopRight.coerceIn(0f, maxR)
-        val br = node.cornerBottomRight.coerceIn(0f, maxR)
-        val bl = node.cornerBottomLeft.coerceIn(0f, maxR)
+        val maxR = min(hw, hh).coerceAtLeast(0f)
+        val rInset = insetPx * 0.85f
+        val tl = (node.cornerTopLeft - rInset).coerceIn(0f, maxR)
+        val tr = (node.cornerTopRight - rInset).coerceIn(0f, maxR)
+        val br = (node.cornerBottomRight - rInset).coerceIn(0f, maxR)
+        val bl = (node.cornerBottomLeft - rInset).coerceIn(0f, maxR)
 
         scratchRadii[0] = tl
         scratchRadii[1] = tl
@@ -48,64 +69,367 @@ object SeaGlassContourPathBuilder {
     }
 
     /**
-     * Populates [outPath] with a smooth coalescing contour bridging [nodeA] and [nodeB]
-     * when their boundaries are within [smoothRadiusPx] of each other.
+     * Populates [outPath] with the exact $C^2$-continuous `sminCubic` coalescing contour
+     * for [nodes] at inward offset [insetPx] (`0f` = outer edge, `> 0f` = inner meniscus plateau).
      */
+    fun buildCoalescingScenePath(
+        nodes: List<SeaGlassSdfEngine.SdfNode>,
+        smoothRadiusPx: Float,
+        outPath: Path,
+        insetPx: Float = 0f
+    ) {
+        outPath.reset()
+        if (nodes.isEmpty()) return
+        if (nodes.size == 1 || smoothRadiusPx <= 0.5f) {
+            val single = Path()
+            for (n in nodes) {
+                buildSingleNodePath(n, single, insetPx)
+                outPath.op(single, Path.Op.UNION)
+            }
+            return
+        }
+
+        val nodeA = nodes[0]
+        val nodeB = nodes[1]
+        val dx = nodeB.centerX - nodeA.centerX
+        val dy = nodeB.centerY - nodeA.centerY
+        val centerDist = sqrt(dx * dx + dy * dy)
+        val targetD = -insetPx
+
+        // Check whether the spine connecting nodeA and nodeB is entirely inside the target isosurface
+        var spineConnected = centerDist > 1f
+        if (spineConnected) {
+            for (k in 1..7) {
+                val u = k / 8f
+                val sx = nodeA.centerX + dx * u
+                val sy = nodeA.centerY + dy * u
+                val dSpine = evaluateCombinedDistance(sx, sy, nodes, smoothRadiusPx)
+                if (dSpine >= targetD - 1.5f) {
+                    spineConnected = false
+                    break
+                }
+            }
+        }
+
+        if (spineConnected) {
+            // Single connected liquid metaball! Use Stadium Spine-Normal + Cap Radial Bisection
+            traceConnectedStadiumIsosurface(
+                nodeA = nodeA,
+                nodeB = nodeB,
+                allNodes = nodes,
+                smoothRadiusPx = smoothRadiusPx,
+                targetD = targetD,
+                outPath = outPath
+            )
+        } else {
+            // Separate droplets: trace each droplet radially on the combined sminCubic field
+            // so facing edges pull toward each other like surface-tension teardrops!
+            val lobePath = Path()
+            for (node in nodes.take(SeaGlassSdfEngine.MAX_SDF_NODES)) {
+                val centerD = evaluateCombinedDistance(node.centerX, node.centerY, nodes, smoothRadiusPx)
+                if (centerD < targetD - 1.0f) {
+                    traceStarShapedLobeIsosurface(
+                        centerX = node.centerX,
+                        centerY = node.centerY,
+                        maxSpan = max(node.halfWidth, node.halfHeight) * 1.65f + smoothRadiusPx,
+                        allNodes = nodes,
+                        smoothRadiusPx = smoothRadiusPx,
+                        targetD = targetD,
+                        outPath = lobePath
+                    )
+                    outPath.op(lobePath, Path.Op.UNION)
+                } else {
+                    buildSingleNodePath(node, lobePath, insetPx)
+                    outPath.op(lobePath, Path.Op.UNION)
+                }
+            }
+        }
+    }
+
+    /**
+     * Traces a single connected coalescing contour around spine `[nodeA -> nodeB]` using
+     * rays perpendicular to the spine along the bridge and radial rays around both outer caps.
+     */
+    private fun traceConnectedStadiumIsosurface(
+        nodeA: SeaGlassSdfEngine.SdfNode,
+        nodeB: SeaGlassSdfEngine.SdfNode,
+        allNodes: List<SeaGlassSdfEngine.SdfNode>,
+        smoothRadiusPx: Float,
+        targetD: Float,
+        outPath: Path
+    ) {
+        // Use the outer focal centers of capsule/box A and capsule/box B so wide bars stay parallel
+        // along their straight flanks and only curve at their true end-caps and the liquid bridge!
+        val focusOffsetA = max(0f, nodeA.halfWidth - nodeA.halfHeight)
+        val focusOffsetB = max(0f, nodeB.halfWidth - nodeB.halfHeight)
+        val signX = if (nodeB.centerX >= nodeA.centerX) 1f else -1f
+
+        val startCapX = nodeA.centerX - signX * focusOffsetA
+        val startCapY = nodeA.centerY
+        val endCapX = nodeB.centerX + signX * focusOffsetB
+        val endCapY = nodeB.centerY
+
+        val dx = endCapX - startCapX
+        val dy = endCapY - startCapY
+        val len = sqrt(dx * dx + dy * dy).coerceAtLeast(1e-3f)
+        val tx = dx / len
+        val ty = dy / len
+        val nx = -ty
+        val ny = tx
+        val baseAngle = atan2(dy, dx)
+
+        val capSamples = 24
+        val bridgeSamples = 40
+        val totalSamples = capSamples * 2 + bridgeSamples * 2
+        val px = FloatArray(totalSamples)
+        val py = FloatArray(totalSamples)
+
+        val maxSearchA = nodeA.halfHeight * 1.45f + smoothRadiusPx
+        val maxSearchB = nodeB.halfHeight * 1.45f + smoothRadiusPx
+        val maxSearchBridge = max(nodeA.halfHeight, nodeB.halfHeight) * 1.45f + smoothRadiusPx
+
+        var idx = 0
+
+        // 1. Outer Cap A around (startCapX, startCapY): angles from (baseAngle + PI/2) to (baseAngle + 3*PI/2)
+        for (i in 0 until capSamples) {
+            val frac = i.toFloat() / capSamples.toFloat()
+            val angle = baseAngle + (PI * 0.5 + PI * frac).toFloat()
+            val dirX = cos(angle)
+            val dirY = sin(angle)
+            val t = solveRayIsosurface(
+                ox = startCapX,
+                oy = startCapY,
+                dirX = dirX,
+                dirY = dirY,
+                maxDist = maxSearchA,
+                nodes = allNodes,
+                smoothRadiusPx = smoothRadiusPx,
+                targetD = targetD
+            )
+            px[idx] = startCapX + dirX * t
+            py[idx] = startCapY + dirY * t
+            idx++
+        }
+
+        // 2. Side 1 Bridge (from startCap -> endCap along -normal direction)
+        for (i in 0 until bridgeSamples) {
+            val u = (i + 0.5f) / bridgeSamples.toFloat()
+            val ox = startCapX + dx * u
+            val oy = startCapY + dy * u
+            val dirX = -nx
+            val dirY = -ny
+            val t = solveRayIsosurface(
+                ox = ox,
+                oy = oy,
+                dirX = dirX,
+                dirY = dirY,
+                maxDist = maxSearchBridge,
+                nodes = allNodes,
+                smoothRadiusPx = smoothRadiusPx,
+                targetD = targetD
+            )
+            px[idx] = ox + dirX * t
+            py[idx] = oy + dirY * t
+            idx++
+        }
+
+        // 3. Outer Cap B around (endCapX, endCapY): angles from (baseAngle - PI/2) to (baseAngle + PI/2)
+        for (i in 0 until capSamples) {
+            val frac = i.toFloat() / capSamples.toFloat()
+            val angle = baseAngle + (-PI * 0.5 + PI * frac).toFloat()
+            val dirX = cos(angle)
+            val dirY = sin(angle)
+            val t = solveRayIsosurface(
+                ox = endCapX,
+                oy = endCapY,
+                dirX = dirX,
+                dirY = dirY,
+                maxDist = maxSearchB,
+                nodes = allNodes,
+                smoothRadiusPx = smoothRadiusPx,
+                targetD = targetD
+            )
+            px[idx] = endCapX + dirX * t
+            py[idx] = endCapY + dirY * t
+            idx++
+        }
+
+        // 4. Side 2 Bridge (from endCap -> startCap along +normal direction)
+        for (i in 0 until bridgeSamples) {
+            val u = 1f - (i + 0.5f) / bridgeSamples.toFloat()
+            val ox = startCapX + dx * u
+            val oy = startCapY + dy * u
+            val dirX = nx
+            val dirY = ny
+            val t = solveRayIsosurface(
+                ox = ox,
+                oy = oy,
+                dirX = dirX,
+                dirY = dirY,
+                maxDist = maxSearchBridge,
+                nodes = allNodes,
+                smoothRadiusPx = smoothRadiusPx,
+                targetD = targetD
+            )
+            px[idx] = ox + dirX * t
+            py[idx] = oy + dirY * t
+            idx++
+        }
+
+        appendSmoothClosedCatmullRom(px, py, totalSamples, outPath)
+    }
+
+    /**
+     * Traces a single lobe around `(centerX, centerY)` on the combined `sminCubic` field so
+     * droplets within surface-tension range deform into teardrops reaching toward their neighbor.
+     */
+    private fun traceStarShapedLobeIsosurface(
+        centerX: Float,
+        centerY: Float,
+        maxSpan: Float,
+        allNodes: List<SeaGlassSdfEngine.SdfNode>,
+        smoothRadiusPx: Float,
+        targetD: Float,
+        outPath: Path
+    ) {
+        outPath.reset()
+        val samples = 64
+        val px = FloatArray(samples)
+        val py = FloatArray(samples)
+
+        for (i in 0 until samples) {
+            val angle = (2.0 * PI * i / samples).toFloat()
+            val dirX = cos(angle)
+            val dirY = sin(angle)
+            val t = solveRayIsosurface(
+                ox = centerX,
+                oy = centerY,
+                dirX = dirX,
+                dirY = dirY,
+                maxDist = maxSpan,
+                nodes = allNodes,
+                smoothRadiusPx = smoothRadiusPx,
+                targetD = targetD
+            )
+            px[i] = centerX + dirX * t
+            py[i] = centerY + dirY * t
+        }
+
+        appendSmoothClosedCatmullRom(px, py, samples, outPath)
+    }
+
+    /**
+     * Finds the first root $t \in [0, \text{maxDist}]$ along the ray $\mathbf{o} + t\mathbf{d}$
+     * where $d(\mathbf{o} + t\mathbf{d}) = \text{targetD}$ using coarse bracket stepping +
+     * 8-step bisection + secant refinement.
+     */
+    private fun solveRayIsosurface(
+        ox: Float,
+        oy: Float,
+        dirX: Float,
+        dirY: Float,
+        maxDist: Float,
+        nodes: List<SeaGlassSdfEngine.SdfNode>,
+        smoothRadiusPx: Float,
+        targetD: Float
+    ): Float {
+        var lo = 0f
+        var hi = maxDist
+        val steps = 8
+        val stepSize = maxDist / steps
+        var prevT = 0f
+        for (s in 1..steps) {
+            val currT = s * stepSize
+            val fCurr = evaluateCombinedDistance(
+                ox + dirX * currT,
+                oy + dirY * currT,
+                nodes,
+                smoothRadiusPx
+            ) - targetD
+            if (fCurr >= 0f) {
+                lo = prevT
+                hi = currT
+                break
+            }
+            prevT = currT
+        }
+
+        for (iter in 0 until 8) {
+            val mid = (lo + hi) * 0.5f
+            val fMid = evaluateCombinedDistance(
+                ox + dirX * mid,
+                oy + dirY * mid,
+                nodes,
+                smoothRadiusPx
+            ) - targetD
+            if (fMid < 0f) {
+                lo = mid
+            } else {
+                hi = mid
+            }
+        }
+
+        val fLo = evaluateCombinedDistance(ox + dirX * lo, oy + dirY * lo, nodes, smoothRadiusPx) - targetD
+        val fHi = evaluateCombinedDistance(ox + dirX * hi, oy + dirY * hi, nodes, smoothRadiusPx) - targetD
+        val denom = (fHi - fLo)
+        return if (abs(denom) > 1e-4f) {
+            (lo - fLo * (hi - lo) / denom).coerceIn(lo, hi)
+        } else {
+            (lo + hi) * 0.5f
+        }
+    }
+
+    private fun appendSmoothClosedCatmullRom(
+        px: FloatArray,
+        py: FloatArray,
+        count: Int,
+        outPath: Path
+    ) {
+        if (count < 3) return
+        outPath.moveTo(px[0], py[0])
+        for (i in 0 until count) {
+            val p0 = (i - 1 + count) % count
+            val p1 = i
+            val p2 = (i + 1) % count
+            val p3 = (i + 2) % count
+
+            val c1x = px[p1] + (px[p2] - px[p0]) / 6f
+            val c1y = py[p1] + (py[p2] - py[p0]) / 6f
+            val c2x = px[p2] - (px[p3] - px[p1]) / 6f
+            val c2y = py[p2] - (py[p3] - py[p1]) / 6f
+
+            outPath.cubicTo(c1x, c1y, c2x, c2y, px[p2], py[p2])
+        }
+        outPath.close()
+    }
+
     fun buildCoalescingPairPath(
         nodeA: SeaGlassSdfEngine.SdfNode,
         nodeB: SeaGlassSdfEngine.SdfNode,
         smoothRadiusPx: Float,
-        outPath: Path
+        outPath: Path,
+        insetPx: Float = 0f
     ) {
-        outPath.reset()
-        val tempPathB = Path()
-        buildSingleNodePath(nodeA, outPath)
-        buildSingleNodePath(nodeB, tempPathB)
+        buildCoalescingScenePath(
+            nodes = listOf(nodeA, nodeB),
+            smoothRadiusPx = smoothRadiusPx,
+            outPath = outPath,
+            insetPx = insetPx
+        )
+    }
 
-        val dx = nodeB.centerX - nodeA.centerX
-        val dy = nodeB.centerY - nodeA.centerY
-        val centerDist = sqrt(dx * dx + dy * dy)
-        val rA = min(nodeA.halfWidth, nodeA.halfHeight)
-        val rB = min(nodeB.halfWidth, nodeB.halfHeight)
-        val gap = centerDist - (rA + rB)
-
-        // When the two shapes are close enough for smin to form a liquid bridge, add a metaball neck
-        if (smoothRadiusPx > 1f && gap < smoothRadiusPx * 1.35f && centerDist > 1f) {
-            val bridgeFactor = (1f - (gap / (smoothRadiusPx * 1.35f))).coerceIn(0f, 1f)
-            val neckHalfThickness = min(rA, rB) * 0.72f * bridgeFactor * bridgeFactor
-            if (neckHalfThickness > 1.5f) {
-                val angle = atan2(dy, dx)
-                val nx = -sin(angle)
-                val ny = cos(angle)
-
-                val pA1x = nodeA.centerX + nx * rA * 0.68f
-                val pA1y = nodeA.centerY + ny * rA * 0.68f
-                val pA2x = nodeA.centerX - nx * rA * 0.68f
-                val pA2y = nodeA.centerY - ny * rA * 0.68f
-
-                val pB1x = nodeB.centerX + nx * rB * 0.68f
-                val pB1y = nodeB.centerY + ny * rB * 0.68f
-                val pB2x = nodeB.centerX - nx * rB * 0.68f
-                val pB2y = nodeB.centerY - ny * rB * 0.68f
-
-                val midX = (nodeA.centerX + nodeB.centerX) * 0.5f
-                val midY = (nodeA.centerY + nodeB.centerY) * 0.5f
-                val ctrl1x = midX + nx * neckHalfThickness
-                val ctrl1y = midY + ny * neckHalfThickness
-                val ctrl2x = midX - nx * neckHalfThickness
-                val ctrl2y = midY - ny * neckHalfThickness
-
-                val bridgePath = Path().apply {
-                    moveTo(pA1x, pA1y)
-                    quadTo(ctrl1x, ctrl1y, pB1x, pB1y)
-                    lineTo(pB2x, pB2y)
-                    quadTo(ctrl2x, ctrl2y, pA2x, pA2y)
-                    close()
-                }
-                outPath.op(bridgePath, Path.Op.UNION)
-            }
+    private fun evaluateCombinedDistance(
+        px: Float,
+        py: Float,
+        nodes: List<SeaGlassSdfEngine.SdfNode>,
+        smoothRadiusPx: Float
+    ): Float {
+        var d = SeaGlassSdfEngine.evaluateNodeSdf(px, py, nodes[0])
+        val count = min(nodes.size, SeaGlassSdfEngine.MAX_SDF_NODES)
+        for (i in 1 until count) {
+            val di = SeaGlassSdfEngine.evaluateNodeSdf(px, py, nodes[i])
+            d = SeaGlassSdfEngine.sminCubic(d, di, smoothRadiusPx)
         }
-
-        outPath.op(tempPathB, Path.Op.UNION)
+        return d
     }
 }

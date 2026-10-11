@@ -114,12 +114,9 @@ object SeaGlassSdfEngine {
         val outsideY = max(qy, 0f)
         val insideDist = min(max(qx, qy), 0f)
 
-        val p = node.cornerSmoothing.coerceIn(2.0f, 4.0f)
-        val cornerNorm = if (p <= 2.02f) {
-            sqrt(outsideX * outsideX + outsideY * outsideY)
-        } else {
-            (outsideX.pow(p) + outsideY.pow(p)).pow(1f / p)
-        }
+        // True Euclidean L2 exterior distance ensures |grad(d)| == 1 everywhere outside the shape
+        // so sminCubic coalescing bridges form pure isotropic hourglass necks without 45-degree lobes.
+        val cornerNorm = sqrt(outsideX * outsideX + outsideY * outsideY)
 
         return insideDist + cornerNorm - r
     }

@@ -65,9 +65,7 @@ inline float EvaluateRoundedBoxSdf(
     const float outX = std::max(qx, 0.0f);
     const float outY = std::max(qy, 0.0f);
     const float inside = std::min(std::max(qx, qy), 0.0f);
-    const float p = std::clamp(smoothingExp, 2.0f, 4.0f);
-    const float cornerDist = std::pow(std::pow(outX, p) + std::pow(outY, p), 1.0f / p);
-    return inside + cornerDist - r;
+    return inside + std::sqrt(outX * outX + outY * outY) - r;
 }
 
 inline float SminCubic(float a, float b, float k) noexcept {
