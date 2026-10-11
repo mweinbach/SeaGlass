@@ -280,21 +280,21 @@ fun SeaGlassFluidBar(
     )
 
     val actionSeparationDp by animateDpAsState(
-        targetValue = if (actionDetached) 18.dp else (-3).dp,
-        animationSpec = spring(dampingRatio = 0.56f, stiffness = 320f),
+        targetValue = if (actionDetached) 18.dp else 0.dp,
+        animationSpec = spring(dampingRatio = 0.54f, stiffness = 300f),
         label = "actionOrbSeparation"
     )
 
     var totalWidthPx by remember { mutableFloatStateOf(0f) }
     var totalHeightPx by remember { mutableFloatStateOf(0f) }
 
-    val barHeight = 66.dp
-    val orbSize = 60.dp
+    val barHeight = 64.dp
+    val orbSize = 58.dp
     val barHeightPx = with(density) { barHeight.toPx() }
     val orbSizePx = with(density) { orbSize.toPx() }
     val gapPx = with(density) { actionSeparationDp.toPx() }
 
-    val mainBarWidthPx = (totalWidthPx - orbSizePx - gapPx.coerceAtLeast(0f) - with(density) { 6.dp.toPx() })
+    val mainBarWidthPx = (totalWidthPx - orbSizePx - gapPx.coerceAtLeast(0f) - with(density) { 4.dp.toPx() })
         .coerceAtLeast(orbSizePx * 2f)
 
     // Construct the two coalescing SDF nodes: main capsule (Node 0) + action orb (Node 1)
@@ -355,12 +355,12 @@ fun SeaGlassFluidBar(
                 stageState = stageState,
                 material = barMaterial,
                 nodesOptional = coalescingNodes,
-                smoothRadiusDp = 36f
+                smoothRadiusDp = 42f
             )
     ) {
         val mainBarWidthDp = with(density) { mainBarWidthPx.toDp() }
         val itemCount = items.size.coerceAtLeast(1)
-        val innerPadding = 6.dp
+        val innerPadding = 5.dp
         val trackWidthDp = (mainBarWidthDp - innerPadding * 2).coerceAtLeast(40.dp)
         val itemWidthDp = trackWidthDp / itemCount
 
@@ -388,9 +388,10 @@ fun SeaGlassFluidBar(
                     .seaGlass(
                         stageState = stageState,
                         material = indicatorMaterial.copy(
-                            cornerRadiusDp = 28f,
-                            thicknessDp = 18f,
-                            rimChalkiness = (indicatorMaterial.rimChalkiness + 0.18f).coerceAtMost(1f)
+                            cornerRadiusDp = 26f,
+                            thicknessDp = 22f,
+                            transparency = (indicatorMaterial.transparency + 0.12f).coerceAtMost(0.92f),
+                            rimChalkiness = 0.95f
                         )
                     )
             )

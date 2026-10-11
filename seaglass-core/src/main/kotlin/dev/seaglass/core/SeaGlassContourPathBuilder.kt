@@ -16,25 +16,15 @@ import kotlin.math.sqrt
  * or coalescing [SeaGlassSdfEngine.SdfNode] shapes.
  *
  * Uses **Stadium Spine-Normal & Radial 1D Bisection** on the exact [SeaGlassSdfEngine.sminCubic]
- * Signed Distance Field:
- * - When two or more nodes are merged (`d(spine) < -insetPx`), emits rays perpendicular to the
- *   connecting spine segment and radially around the outer caps, finding the exact root
- *   $d(\mathbf{o} + t\mathbf{n}) = -\text{insetPx}$ along each ray. This captures the deep,
- *   sculptural concave hourglass neck of coalescing Liquid Glass droplets without points sliding
- *   sideways off the saddle point.
- * - When two nodes are separated but within `sminCubic` influence range, traces each node
- *   radially from its center on the combined `sminCubic` field so facing edges bulge toward
- *   each other like surface-tension teardrops before snapping together.
+ * Signed Distance Field, packing 70% of bridge rays into the `[innerCapA -> innerCapB]` neck zone
+ * so wide capsules (`SeaGlassFluidBar`) and circular droplets (`OpticsLabSection`, `FluidCoalescingSection`)
+ * both trace razor-sharp, $C^2$-smooth concave hourglass necks.
  */
 object SeaGlassContourPathBuilder {
 
     private val scratchRect = RectF()
     private val scratchRadii = FloatArray(8)
 
-    /**
-     * Populates [outPath] with the contour for a single isolated [SeaGlassSdfEngine.SdfNode]
-     * at the specified inward [insetPx] (`0f` = outer boundary, `>0f` = inner meniscus plateau).
-     */
     fun buildSingleNodePath(
         node: SeaGlassSdfEngine.SdfNode,
         outPath: Path,
@@ -68,10 +58,6 @@ object SeaGlassContourPathBuilder {
         outPath.addRoundRect(scratchRect, scratchRadii, Path.Direction.CW)
     }
 
-    /**
-     * Populates [outPath] with the exact $C^2$-continuous `sminCubic` coalescing contour
-     * for [nodes] at inward offset [insetPx] (`0f` = outer edge, `> 0f` = inner meniscus plateau).
-     */
     fun buildCoalescingScenePath(
         nodes: List<SeaGlassSdfEngine.SdfNode>,
         smoothRadiusPx: Float,
@@ -91,20 +77,30 @@ object SeaGlassContourPathBuilder {
 
         val nodeA = nodes[0]
         val nodeB = nodes[1]
-        val dx = nodeB.centerX - nodeA.centerX
-        val dy = nodeB.centerY - nodeA.centerY
-        val centerDist = sqrt(dx * dx + dy * dy)
+        val signX = if (nodeB.centerX >= nodeA.centerX) 1f else -1f
+        val focusOffsetA = max(0f, nodeA.halfWidth - nodeA.halfHeight)
+        val focusOffsetB = max(0f, nodeB.halfWidth - nodeB.halfHeight)
+
+        // Inner focal centers facing each other across the coalescing bridge
+        val innerCapAX = nodeA.centerX + signX * focusOffsetA
+        val innerCapAY = nodeA.centerY
+        val innerCapBX = nodeB.centerX - signX * focusOffsetB
+        val innerCapBY = nodeB.centerY
+
+        val bridgeDx = innerCapBX - innerCapAX
+        val bridgeDy = innerCapBY - innerCapAY
+        val bridgeDist = sqrt(bridgeDx * bridgeDx + bridgeDy * bridgeDy)
         val targetD = -insetPx
 
-        // Check whether the spine connecting nodeA and nodeB is entirely inside the target isosurface
-        var spineConnected = centerDist > 1f
+        // Check whether the spine connecting the facing inner caps is inside the target isosurface
+        var spineConnected = bridgeDist > 0.5f
         if (spineConnected) {
-            for (k in 1..7) {
-                val u = k / 8f
-                val sx = nodeA.centerX + dx * u
-                val sy = nodeA.centerY + dy * u
+            for (k in 1..11) {
+                val u = k / 12f
+                val sx = innerCapAX + bridgeDx * u
+                val sy = innerCapAY + bridgeDy * u
                 val dSpine = evaluateCombinedDistance(sx, sy, nodes, smoothRadiusPx)
-                if (dSpine >= targetD - 1.5f) {
+                if (dSpine >= targetD - 0.8f) {
                     spineConnected = false
                     break
                 }
@@ -112,7 +108,6 @@ object SeaGlassContourPathBuilder {
         }
 
         if (spineConnected) {
-            // Single connected liquid metaball! Use Stadium Spine-Normal + Cap Radial Bisection
             traceConnectedStadiumIsosurface(
                 nodeA = nodeA,
                 nodeB = nodeB,
@@ -122,8 +117,6 @@ object SeaGlassContourPathBuilder {
                 outPath = outPath
             )
         } else {
-            // Separate droplets: trace each droplet radially on the combined sminCubic field
-            // so facing edges pull toward each other like surface-tension teardrops!
             val lobePath = Path()
             for (node in nodes.take(SeaGlassSdfEngine.MAX_SDF_NODES)) {
                 val centerD = evaluateCombinedDistance(node.centerX, node.centerY, nodes, smoothRadiusPx)
@@ -146,10 +139,6 @@ object SeaGlassContourPathBuilder {
         }
     }
 
-    /**
-     * Traces a single connected coalescing contour around spine `[nodeA -> nodeB]` using
-     * rays perpendicular to the spine along the bridge and radial rays around both outer caps.
-     */
     private fun traceConnectedStadiumIsosurface(
         nodeA: SeaGlassSdfEngine.SdfNode,
         nodeB: SeaGlassSdfEngine.SdfNode,
@@ -158,8 +147,6 @@ object SeaGlassContourPathBuilder {
         targetD: Float,
         outPath: Path
     ) {
-        // Use the outer focal centers of capsule/box A and capsule/box B so wide bars stay parallel
-        // along their straight flanks and only curve at their true end-caps and the liquid bridge!
         val focusOffsetA = max(0f, nodeA.halfWidth - nodeA.halfHeight)
         val focusOffsetB = max(0f, nodeB.halfWidth - nodeB.halfHeight)
         val signX = if (nodeB.centerX >= nodeA.centerX) 1f else -1f
@@ -178,11 +165,26 @@ object SeaGlassContourPathBuilder {
         val ny = tx
         val baseAngle = atan2(dy, dx)
 
+        // Fractional spine positions of the facing inner cap centers where the liquid neck forms
+        val uInnerA = ((focusOffsetA * 2f) / len).coerceIn(0f, 0.86f)
+        val uInnerB = (1f - (focusOffsetB * 2f) / len).coerceIn((uInnerA + 0.05f).coerceAtMost(0.98f), 1f)
+
         val capSamples = 24
-        val bridgeSamples = 40
+        val bridgeSamples = 44
         val totalSamples = capSamples * 2 + bridgeSamples * 2
         val px = FloatArray(totalSamples)
         val py = FloatArray(totalSamples)
+
+        // Pack 70% of bridge rays into the [uInnerA..uInnerB] neck so wide bars have high neck resolution!
+        val uSamples = FloatArray(bridgeSamples) { i ->
+            val t = (i + 0.5f) / bridgeSamples.toFloat()
+            when {
+                uInnerA <= 0.02f && uInnerB >= 0.98f -> t
+                t < 0.18f -> (t / 0.18f) * uInnerA
+                t < 0.88f -> uInnerA + ((t - 0.18f) / 0.70f) * (uInnerB - uInnerA)
+                else -> uInnerB + ((t - 0.88f) / 0.12f) * (1f - uInnerB)
+            }
+        }
 
         val maxSearchA = nodeA.halfHeight * 1.45f + smoothRadiusPx
         val maxSearchB = nodeB.halfHeight * 1.45f + smoothRadiusPx
@@ -190,7 +192,7 @@ object SeaGlassContourPathBuilder {
 
         var idx = 0
 
-        // 1. Outer Cap A around (startCapX, startCapY): angles from (baseAngle + PI/2) to (baseAngle + 3*PI/2)
+        // 1. Outer Cap A around (startCapX, startCapY)
         for (i in 0 until capSamples) {
             val frac = i.toFloat() / capSamples.toFloat()
             val angle = baseAngle + (PI * 0.5 + PI * frac).toFloat()
@@ -213,7 +215,7 @@ object SeaGlassContourPathBuilder {
 
         // 2. Side 1 Bridge (from startCap -> endCap along -normal direction)
         for (i in 0 until bridgeSamples) {
-            val u = (i + 0.5f) / bridgeSamples.toFloat()
+            val u = uSamples[i]
             val ox = startCapX + dx * u
             val oy = startCapY + dy * u
             val dirX = -nx
@@ -233,7 +235,7 @@ object SeaGlassContourPathBuilder {
             idx++
         }
 
-        // 3. Outer Cap B around (endCapX, endCapY): angles from (baseAngle - PI/2) to (baseAngle + PI/2)
+        // 3. Outer Cap B around (endCapX, endCapY)
         for (i in 0 until capSamples) {
             val frac = i.toFloat() / capSamples.toFloat()
             val angle = baseAngle + (-PI * 0.5 + PI * frac).toFloat()
@@ -256,7 +258,7 @@ object SeaGlassContourPathBuilder {
 
         // 4. Side 2 Bridge (from endCap -> startCap along +normal direction)
         for (i in 0 until bridgeSamples) {
-            val u = 1f - (i + 0.5f) / bridgeSamples.toFloat()
+            val u = uSamples[bridgeSamples - 1 - i]
             val ox = startCapX + dx * u
             val oy = startCapY + dy * u
             val dirX = nx
@@ -279,10 +281,6 @@ object SeaGlassContourPathBuilder {
         appendSmoothClosedCatmullRom(px, py, totalSamples, outPath)
     }
 
-    /**
-     * Traces a single lobe around `(centerX, centerY)` on the combined `sminCubic` field so
-     * droplets within surface-tension range deform into teardrops reaching toward their neighbor.
-     */
     private fun traceStarShapedLobeIsosurface(
         centerX: Float,
         centerY: Float,
@@ -318,11 +316,6 @@ object SeaGlassContourPathBuilder {
         appendSmoothClosedCatmullRom(px, py, samples, outPath)
     }
 
-    /**
-     * Finds the first root $t \in [0, \text{maxDist}]$ along the ray $\mathbf{o} + t\mathbf{d}$
-     * where $d(\mathbf{o} + t\mathbf{d}) = \text{targetD}$ using coarse bracket stepping +
-     * 8-step bisection + secant refinement.
-     */
     private fun solveRayIsosurface(
         ox: Float,
         oy: Float,
