@@ -467,11 +467,12 @@ fun SeaGlassPill(
         onClick = onClick,
         stageState = stageState,
         material = targetMaterial,
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
         modifier = modifier
     ) {
         Text(
             text = label,
+            maxLines = 1,
             style = MaterialTheme.typography.labelLarge.copy(
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 letterSpacing = 0.2.sp
@@ -712,10 +713,16 @@ fun SeaGlassFluidBar(
     val motion = LocalSeaGlassMotionScheme.current
     val density = LocalDensity.current
 
-    val animatedIndex by animateFloatAsState(
-        targetValue = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)).toFloat(),
-        animationSpec = motion.defaultSpatial,
-        label = "fluidBarSelection"
+    val targetTabFloat = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)).toFloat()
+    val leadIndex by animateFloatAsState(
+        targetValue = targetTabFloat,
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 540f),
+        label = "fluidBarLeadEdge"
+    )
+    val trailIndex by animateFloatAsState(
+        targetValue = targetTabFloat,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 310f),
+        label = "fluidBarTrailEdge"
     )
 
     val actionSeparationDp by animateDpAsState(
@@ -834,44 +841,39 @@ fun SeaGlassFluidBar(
                 .fillMaxHeight()
                 .padding(innerPadding)
         ) {
-            val indicatorOffsetX = with(density) {
-                (itemWidthDp.toPx() * animatedIndex).roundToInt()
-            }
-            val motionStretch = kotlin.math.abs(selectedIndex - animatedIndex).coerceIn(0f, 1.2f)
+            val slotWidthPx = with(density) { itemWidthDp.toPx() }
+            val leftEdgeTab = min(leadIndex, trailIndex)
+            val rightEdgeTab = max(leadIndex, trailIndex) + 1f
+            val stretchSpan = kotlin.math.abs(leadIndex - trailIndex).coerceIn(0f, 1.5f)
+            val indicatorOffsetX = (slotWidthPx * leftEdgeTab).roundToInt()
+            val indicatorWidthDp = with(density) { ((rightEdgeTab - leftEdgeTab) * slotWidthPx).toDp() }
 
             val isDarkBar = SeaGlassColorMath.argbToOklab(barMaterial.tintColorArgb).l < 0.48f
             val pillTopColor = if (isDarkBar) {
-                Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.48f)
+                Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.56f)
             } else {
                 Color(
                     SeaGlassColorMath.lerpOklab(
                         indicatorMaterial.tintColorArgb,
                         0xFFFFFFFF.toInt(),
-                        0.48f
+                        0.32f
                     )
-                ).copy(alpha = 0.56f)
+                ).copy(alpha = 0.68f)
             }
             val pillBottomColor = if (isDarkBar) {
-                Color(0xFF0A1E30).copy(alpha = 0.34f)
+                Color(0xFF0A1E30).copy(alpha = 0.40f)
             } else {
-                Color(
-                    SeaGlassColorMath.lerpOklab(
-                        indicatorMaterial.tintColorArgb,
-                        0xFFFFFFFF.toInt(),
-                        0.28f
-                    )
-                ).copy(alpha = 0.42f)
+                Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.52f)
             }
 
-            // Plump iOS 26 Liquid Glass Active Tab Lozenge Pill
+            // Dual-Edge Lead/Trail Liquid Glass Active Tab Lozenge Pill
             Box(
                 modifier = Modifier
                     .offset { IntOffset(x = indicatorOffsetX, y = 0) }
-                    .width(itemWidthDp)
+                    .width(indicatorWidthDp)
                     .fillMaxHeight()
                     .graphicsLayer {
-                        scaleX = 1f + motionStretch * 0.30f
-                        scaleY = 1f - motionStretch * 0.12f
+                        scaleY = 1f - stretchSpan * 0.10f
                     }
                     .clip(RoundedCornerShape(30.dp))
                     .background(
@@ -891,15 +893,14 @@ fun SeaGlassFluidBar(
                         barMaterial.tintDensity
                     )
                 )
-                // High-contrast active tab accent color
+                // Palette-harmonized high-contrast active tab accent color
                 val activeAccentColor = if (isDarkBar) {
-                    Color(0xFFFF6482)
+                    Color(0xFFECF6FF)
                 } else {
                     Color(
-                        SeaGlassColorMath.lerpOklab(
-                            0xFFC41238.toInt(),
+                        SeaGlassColorMath.optimalContentColorFor(
                             indicatorMaterial.tintColorArgb,
-                            0.16f
+                            0.90f
                         )
                     )
                 }
@@ -907,7 +908,7 @@ fun SeaGlassFluidBar(
                 ProvideSeaGlassLegibleContent(contentColor = baseInkColor) {
                     items.forEachIndexed { index, title ->
                         val selected = index == selectedIndex
-                        val tint = if (selected) activeAccentColor else baseInkColor.copy(alpha = 0.86f)
+                        val tint = if (selected) activeAccentColor else baseInkColor.copy(alpha = 0.72f)
 
                         Box(
                             contentAlignment = Alignment.Center,

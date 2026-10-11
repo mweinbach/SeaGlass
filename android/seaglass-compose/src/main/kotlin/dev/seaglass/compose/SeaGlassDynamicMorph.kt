@@ -136,12 +136,20 @@ fun SeaGlassTwoElementMorph(
     val density = LocalDensity.current
     val motion = LocalSeaGlassMotionScheme.current
 
-    // Spatial spring (allows organic M3 Expressive bounce on geometry)
-    val spatialProgress by animateFloatAsState(
+    // Lead-lag dual spatial springs: horizontal and vertical axes expand/collapse with
+    // slightly staggered spring dynamics so the glass swells with organic liquid inertia
+    // rather than scaling like a rigid rectangle.
+    val spatialWidthProgress by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.68f, stiffness = 360f),
-        label = "twoElementSpatialMorph"
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 420f),
+        label = "twoElementSpatialWidthMorph"
     )
+    val spatialHeightProgress by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.64f, stiffness = 340f),
+        label = "twoElementSpatialHeightMorph"
+    )
+    val spatialProgress = (spatialWidthProgress + spatialHeightProgress) * 0.5f
 
     // Effects spring (critically damped, zero overshoot for optical material & cross-fade)
     val effectsProgress by animateFloatAsState(
@@ -183,22 +191,22 @@ fun SeaGlassTwoElementMorph(
             progress = effectsProgress,
             areaExpansionRatio = currentAreaRatio
         ).pressed(pressFraction)
-        // Swell corner radius into a plump oval liquid droplet mid-flight (just like iOS 26 Liquid Glass!)
+        // Swell corner radius into a plump liquid meniscus mid-flight
         baseFlex.copy(
-            cornerRadiusDp = baseFlex.cornerRadiusDp + 22f * inFlightEnergy
+            cornerRadiusDp = baseFlex.cornerRadiusDp + 16f * inFlightEnergy
         )
     }
 
     val curW = (collapsedMeasuredSize.width +
-        (expandedMeasuredSize.width - collapsedMeasuredSize.width) * spatialProgress)
+        (expandedMeasuredSize.width - collapsedMeasuredSize.width) * spatialWidthProgress)
         .coerceAtLeast(32f)
     val curH = (collapsedMeasuredSize.height +
-        (expandedMeasuredSize.height - collapsedMeasuredSize.height) * spatialProgress)
+        (expandedMeasuredSize.height - collapsedMeasuredSize.height) * spatialHeightProgress)
         .coerceAtLeast(32f)
 
-    // Build transient 2-node sminCubic liquid teardrop bridge anchored to anchorAlignment!
-    // Node 0 stays locked at the trigger button corner (e.g. TopEnd / BottomEnd / Center) while
-    // Node 1 swells outward into the menu/popover/sheet—producing the exact liquid teardrop neck!
+    // Continuous 2-node sminCubic liquid teardrop bridge anchored to anchorAlignment:
+    // Node 0 stays locked at the trigger corner while Node 1 covers the full current (curW, curH)
+    // envelope so the contour never shrinks or pops when entering/leaving the morph!
     val coalescingNodes = remember(
         curW,
         curH,
@@ -212,12 +220,12 @@ fun SeaGlassTwoElementMorph(
         morphMode,
         anchorAlignment
     ) {
-        if (morphMode == SeaGlassMorphMode.LIQUID_COALESCE && inFlightEnergy > 0.04f) {
+        if (morphMode == SeaGlassMorphMode.LIQUID_COALESCE && inFlightEnergy > 0.02f) {
             val colW = collapsedMeasuredSize.width.toFloat().coerceAtLeast(32f)
             val colH = collapsedMeasuredSize.height.toFloat().coerceAtLeast(32f)
 
-            val anchorHalfW = (colW * 0.5f * (1f - effectsProgress * 0.22f)).coerceAtMost(curW * 0.5f)
-            val anchorHalfH = (colH * 0.5f * (1f - effectsProgress * 0.22f)).coerceAtMost(curH * 0.5f)
+            val anchorHalfW = min(colW * 0.5f, curW * 0.5f)
+            val anchorHalfH = min(colH * 0.5f, curH * 0.5f)
 
             val anchorCenterX = when (anchorAlignment) {
                 Alignment.TopEnd, Alignment.BottomEnd, Alignment.CenterEnd ->
@@ -234,11 +242,11 @@ fun SeaGlassTwoElementMorph(
                 else -> curH * 0.5f
             }
 
-            val targetHalfW = (curW * 0.5f * (0.42f + 0.58f * effectsProgress))
-            val targetHalfH = (curH * 0.5f * (0.42f + 0.58f * effectsProgress))
-            val lobeCenterX = anchorCenterX + (curW * 0.5f - anchorCenterX) * (0.35f + 0.65f * effectsProgress)
-            val lobeCenterY = anchorCenterY + (curH * 0.5f - anchorCenterY) * (0.35f + 0.65f * effectsProgress)
-            val ovalMidFlightRadius = min(targetHalfW, targetHalfH) * (0.42f + 0.52f * inFlightEnergy)
+            val bodyHalfW = curW * 0.5f
+            val bodyHalfH = curH * 0.5f
+            val baseCornerPx = min(flexMaterial.cornerRadiusDp * density.density, min(bodyHalfW, bodyHalfH))
+            val flightCornerPx = (baseCornerPx + min(bodyHalfW, bodyHalfH) * 0.28f * inFlightEnergy)
+                .coerceAtMost(min(bodyHalfW, bodyHalfH))
 
             listOf(
                 SeaGlassSdfEngine.SdfNode(
@@ -246,20 +254,20 @@ fun SeaGlassTwoElementMorph(
                     centerY = anchorCenterY,
                     halfWidth = anchorHalfW,
                     halfHeight = anchorHalfH,
-                    uniformCornerRadius = min(anchorHalfW, anchorHalfH) * 0.95f,
+                    uniformCornerRadius = min(anchorHalfW, anchorHalfH) * 0.92f,
                     cornerSmoothing = 2.4f,
                     tintColorArgb = collapsedMaterial.tintColorArgb,
-                    thicknessPx = flexMaterial.thicknessDp * 2.8f
+                    thicknessPx = flexMaterial.thicknessDp * density.density
                 ),
                 SeaGlassSdfEngine.SdfNode(
-                    centerX = lobeCenterX,
-                    centerY = lobeCenterY,
-                    halfWidth = targetHalfW,
-                    halfHeight = targetHalfH,
-                    uniformCornerRadius = ovalMidFlightRadius.coerceAtLeast(flexMaterial.cornerRadiusDp * 2f),
+                    centerX = bodyHalfW,
+                    centerY = bodyHalfH,
+                    halfWidth = bodyHalfW,
+                    halfHeight = bodyHalfH,
+                    uniformCornerRadius = flightCornerPx,
                     cornerSmoothing = 2.5f,
                     tintColorArgb = flexMaterial.tintColorArgb,
-                    thicknessPx = flexMaterial.thicknessDp * 2.8f
+                    thicknessPx = flexMaterial.thicknessDp * density.density
                 )
             )
         } else {
@@ -333,8 +341,8 @@ fun SeaGlassTwoElementMorph(
         collapsedMeasuredSize = IntSize(cW, cH)
         expandedMeasuredSize = IntSize(eW, eH)
 
-        val animatedWidthPx = (cW + (eW - cW) * spatialProgress).roundToInt().coerceAtLeast(32)
-        val animatedHeightPx = (cH + (eH - cH) * spatialProgress).roundToInt().coerceAtLeast(32)
+        val animatedWidthPx = (cW + (eW - cW) * spatialWidthProgress).roundToInt().coerceAtLeast(32)
+        val animatedHeightPx = (cH + (eH - cH) * spatialHeightProgress).roundToInt().coerceAtLeast(32)
 
         val originPivotX = when (anchorAlignment) {
             Alignment.TopEnd, Alignment.BottomEnd, Alignment.CenterEnd -> 1f
@@ -383,8 +391,8 @@ fun SeaGlassTwoElementMorph(
                         )
                         .graphicsLayer {
                             // Velocity-driven liquid stretch during morph + press squish
-                            scaleX = 1f + 0.03f * pressFraction + 0.045f * inFlightEnergy
-                            scaleY = 1f - 0.025f * pressFraction - 0.030f * inFlightEnergy
+                            scaleX = 1f + 0.03f * pressFraction + 0.035f * inFlightEnergy
+                            scaleY = 1f - 0.025f * pressFraction - 0.022f * inFlightEnergy
                             rotationX = -normY * 5.0f * pressFraction
                             rotationY = normX * 5.0f * pressFraction
                             cameraDistance = 14f * this.density
@@ -393,18 +401,18 @@ fun SeaGlassTwoElementMorph(
                             stageState = stageState,
                             material = flexMaterial,
                             nodesOptional = coalescingNodes,
-                            smoothRadiusDp = 38f,
+                            smoothRadiusDp = 6f + 32f * inFlightEnergy,
                             touchPointInLocal = touchOffset,
-                            touchIntensity = max(pressFraction, inFlightEnergy * 0.85f),
+                            touchIntensity = max(pressFraction, inFlightEnergy * 0.75f),
                             customContourPathBuilder = polygonBuilder
                         )
                 ) {
-                    val collapsedAlpha = (1f - effectsProgress * 1.55f).coerceIn(0f, 1f)
-                    val expandedAlpha = ((effectsProgress - 0.06f) * 1.12f).coerceIn(0f, 1f)
+                    val collapsedAlpha = (1f - effectsProgress * 1.65f).coerceIn(0f, 1f)
+                    val expandedAlpha = ((effectsProgress - 0.08f) * 1.15f).coerceIn(0f, 1f)
 
                     // In-flight Gaussian content defocus (peaks mid-morph, resolves to 0px at rest!)
-                    val collapsedBlurPx = (effectsProgress * 13f * density.density).coerceAtLeast(0f)
-                    val expandedBlurPx = ((1f - effectsProgress) * (1f - effectsProgress) * 16f * density.density)
+                    val collapsedBlurPx = (effectsProgress * 12f * density.density).coerceAtLeast(0f)
+                    val expandedBlurPx = ((1f - effectsProgress) * (1f - effectsProgress) * 14f * density.density)
                         .coerceAtLeast(0f)
 
                     if (collapsedAlpha > 0.01f) {
@@ -418,7 +426,7 @@ fun SeaGlassTwoElementMorph(
                                 .graphicsLayer {
                                     alpha = collapsedAlpha
                                     transformOrigin = TransformOrigin(originPivotX, originPivotY)
-                                    val s = 0.85f + 0.15f * collapsedAlpha + 0.12f * effectsProgress
+                                    val s = 0.88f + 0.12f * collapsedAlpha + 0.08f * effectsProgress
                                     scaleX = s
                                     scaleY = s
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && collapsedBlurPx > 0.6f) {
@@ -435,8 +443,11 @@ fun SeaGlassTwoElementMorph(
                     }
 
                     if (expandedAlpha > 0.01f) {
-                        val propScaleX = (animatedWidthPx.toFloat() / max(eW.toFloat(), 1f)).coerceIn(0.20f, 1.08f)
-                        val propScaleY = (animatedHeightPx.toFloat() / max(eH.toFloat(), 1f)).coerceIn(0.20f, 1.08f)
+                        val rawScaleX = (animatedWidthPx.toFloat() / max(eW.toFloat(), 1f)).coerceIn(0.45f, 1.06f)
+                        val rawScaleY = (animatedHeightPx.toFloat() / max(eH.toFloat(), 1f)).coerceIn(0.45f, 1.06f)
+                        val balancedScale = min(rawScaleX, rawScaleY) * 0.65f + max(rawScaleX, rawScaleY) * 0.35f
+                        val smoothScaleX = balancedScale * 0.70f + rawScaleX * 0.30f
+                        val smoothScaleY = balancedScale * 0.70f + rawScaleY * 0.30f
 
                         Box(
                             contentAlignment = Alignment.Center,
@@ -448,8 +459,8 @@ fun SeaGlassTwoElementMorph(
                                 .graphicsLayer {
                                     alpha = expandedAlpha
                                     transformOrigin = TransformOrigin(originPivotX, originPivotY)
-                                    scaleX = propScaleX
-                                    scaleY = propScaleY
+                                    scaleX = smoothScaleX
+                                    scaleY = smoothScaleY
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && expandedBlurPx > 0.6f) {
                                         compositingStrategy = CompositingStrategy.Offscreen
                                         renderEffect = SeaGlassShaderProgramCache
@@ -973,21 +984,41 @@ fun SeaGlassChoreographedShapeOrb(
             }
         }
 
-        // Quick Stage Choreography Strip (Flower -> Small Circle -> Cookie 9 -> Large Orb -> Clover)
+        // Quick Stage Choreography Strip (single-line compact pills, zero mid-word wrapping!)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             stages.take(5).forEachIndexed { idx, st ->
-                SeaGlassPill(
-                    label = st.label.substringBefore(" "),
-                    selected = targetIndex == idx,
+                val shortChipLabel = when (st.shape) {
+                    SeaGlassShapeKind.Flower -> "Flower"
+                    SeaGlassShapeKind.Circle -> if (st.scale < 1f) "Droplet" else "Orb"
+                    SeaGlassShapeKind.Cookie9 -> "Cookie"
+                    SeaGlassShapeKind.Clover4 -> "Clover"
+                    else -> st.label.substringBefore(" ")
+                }
+                val isSelected = targetIndex == idx
+                SeaGlassButton(
                     onClick = { advanceTo(idx) },
                     stageState = stageState,
-                    selectedMaterial = primaryMaterial,
-                    unselectedMaterial = secondaryMaterial.copy(transparency = 0.72f),
+                    material = if (isSelected) {
+                        primaryMaterial.copy(cornerRadiusDp = 22f, thicknessDp = 16f)
+                    } else {
+                        secondaryMaterial.copy(cornerRadiusDp = 16f, thicknessDp = 10f, transparency = 0.72f)
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 9.dp),
                     modifier = Modifier.weight(1f)
-                )
+                ) {
+                    Text(
+                        text = shortChipLabel,
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            fontSize = 11.sp
+                        ),
+                        color = LocalContentColor.current
+                    )
+                }
             }
         }
     }

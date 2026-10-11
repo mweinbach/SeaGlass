@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -12,6 +13,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -66,11 +72,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -271,80 +274,100 @@ fun SeaGlassShowcaseApp() {
                     onSelectPalette = { activePalette = it }
                 )
 
-                when (selectedTab) {
-                    0 -> OpticsLabSection(
-                        stageState = stageState,
-                        primaryMaterial = customPrimaryMaterial,
-                        tertiaryMaterial = activePalette.tertiaryGlass.copy(
-                            transparency = transparency,
-                            coarseness = coarseness,
-                            frostRadiusDp = frostRadiusDp,
-                            ior = ior,
-                            chromaticDispersion = chromaticDispersion,
-                            thicknessDp = thicknessDp
-                        ),
-                        surfaceMaterial = customSurfaceMaterial,
-                        activeCornerProfile = deviceCornerProfile,
-                        onSelectCornerProfile = { deviceCornerProfile = it },
-                        transparency = transparency,
-                        onTransparencyChange = { transparency = it },
-                        coarseness = coarseness,
-                        onCoarsenessChange = { coarseness = it },
-                        frostRadiusDp = frostRadiusDp,
-                        onFrostRadiusChange = { frostRadiusDp = it },
-                        tintDensity = tintDensity,
-                        onTintDensityChange = { tintDensity = it },
-                        thicknessDp = thicknessDp,
-                        onThicknessChange = { thicknessDp = it },
-                        ior = ior,
-                        onIorChange = { ior = it },
-                        chromaticDispersion = chromaticDispersion,
-                        onChromaticDispersionChange = { chromaticDispersion = it },
-                        onApplyPreset = { tr, c, f, d, t, i, disp ->
-                            transparency = tr
-                            coarseness = c
-                            frostRadiusDp = f
-                            tintDensity = d
-                            thicknessDp = t
-                            ior = i
-                            chromaticDispersion = disp
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(220)) +
+                            scaleIn(
+                                initialScale = 0.96f,
+                                animationSpec = spring(dampingRatio = 0.76f, stiffness = 420f)
+                            )).togetherWith(
+                            fadeOut(animationSpec = tween(150)) +
+                                scaleOut(targetScale = 0.98f, animationSpec = tween(150))
+                        )
+                    },
+                    label = "showcaseTabTransition"
+                ) { activeTab ->
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        when (activeTab) {
+                            0 -> OpticsLabSection(
+                                stageState = stageState,
+                                primaryMaterial = customPrimaryMaterial,
+                                tertiaryMaterial = activePalette.tertiaryGlass.copy(
+                                    transparency = transparency,
+                                    coarseness = coarseness,
+                                    frostRadiusDp = frostRadiusDp,
+                                    ior = ior,
+                                    chromaticDispersion = chromaticDispersion,
+                                    thicknessDp = thicknessDp
+                                ),
+                                surfaceMaterial = customSurfaceMaterial,
+                                activeCornerProfile = deviceCornerProfile,
+                                onSelectCornerProfile = { deviceCornerProfile = it },
+                                transparency = transparency,
+                                onTransparencyChange = { transparency = it },
+                                coarseness = coarseness,
+                                onCoarsenessChange = { coarseness = it },
+                                frostRadiusDp = frostRadiusDp,
+                                onFrostRadiusChange = { frostRadiusDp = it },
+                                tintDensity = tintDensity,
+                                onTintDensityChange = { tintDensity = it },
+                                thicknessDp = thicknessDp,
+                                onThicknessChange = { thicknessDp = it },
+                                ior = ior,
+                                onIorChange = { ior = it },
+                                chromaticDispersion = chromaticDispersion,
+                                onChromaticDispersionChange = { chromaticDispersion = it },
+                                onApplyPreset = { tr, c, f, d, t, i, disp ->
+                                    transparency = tr
+                                    coarseness = c
+                                    frostRadiusDp = f
+                                    tintDensity = d
+                                    thicknessDp = t
+                                    ior = i
+                                    chromaticDispersion = disp
+                                }
+                            )
+
+                            1 -> FluidCoalescingSection(
+                                stageState = stageState,
+                                primaryMaterial = customPrimaryMaterial,
+                                tertiaryMaterial = activePalette.tertiaryGlass.copy(
+                                    transparency = transparency,
+                                    coarseness = coarseness,
+                                    frostRadiusDp = frostRadiusDp,
+                                    ior = ior,
+                                    chromaticDispersion = chromaticDispersion,
+                                    thicknessDp = thicknessDp
+                                ),
+                                surfaceMaterial = customSurfaceMaterial
+                            )
+
+                            2 -> PaletteGallerySection(
+                                stageState = stageState,
+                                activePalette = activePalette,
+                                onSelectPalette = { activePalette = it }
+                            )
+
+                            3 -> UiComponentLibrarySection(
+                                stageState = stageState,
+                                primaryMaterial = customPrimaryMaterial,
+                                surfaceMaterial = customSurfaceMaterial,
+                                tertiaryMaterial = activePalette.tertiaryGlass
+                            )
+
+                            else -> BackendArchitectureSection(
+                                stageState = stageState,
+                                surfaceMaterial = customSurfaceMaterial,
+                                primaryMaterial = customPrimaryMaterial,
+                                tierOverride = tierOverride,
+                                onSelectTierOverride = { tierOverride = it }
+                            )
                         }
-                    )
-
-                    1 -> FluidCoalescingSection(
-                        stageState = stageState,
-                        primaryMaterial = customPrimaryMaterial,
-                        tertiaryMaterial = activePalette.tertiaryGlass.copy(
-                            transparency = transparency,
-                            coarseness = coarseness,
-                            frostRadiusDp = frostRadiusDp,
-                            ior = ior,
-                            chromaticDispersion = chromaticDispersion,
-                            thicknessDp = thicknessDp
-                        ),
-                        surfaceMaterial = customSurfaceMaterial
-                    )
-
-                    2 -> PaletteGallerySection(
-                        stageState = stageState,
-                        activePalette = activePalette,
-                        onSelectPalette = { activePalette = it }
-                    )
-
-                    3 -> UiComponentLibrarySection(
-                        stageState = stageState,
-                        primaryMaterial = customPrimaryMaterial,
-                        surfaceMaterial = customSurfaceMaterial,
-                        tertiaryMaterial = activePalette.tertiaryGlass
-                    )
-
-                    else -> BackendArchitectureSection(
-                        stageState = stageState,
-                        surfaceMaterial = customSurfaceMaterial,
-                        primaryMaterial = customPrimaryMaterial,
-                        tierOverride = tierOverride,
-                        onSelectTierOverride = { tierOverride = it }
-                    )
+                    }
                 }
             }
 
@@ -361,7 +384,7 @@ fun SeaGlassShowcaseApp() {
             val currentTrack = miniTracks[miniTrackIndex % miniTracks.size]
 
             Column(
-                verticalArrangement = Arrangement.spacedBy(9.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
@@ -386,7 +409,7 @@ fun SeaGlassShowcaseApp() {
                 )
 
                 SeaGlassFluidBar(
-                    items = listOf("Home", "Morph", "Palettes", "Library", "Search"),
+                    items = listOf("Optics", "Morph", "Palettes", "Library", "Engine"),
                     selectedIndex = selectedTab,
                     onSelect = { selectedTab = it.coerceIn(0, 4) },
                     stageState = stageState,
@@ -411,8 +434,8 @@ private fun HeaderSpecimenBanner(
 ) {
     var morphedExpanded by remember { mutableStateOf(false) }
     val cornerRadius by animateFloatAsState(
-        targetValue = if (morphedExpanded) 44f else 30f,
-        animationSpec = spring(dampingRatio = 0.58f, stiffness = 340f),
+        targetValue = if (morphedExpanded) 38f else 28f,
+        animationSpec = spring(dampingRatio = 0.60f, stiffness = 360f),
         label = "headerCornerMorph"
     )
     val extraThickness by animateFloatAsState(
@@ -428,10 +451,10 @@ private fun HeaderSpecimenBanner(
             thicknessDp = (material.thicknessDp + extraThickness).coerceAtMost(34f)
         ),
         onClick = { morphedExpanded = !morphedExpanded },
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -439,16 +462,18 @@ private fun HeaderSpecimenBanner(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "HDR 1.65× · TILT & TAP REFRACTION",
+                        text = "SEAGLASS OPTICAL STUDIO",
+                        maxLines = 1,
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 1.3.sp
+                            letterSpacing = 1.2.sp,
+                            fontSize = 10.sp
                         ),
-                        color = LocalContentColor.current.copy(alpha = 0.78f)
+                        color = LocalContentColor.current.copy(alpha = 0.76f)
                     )
                     Text(
                         text = palette.displayName,
-                        style = MaterialTheme.typography.headlineSmall.copy(
+                        style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Black
                         ),
                         color = LocalContentColor.current
@@ -459,15 +484,16 @@ private fun HeaderSpecimenBanner(
                     onClick = onCyclePalette,
                     stageState = stageState,
                     material = palette.tertiaryGlass.copy(
-                        cornerRadiusDp = 24f,
-                        thicknessDp = 18f,
-                        rimChalkiness = 0.90f
+                        cornerRadiusDp = 22f,
+                        thicknessDp = 16f,
+                        rimChalkiness = 0.86f
                     ),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)
                 ) {
                     Text(
                         text = "Next Tide ↻",
-                        style = MaterialTheme.typography.labelLarge.copy(
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelMedium.copy(
                             fontWeight = FontWeight.Bold
                         )
                     )
@@ -476,8 +502,12 @@ private fun HeaderSpecimenBanner(
 
             Text(
                 text = palette.tagline,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                color = LocalContentColor.current.copy(alpha = 0.90f)
+                maxLines = 1,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp
+                ),
+                color = LocalContentColor.current.copy(alpha = 0.88f)
             )
         }
     }
@@ -562,16 +592,6 @@ private fun OpticsLabSection(
     onApplyPreset: (Float, Float, Float, Float, Float, Float, Float) -> Unit
 ) {
     val density = LocalDensity.current
-
-    // 0. Adaptive Device & Page Corner Optics Lab (Concentric Bezel & Page Corner Matching)
-    SeaGlassAdaptiveCornerLabCard(
-        stageState = stageState,
-        activeProfile = activeCornerProfile,
-        onSelectProfile = onSelectCornerProfile,
-        surfaceMaterial = surfaceMaterial,
-        primaryMaterial = primaryMaterial,
-        tertiaryMaterial = tertiaryMaterial
-    )
 
     // 1. Flagship Material 3 Expressive × Liquid Sea Glass Coalescing Media & Soundscape Deck
     var isPlaying by remember { mutableStateOf(true) }
@@ -773,7 +793,7 @@ private fun OpticsLabSection(
         }
     }
 
-    // 1-Tap Optical Finish Presets across the Sand-Frosted Coarseness Continuum
+    // 2. 1-Tap Optical Finish Presets across the Sand-Frosted Coarseness Continuum
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -807,7 +827,7 @@ private fun OpticsLabSection(
         )
     }
 
-    // Dedicated Hero "Sand-Frosted Coarseness & Transparency Continuum" Card
+    // 3. Dedicated Hero "Sand-Frosted Coarseness & Transparency Continuum" Card
     SeaGlassSurface(
         stageState = stageState,
         material = primaryMaterial.copy(cornerRadiusDp = 26f),
@@ -867,7 +887,7 @@ private fun OpticsLabSection(
         }
     }
 
-    // Compact Optical Parameter Controls Card (fits cleanly above bottom bar!)
+    // 4. Compact Optical Parameter Controls Card
     SeaGlassSurface(
         stageState = stageState,
         material = surfaceMaterial,
@@ -904,7 +924,7 @@ private fun OpticsLabSection(
                 title = "Subsurface Frost Blur",
                 valueText = String.format(Locale.US, "%.0f dp", frostRadiusDp),
                 value = frostRadiusDp,
-                valueRange = 2f..48f,
+                valueRange = 1f..48f,
                 onValueChange = onFrostRadiusChange
             )
 
@@ -925,6 +945,16 @@ private fun OpticsLabSection(
             )
         }
     }
+
+    // 5. Adaptive Device & Page Corner Optics Lab (Concentric Bezel & Page Corner Matching)
+    SeaGlassAdaptiveCornerLabCard(
+        stageState = stageState,
+        activeProfile = activeCornerProfile,
+        onSelectProfile = onSelectCornerProfile,
+        surfaceMaterial = surfaceMaterial,
+        primaryMaterial = primaryMaterial,
+        tertiaryMaterial = tertiaryMaterial
+    )
 }
 
 @Composable
@@ -1044,83 +1074,97 @@ private fun FluidCoalescingSection(
         )
     }
 
-    // 1. Source-Anchored Teardrop Context Menu + 3-State Cascaded Model Picker + Context Ring Morphs
+    // 1. Composer Toolbar Popover & Teardrop Context Menu Morphs Card
     var contextMenuExpanded by remember { mutableStateOf(false) }
     var modelMorphStage by remember { mutableIntStateOf(0) }
     var selectedModelName by remember { mutableStateOf("Gemini 4 Argon EAP") }
     var effortLevelFraction by remember { mutableFloatStateOf(0.76f) }
     var contextRingExpanded by remember { mutableStateOf(false) }
 
-    Row(
+    SeaGlassCard(
+        stageState = stageState,
+        material = surfaceMaterial,
         modifier = Modifier
             .fillMaxWidth()
-            .zIndex(30f),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .zIndex(30f)
     ) {
-        SeaGlassCascadedModelMorph(
-            stage = modelMorphStage,
-            onStageChange = {
-                modelMorphStage = it
-                if (it > 0) {
-                    contextMenuExpanded = false
-                    contextRingExpanded = false
-                }
-            },
-            selectedModel = selectedModelName,
-            onSelectModel = { selectedModelName = it },
-            effortFraction = effortLevelFraction,
-            onEffortChange = { effortLevelFraction = it },
-            stageState = stageState,
-            pillMaterial = surfaceMaterial,
-            popoverMaterial = surfaceMaterial,
-            modifier = Modifier.zIndex(if (modelMorphStage > 0) 40f else 1f)
+        Text(
+            text = "IN-PLACE POPOVER & TEARDROP MENU MORPHS",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.1.sp
+            ),
+            color = LocalContentColor.current.copy(alpha = 0.76f)
+        )
+        Text(
+            text = "Tap the model pill, context ring, or (•••) menu to morph in-place with Gaussian content focus.",
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = LocalContentColor.current.copy(alpha = 0.86f)
         )
 
-        SeaGlassContextRingMorph(
-            expanded = contextRingExpanded,
-            onExpandedChange = {
-                contextRingExpanded = it
-                if (it) {
-                    contextMenuExpanded = false
-                    modelMorphStage = 0
-                }
-            },
-            progress = 0.35f,
-            usedLabel = "366K of 1.05M tokens",
-            remainingLabel = "683K left",
-            stageState = stageState,
-            ringMaterial = surfaceMaterial,
-            popoverMaterial = surfaceMaterial,
-            modifier = Modifier.zIndex(if (contextRingExpanded) 40f else 1f)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .zIndex(35f),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SeaGlassCascadedModelMorph(
+                stage = modelMorphStage,
+                onStageChange = {
+                    modelMorphStage = it
+                    if (it > 0) {
+                        contextMenuExpanded = false
+                        contextRingExpanded = false
+                    }
+                },
+                selectedModel = selectedModelName,
+                onSelectModel = { selectedModelName = it },
+                effortFraction = effortLevelFraction,
+                onEffortChange = { effortLevelFraction = it },
+                stageState = stageState,
+                pillMaterial = primaryMaterial,
+                popoverMaterial = surfaceMaterial,
+                modifier = Modifier.zIndex(if (modelMorphStage > 0) 40f else 1f)
+            )
 
-        SeaGlassMorphingContextMenu(
-            expanded = contextMenuExpanded,
-            onExpandedChange = {
-                contextMenuExpanded = it
-                if (it) {
-                    modelMorphStage = 0
-                    contextRingExpanded = false
-                }
-            },
-            stageState = stageState,
-            anchorAlignment = Alignment.TopEnd,
-            buttonMaterial = primaryMaterial,
-            menuMaterial = surfaceMaterial,
-            modifier = Modifier.zIndex(if (contextMenuExpanded) 40f else 1f)
-        )
+            SeaGlassContextRingMorph(
+                expanded = contextRingExpanded,
+                onExpandedChange = {
+                    contextRingExpanded = it
+                    if (it) {
+                        contextMenuExpanded = false
+                        modelMorphStage = 0
+                    }
+                },
+                progress = 0.35f,
+                usedLabel = "366K of 1.05M tokens",
+                remainingLabel = "683K left",
+                stageState = stageState,
+                ringMaterial = primaryMaterial,
+                popoverMaterial = surfaceMaterial,
+                modifier = Modifier.zIndex(if (contextRingExpanded) 40f else 1f)
+            )
+
+            SeaGlassMorphingContextMenu(
+                expanded = contextMenuExpanded,
+                onExpandedChange = {
+                    contextMenuExpanded = it
+                    if (it) {
+                        modelMorphStage = 0
+                        contextRingExpanded = false
+                    }
+                },
+                stageState = stageState,
+                anchorAlignment = Alignment.TopEnd,
+                buttonMaterial = primaryMaterial,
+                menuMaterial = surfaceMaterial,
+                modifier = Modifier.zIndex(if (contextMenuExpanded) 40f else 1f)
+            )
+        }
     }
 
-    // 2. M3 Expressive Choreographed Shape Shifter Orb (Flower -> Small Circle -> Cookie9 -> Large Orb -> Clover4)
-    SeaGlassChoreographedShapeOrb(
-        stageState = stageState,
-        autoPlay = true,
-        primaryMaterial = primaryMaterial,
-        secondaryMaterial = tertiaryMaterial
-    )
-
-    // 2. Dynamic 2-Element Morph Primitive (SeaGlassTwoElementMorph) + Budding Cluster + M3 Polygon Morphs
+    // 2. Dynamic 2-Element Morph Primitive (SeaGlassTwoElementMorph)
     var twoElementExpanded by remember { mutableStateOf(false) }
     var buddingExpanded by remember { mutableStateOf(true) }
     var morphBtn0Active by remember { mutableStateOf(false) }
@@ -1200,7 +1244,92 @@ private fun FluidCoalescingSection(
         )
     }
 
-    // 2. Apple Liquid Glass Style Budding Action Cluster (SeaGlassBuddingCluster)
+    // 3. M3 Expressive Polygon Choreography & Shape-Morphing Buttons Card
+    SeaGlassCard(
+        stageState = stageState,
+        material = surfaceMaterial,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = "M3 EXPRESSIVE POLYGON CHOREOGRAPHY",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 1.1.sp
+            ),
+            color = LocalContentColor.current.copy(alpha = 0.76f)
+        )
+
+        SeaGlassChoreographedShapeOrb(
+            stageState = stageState,
+            autoPlay = true,
+            primaryMaterial = primaryMaterial,
+            secondaryMaterial = tertiaryMaterial
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SeaGlassMorphingButton(
+                active = morphBtn0Active,
+                onClick = { morphBtn0Active = !morphBtn0Active },
+                stageState = stageState,
+                restingShape = SeaGlassShapeKind.Cookie9,
+                activeShape = SeaGlassShapeKind.Squircle,
+                restingMaterial = primaryMaterial,
+                activeMaterial = tertiaryMaterial,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(60.dp)
+            ) {
+                Text(
+                    text = if (morphBtn0Active) "Squircle" else "Cookie9",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
+                )
+            }
+
+            SeaGlassMorphingButton(
+                active = morphBtn1Active,
+                onClick = { morphBtn1Active = !morphBtn1Active },
+                stageState = stageState,
+                restingShape = SeaGlassShapeKind.SoftBurst,
+                activeShape = SeaGlassShapeKind.Circle,
+                restingMaterial = tertiaryMaterial,
+                activeMaterial = primaryMaterial,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(60.dp)
+            ) {
+                Text(
+                    text = if (morphBtn1Active) "Droplet" else "Burst12",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
+                )
+            }
+
+            SeaGlassMorphingButton(
+                active = morphBtn2Active,
+                onClick = { morphBtn2Active = !morphBtn2Active },
+                stageState = stageState,
+                restingShape = SeaGlassShapeKind.Cookie4,
+                activeShape = SeaGlassShapeKind.Gem,
+                restingMaterial = primaryMaterial,
+                activeMaterial = tertiaryMaterial,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(60.dp)
+            ) {
+                Text(
+                    text = if (morphBtn2Active) "Gem8" else "Clover4",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
+                )
+            }
+        }
+    }
+
+    // 4. Apple Liquid Glass Style Budding Action Cluster (SeaGlassBuddingCluster)
     SeaGlassBuddingCluster(
         expanded = buddingExpanded,
         onToggleExpanded = { buddingExpanded = !buddingExpanded },
@@ -1214,66 +1343,6 @@ private fun FluidCoalescingSection(
         anchorMaterial = primaryMaterial,
         satelliteMaterial = tertiaryMaterial
     )
-
-    // 3. Material 3 Expressive RoundedPolygon Shape-Morphing Buttons
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        SeaGlassMorphingButton(
-            active = morphBtn0Active,
-            onClick = { morphBtn0Active = !morphBtn0Active },
-            stageState = stageState,
-            restingShape = SeaGlassShapeKind.Cookie9,
-            activeShape = SeaGlassShapeKind.Squircle,
-            restingMaterial = primaryMaterial,
-            activeMaterial = tertiaryMaterial,
-            modifier = Modifier
-                .weight(1f)
-                .height(64.dp)
-        ) {
-            Text(
-                text = if (morphBtn0Active) "Squircle" else "Cookie9",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
-            )
-        }
-
-        SeaGlassMorphingButton(
-            active = morphBtn1Active,
-            onClick = { morphBtn1Active = !morphBtn1Active },
-            stageState = stageState,
-            restingShape = SeaGlassShapeKind.SoftBurst,
-            activeShape = SeaGlassShapeKind.Circle,
-            restingMaterial = tertiaryMaterial,
-            activeMaterial = primaryMaterial,
-            modifier = Modifier
-                .weight(1f)
-                .height(64.dp)
-        ) {
-            Text(
-                text = if (morphBtn1Active) "Droplet" else "Burst12",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
-            )
-        }
-
-        SeaGlassMorphingButton(
-            active = morphBtn2Active,
-            onClick = { morphBtn2Active = !morphBtn2Active },
-            stageState = stageState,
-            restingShape = SeaGlassShapeKind.Cookie4,
-            activeShape = SeaGlassShapeKind.Gem,
-            restingMaterial = primaryMaterial,
-            activeMaterial = tertiaryMaterial,
-            modifier = Modifier
-                .weight(1f)
-                .height(64.dp)
-        ) {
-            Text(
-                text = if (morphBtn2Active) "Gem8" else "Clover4",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
-            )
-        }
-    }
 
     // 4. Hero Interactive Multi-Node SDF Arena with Polar Polygon Shape Morphing + sminCubic Coalescing!
     val morphShapeTour = remember {
@@ -1621,19 +1690,25 @@ private fun PaletteGallerySection(
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
                         text = palette.displayName,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Black
+                        maxLines = 1,
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp
                         )
                     )
                     Text(
                         text = String.format(
                             Locale.US,
-                            "%.0f%% Clear · %.0f%% Grit · %.2f IOR",
+                            "%.0f%% Clear · %.0f%% Sand · %.2f IOR",
                             palette.primaryGlass.transparency * 100f,
                             palette.primaryGlass.coarseness * 100f,
                             palette.primaryGlass.ior
                         ),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 9.sp,
+                            letterSpacing = (-0.1).sp
+                        ),
                         color = LocalContentColor.current.copy(alpha = 0.85f)
                     )
                 }
@@ -1672,7 +1747,7 @@ private fun UiComponentLibrarySection(
     // 1. Floating Top App Bar
     SeaGlassTopAppBar(
         title = "SeaGlass App UI Kit",
-        subtitle = "Full Material 3 Expressive × Liquid Glass Parity",
+        subtitle = "Material 3 Expressive × Sand-Frosted Glass",
         stageState = stageState,
         navigationGlyph = SeaGlassGlyph.Menu,
         onNavigationClick = { fabExpanded = !fabExpanded },
@@ -1699,7 +1774,7 @@ private fun UiComponentLibrarySection(
         )
     }
 
-    // 2. Segmented Control + Filter Chips + Extended FAB
+    // 2. Segmented Control switching between Controls, Surfaces, and Overlays
     SeaGlassSegmentedButtonRow(
         options = listOf("Controls", "Surfaces", "Overlays"),
         selectedIndex = segmentIdx,
@@ -1707,8 +1782,8 @@ private fun UiComponentLibrarySection(
             segmentIdx = it
             progressVal = when (it) {
                 0 -> 0.74f
-                1 -> 0.48f
-                else -> 0.92f
+                1 -> 0.56f
+                else -> 0.90f
             }
         },
         stageState = stageState,
@@ -1716,254 +1791,274 @@ private fun UiComponentLibrarySection(
         indicatorMaterial = primaryMaterial
     )
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        SeaGlassFilterChip(
-            label = "Spatial",
-            selected = filterSpatial,
-            onClick = { filterSpatial = !filterSpatial },
-            stageState = stageState,
-            leadingGlyph = SeaGlassGlyph.AudioWave,
-            selectedMaterial = primaryMaterial,
-            unselectedMaterial = surfaceMaterial
-        )
-        SeaGlassFilterChip(
-            label = "HDR 1.65×",
-            selected = filterHdr,
-            onClick = { filterHdr = !filterHdr },
-            stageState = stageState,
-            leadingGlyph = SeaGlassGlyph.Sparkles,
-            selectedMaterial = primaryMaterial,
-            unselectedMaterial = surfaceMaterial
-        )
-        SeaGlassFilterChip(
-            label = "Coalesce",
-            selected = filterCoalesce,
-            onClick = { filterCoalesce = !filterCoalesce },
-            stageState = stageState,
-            leadingGlyph = SeaGlassGlyph.Layers,
-            selectedMaterial = primaryMaterial,
-            unselectedMaterial = surfaceMaterial
-        )
-    }
-
-    // 3. Coalescing Floating Split Toolbar (sminCubic)
-    SeaGlassFloatingToolbar(
-        actions = listOf(
-            SeaGlassGlyph.Play to "Stream",
-            SeaGlassGlyph.Heart to "Favorite",
-            SeaGlassGlyph.Share to "Share",
-            SeaGlassGlyph.Bookmark to "Save"
-        ),
-        selectedActionIndex = toolbarActionIdx,
-        onActionSelect = { toolbarActionIdx = it },
-        fabGlyph = if (toolbarFabDetached) SeaGlassGlyph.Close else SeaGlassGlyph.Plus,
-        fabDetached = toolbarFabDetached,
-        onFabClick = { toolbarFabDetached = !toolbarFabDetached },
-        stageState = stageState,
-        barMaterial = surfaceMaterial,
-        fabMaterial = primaryMaterial
-    )
-
-    // 4. Interactive Selection, Input & Progress Controls Card
-    SeaGlassCard(
-        stageState = stageState,
-        material = surfaceMaterial,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "SELECTION, INPUT & PROGRESS",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.2.sp
-                    ),
-                    color = LocalContentColor.current.copy(alpha = 0.76f)
-                )
-                Text(
-                    text = "Switches, Checkboxes, Radios & FAB",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black)
-                )
-            }
-            SeaGlassExtendedFab(
-                text = "Create",
-                glyph = SeaGlassGlyph.Sparkles,
-                expanded = fabExpanded,
-                onClick = { fabExpanded = !fabExpanded },
-                stageState = stageState,
-                material = primaryMaterial
+    AnimatedContent(
+        targetState = segmentIdx,
+        transitionSpec = {
+            (fadeIn(animationSpec = tween(200)) +
+                scaleIn(
+                    initialScale = 0.96f,
+                    animationSpec = spring(dampingRatio = 0.74f, stiffness = 420f)
+                )).togetherWith(
+                fadeOut(animationSpec = tween(140)) +
+                    scaleOut(targetScale = 0.98f, animationSpec = tween(140))
             )
-        }
-
-        Row(
+        },
+        label = "uiLibraryCategoryMorph"
+    ) { activeCategory ->
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SeaGlassSwitch(
-                    checked = switchA,
-                    onCheckedChange = { switchA = it },
-                    stageState = stageState,
-                    checkedMaterial = primaryMaterial,
-                    uncheckedMaterial = surfaceMaterial
-                )
-                SeaGlassCheckbox(
-                    checked = checkA,
-                    onCheckedChange = { checkA = it },
-                    stageState = stageState,
-                    checkedMaterial = primaryMaterial,
-                    uncheckedMaterial = surfaceMaterial
-                )
-                SeaGlassCheckbox(
-                    checked = checkB,
-                    onCheckedChange = { checkB = it },
-                    stageState = stageState,
-                    checkedMaterial = tertiaryMaterial,
-                    uncheckedMaterial = surfaceMaterial
-                )
-                SeaGlassRadioButton(
-                    selected = radioIdx == 0,
-                    onClick = { radioIdx = 0 },
-                    stageState = stageState,
-                    selectedMaterial = primaryMaterial,
-                    unselectedMaterial = surfaceMaterial
-                )
-                SeaGlassRadioButton(
-                    selected = radioIdx == 1,
-                    onClick = { radioIdx = 1 },
-                    stageState = stageState,
-                    selectedMaterial = primaryMaterial,
-                    unselectedMaterial = surfaceMaterial
-                )
-            }
+            when (activeCategory) {
+                0 -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SeaGlassFilterChip(
+                            label = "Spatial",
+                            selected = filterSpatial,
+                            onClick = { filterSpatial = !filterSpatial },
+                            stageState = stageState,
+                            leadingGlyph = SeaGlassGlyph.AudioWave,
+                            selectedMaterial = primaryMaterial,
+                            unselectedMaterial = surfaceMaterial
+                        )
+                        SeaGlassFilterChip(
+                            label = "Sand Frost",
+                            selected = filterHdr,
+                            onClick = { filterHdr = !filterHdr },
+                            stageState = stageState,
+                            leadingGlyph = SeaGlassGlyph.Sparkles,
+                            selectedMaterial = primaryMaterial,
+                            unselectedMaterial = surfaceMaterial
+                        )
+                        SeaGlassFilterChip(
+                            label = "Coalesce",
+                            selected = filterCoalesce,
+                            onClick = { filterCoalesce = !filterCoalesce },
+                            stageState = stageState,
+                            leadingGlyph = SeaGlassGlyph.Layers,
+                            selectedMaterial = primaryMaterial,
+                            unselectedMaterial = surfaceMaterial
+                        )
+                    }
 
-            SeaGlassCircularProgressIndicator(
-                progress = progressVal,
-                stageState = stageState,
-                material = surfaceMaterial,
-                accentColor = Color(primaryMaterial.tintColorArgb)
-            )
-        }
+                    SeaGlassFloatingToolbar(
+                        actions = listOf(
+                            SeaGlassGlyph.Play to "Stream",
+                            SeaGlassGlyph.Heart to "Favorite",
+                            SeaGlassGlyph.Share to "Share",
+                            SeaGlassGlyph.Bookmark to "Save"
+                        ),
+                        selectedActionIndex = toolbarActionIdx,
+                        onActionSelect = { toolbarActionIdx = it },
+                        fabGlyph = if (toolbarFabDetached) SeaGlassGlyph.Close else SeaGlassGlyph.Plus,
+                        fabDetached = toolbarFabDetached,
+                        onFabClick = { toolbarFabDetached = !toolbarFabDetached },
+                        stageState = stageState,
+                        barMaterial = surfaceMaterial,
+                        fabMaterial = primaryMaterial
+                    )
 
-        SeaGlassLinearProgressIndicator(
-            progress = progressVal,
-            stageState = stageState,
-            trackMaterial = surfaceMaterial,
-            fillMaterial = primaryMaterial
-        )
+                    SeaGlassCard(
+                        stageState = stageState,
+                        material = surfaceMaterial,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "SELECTION, INPUT & PROGRESS",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 1.2.sp
+                                    ),
+                                    color = LocalContentColor.current.copy(alpha = 0.76f)
+                                )
+                                Text(
+                                    text = "Switches, Checkboxes & FAB",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black)
+                                )
+                            }
+                            SeaGlassExtendedFab(
+                                text = "Create",
+                                glyph = SeaGlassGlyph.Sparkles,
+                                expanded = fabExpanded,
+                                onClick = { fabExpanded = !fabExpanded },
+                                stageState = stageState,
+                                material = primaryMaterial
+                            )
+                        }
 
-        SeaGlassTextField(
-            value = textFieldValue,
-            onValueChange = { textFieldValue = it },
-            stageState = stageState,
-            label = "PRESET SCENE NAME",
-            placeholder = "Enter preset title…",
-            leadingGlyph = SeaGlassGlyph.Tune,
-            material = surfaceMaterial
-        )
-    }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                SeaGlassSwitch(
+                                    checked = switchA,
+                                    onCheckedChange = { switchA = it },
+                                    stageState = stageState,
+                                    checkedMaterial = primaryMaterial,
+                                    uncheckedMaterial = surfaceMaterial
+                                )
+                                SeaGlassCheckbox(
+                                    checked = checkA,
+                                    onCheckedChange = { checkA = it },
+                                    stageState = stageState,
+                                    checkedMaterial = primaryMaterial,
+                                    uncheckedMaterial = surfaceMaterial
+                                )
+                                SeaGlassCheckbox(
+                                    checked = checkB,
+                                    onCheckedChange = { checkB = it },
+                                    stageState = stageState,
+                                    checkedMaterial = tertiaryMaterial,
+                                    uncheckedMaterial = surfaceMaterial
+                                )
+                                SeaGlassRadioButton(
+                                    selected = radioIdx == 0,
+                                    onClick = { radioIdx = 0 },
+                                    stageState = stageState,
+                                    selectedMaterial = primaryMaterial,
+                                    unselectedMaterial = surfaceMaterial
+                                )
+                                SeaGlassRadioButton(
+                                    selected = radioIdx == 1,
+                                    onClick = { radioIdx = 1 },
+                                    stageState = stageState,
+                                    selectedMaterial = primaryMaterial,
+                                    unselectedMaterial = surfaceMaterial
+                                )
+                            }
 
-    // 5. Frosted List Items
-    SeaGlassListItem(
-        headlineText = "Adaptive Subsurface Diffusion",
-        supportingText = "Maintains >= 28dp Gaussian interior frost behind text & icons",
-        leadingGlyph = SeaGlassGlyph.Layers,
-        stageState = stageState,
-        material = surfaceMaterial,
-        onClick = { switchA = !switchA }
-    ) {
-        SeaGlassSwitch(
-            checked = switchA,
-            onCheckedChange = { switchA = it },
-            stageState = stageState,
-            checkedMaterial = primaryMaterial,
-            uncheckedMaterial = surfaceMaterial
-        )
-    }
+                            SeaGlassCircularProgressIndicator(
+                                progress = progressVal,
+                                stageState = stageState,
+                                material = surfaceMaterial,
+                                accentColor = Color(primaryMaterial.tintColorArgb)
+                            )
+                        }
 
-    SeaGlassListItem(
-        headlineText = "Gyroscope & Touch Meniscus Tilt",
-        supportingText = "3-channel RGB edge dispersion restricted to outer 7dp bevel",
-        leadingGlyph = SeaGlassGlyph.Sparkles,
-        stageState = stageState,
-        material = surfaceMaterial,
-        onClick = { switchB = !switchB }
-    ) {
-        SeaGlassBadge(
-            text = if (switchB) "LIVE" else "AUTO",
-            stageState = stageState,
-            material = if (switchB) primaryMaterial else tertiaryMaterial
-        )
-        SeaGlassSwitch(
-            checked = switchB,
-            onCheckedChange = { switchB = it },
-            stageState = stageState,
-            checkedMaterial = primaryMaterial,
-            uncheckedMaterial = surfaceMaterial
-        )
-    }
+                        SeaGlassLinearProgressIndicator(
+                            progress = progressVal,
+                            stageState = stageState,
+                            trackMaterial = surfaceMaterial,
+                            fillMaterial = primaryMaterial
+                        )
 
-    // 6. Snackbar, Dialog Card, & Bottom Sheet Surface
-    if (showSnackbar) {
-        SeaGlassSnackbar(
-            message = "Oklab Screen + SrcOver volumetric tint calibrated",
-            actionLabel = "Dismiss",
-            onActionClick = { showSnackbar = false },
-            stageState = stageState,
-            material = primaryMaterial
-        )
-    }
+                        SeaGlassTextField(
+                            value = textFieldValue,
+                            onValueChange = { textFieldValue = it },
+                            stageState = stageState,
+                            label = "PRESET SCENE NAME",
+                            placeholder = "Enter preset title…",
+                            leadingGlyph = SeaGlassGlyph.Tune,
+                            material = surfaceMaterial
+                        )
+                    }
+                }
 
-    if (showDialog) {
-        SeaGlassDialogCard(
-            title = "Export SeaGlass Design Tokens",
-            body = "Generates Kotlin Compose theme tokens, XML View drawables, and 256-byte std140 shader uniforms for Vulkan 1.1, GLES 3.00, and AGSL.",
-            confirmLabel = "Export Kit",
-            onConfirm = { progressVal = (progressVal + 0.15f).coerceAtMost(1f) },
-            dismissLabel = "Hide",
-            onDismiss = { showDialog = false },
-            stageState = stageState,
-            material = surfaceMaterial
-        )
-    }
+                1 -> {
+                    SeaGlassListItem(
+                        headlineText = "Sand-Frosted Continuum",
+                        supportingText = "Smoothly spans clear untreated glass to opaque sand-frosted glass",
+                        leadingGlyph = SeaGlassGlyph.Layers,
+                        stageState = stageState,
+                        material = surfaceMaterial,
+                        onClick = { switchA = !switchA }
+                    ) {
+                        SeaGlassSwitch(
+                            checked = switchA,
+                            onCheckedChange = { switchA = it },
+                            stageState = stageState,
+                            checkedMaterial = primaryMaterial,
+                            uncheckedMaterial = surfaceMaterial
+                        )
+                    }
 
-    SeaGlassBottomSheetSurface(
-        title = "Quick Optical Sheet",
-        subtitle = "Frosted drag-handle sheet surface for contextual drawers",
-        stageState = stageState,
-        material = surfaceMaterial
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            SeaGlassButton(
-                onClick = { progressVal = 0.35f },
-                stageState = stageState,
-                material = surfaceMaterial,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("35% Load", fontWeight = FontWeight.Bold)
-            }
-            SeaGlassButton(
-                onClick = { progressVal = 0.88f },
-                stageState = stageState,
-                material = primaryMaterial,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("88% Peak", fontWeight = FontWeight.ExtraBold)
+                    SeaGlassListItem(
+                        headlineText = "Gaussian-Feathered Edge Bevel",
+                        supportingText = "Continuous refraction & diffusion across corners and edges",
+                        leadingGlyph = SeaGlassGlyph.Sparkles,
+                        stageState = stageState,
+                        material = surfaceMaterial,
+                        onClick = { switchB = !switchB }
+                    ) {
+                        SeaGlassBadge(
+                            text = if (switchB) "LIVE" else "AUTO",
+                            stageState = stageState,
+                            material = if (switchB) primaryMaterial else tertiaryMaterial
+                        )
+                        SeaGlassSwitch(
+                            checked = switchB,
+                            onCheckedChange = { switchB = it },
+                            stageState = stageState,
+                            checkedMaterial = primaryMaterial,
+                            uncheckedMaterial = surfaceMaterial
+                        )
+                    }
+
+                    SeaGlassBottomSheetSurface(
+                        title = "Quick Optical Sheet",
+                        subtitle = "Sand-frosted drag-handle sheet surface for contextual drawers",
+                        stageState = stageState,
+                        material = surfaceMaterial
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            SeaGlassButton(
+                                onClick = { progressVal = 0.35f },
+                                stageState = stageState,
+                                material = surfaceMaterial,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("35% Load", fontWeight = FontWeight.Bold)
+                            }
+                            SeaGlassButton(
+                                onClick = { progressVal = 0.88f },
+                                stageState = stageState,
+                                material = primaryMaterial,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("88% Peak", fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    SeaGlassSnackbar(
+                        message = "Compile-once shader cache & dirty-slot UBO active",
+                        actionLabel = if (showSnackbar) "Verified" else "Reset",
+                        onActionClick = { showSnackbar = !showSnackbar },
+                        stageState = stageState,
+                        material = primaryMaterial
+                    )
+
+                    SeaGlassDialogCard(
+                        title = "Export SeaGlass Design Tokens",
+                        body = "Generates Kotlin Compose theme tokens, XML View drawables, and 256-byte std140 shader uniforms for Vulkan 1.1, GLES 3.00, and AGSL.",
+                        confirmLabel = "Export Kit",
+                        onConfirm = { progressVal = (progressVal + 0.15f).coerceAtMost(1f) },
+                        dismissLabel = "Reset",
+                        onDismiss = { progressVal = 0.50f },
+                        stageState = stageState,
+                        material = surfaceMaterial
+                    )
+                }
             }
         }
     }
@@ -2253,22 +2348,6 @@ private fun ExpressiveTidalBackdrop(
     val sunlitPeach = Color(0xFFFF8E6E)
     val goldenSand = Color(0xFFFFCA58)
     val aquaCaustic = Color(0xFF68F4FF)
-    val textMeasurer = rememberTextMeasurer()
-
-    val headlineStyle = remember(isDark) {
-        TextStyle(
-            fontSize = 18.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = if (isDark) Color.White.copy(alpha = 0.90f) else Color(0xFFFFFFFF).copy(alpha = 0.92f)
-        )
-    }
-    val subHeadlineStyle = remember(isDark) {
-        TextStyle(
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            color = if (isDark) Color.White.copy(alpha = 0.65f) else Color(0xFFE0F4FF).copy(alpha = 0.80f)
-        )
-    }
 
     Canvas(modifier = modifier) {
         val w = size.width
@@ -2340,7 +2419,7 @@ private fun ExpressiveTidalBackdrop(
             )
         }
 
-        rotate(degrees = 12f, pivot = Offset(w * 0.5f, h * 0.44f)) {
+        rotate(degrees = 12f, pivot = Offset(w * 0.5f, h * 0.48f)) {
             drawRoundRect(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
@@ -2349,13 +2428,13 @@ private fun ExpressiveTidalBackdrop(
                         secondaryGlow.copy(alpha = 0.88f)
                     )
                 ),
-                topLeft = Offset(-w * 0.25f - dx * 0.30f, h * 0.38f),
+                topLeft = Offset(-w * 0.25f - dx * 0.30f, h * 0.42f),
                 size = Size(w * 1.50f, 104.dp.toPx()),
                 cornerRadius = CornerRadius(52.dp.toPx(), 52.dp.toPx())
             )
         }
 
-        rotate(degrees = -10f, pivot = Offset(w * 0.5f, h * 0.68f)) {
+        rotate(degrees = -10f, pivot = Offset(w * 0.5f, h * 0.76f)) {
             drawRoundRect(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
@@ -2364,53 +2443,53 @@ private fun ExpressiveTidalBackdrop(
                         aquaCaustic.copy(alpha = 0.84f)
                     )
                 ),
-                topLeft = Offset(-w * 0.25f + dx * 0.25f, h * 0.62f),
+                topLeft = Offset(-w * 0.25f + dx * 0.25f, h * 0.70f),
                 size = Size(w * 1.50f, 98.dp.toPx()),
                 cornerRadius = CornerRadius(49.dp.toPx(), 49.dp.toPx())
             )
         }
 
-        // Crisp Luminous Pebbles & Rings for Meniscus Refraction Calibration
+        // Luminous Pebbles & Rings for Refraction & Frost Calibration
         drawCircle(
-            color = goldenSand.copy(alpha = 0.92f),
-            radius = 48.dp.toPx(),
+            color = goldenSand.copy(alpha = 0.88f),
+            radius = 44.dp.toPx(),
             center = Offset(w * 0.26f - dx * 0.4f, h * 0.29f + dy)
         )
         drawCircle(
-            color = Color.White.copy(alpha = 0.45f),
-            radius = 60.dp.toPx(),
+            color = Color.White.copy(alpha = 0.38f),
+            radius = 56.dp.toPx(),
             center = Offset(w * 0.26f - dx * 0.4f, h * 0.29f + dy),
-            style = Stroke(width = 3.dp.toPx())
+            style = Stroke(width = 2.5.dp.toPx())
         )
 
         drawCircle(
-            color = sunlitPeach.copy(alpha = 0.90f),
-            radius = 54.dp.toPx(),
-            center = Offset(w * 0.74f + dx * 0.35f, h * 0.48f - dy)
-        )
-        drawCircle(
-            color = Color.White.copy(alpha = 0.45f),
-            radius = 68.dp.toPx(),
-            center = Offset(w * 0.74f + dx * 0.35f, h * 0.48f - dy),
-            style = Stroke(width = 3.dp.toPx())
-        )
-
-        drawCircle(
-            color = aquaCaustic.copy(alpha = 0.88f),
+            color = sunlitPeach.copy(alpha = 0.86f),
             radius = 48.dp.toPx(),
-            center = Offset(w * 0.32f + dy, h * 0.76f)
+            center = Offset(w * 0.74f + dx * 0.35f, h * 0.52f - dy)
+        )
+        drawCircle(
+            color = Color.White.copy(alpha = 0.38f),
+            radius = 62.dp.toPx(),
+            center = Offset(w * 0.74f + dx * 0.35f, h * 0.52f - dy),
+            style = Stroke(width = 2.5.dp.toPx())
+        )
+
+        drawCircle(
+            color = aquaCaustic.copy(alpha = 0.84f),
+            radius = 44.dp.toPx(),
+            center = Offset(w * 0.30f + dy, h * 0.82f)
         )
 
         // Luminous Caustic Wave Filaments
         for (i in 0..3) {
-            val yBase = h * (0.20f + i * 0.21f)
+            val yBase = h * (0.20f + i * 0.22f)
             val wavePath = Path().apply {
                 moveTo(0f, yBase)
                 cubicTo(
                     w * 0.33f,
-                    yBase - 34.dp.toPx() * sin(phase + i * 0.9f),
+                    yBase - 32.dp.toPx() * sin(phase + i * 0.9f),
                     w * 0.66f,
-                    yBase + 34.dp.toPx() * cos(phase + i * 0.9f),
+                    yBase + 32.dp.toPx() * cos(phase + i * 0.9f),
                     w,
                     yBase
                 )
@@ -2419,78 +2498,14 @@ private fun ExpressiveTidalBackdrop(
                 path = wavePath,
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.16f),
-                        Color.White.copy(alpha = 0.62f),
-                        aquaCaustic.copy(alpha = 0.54f),
-                        Color.White.copy(alpha = 0.16f)
+                        Color.White.copy(alpha = 0.14f),
+                        Color.White.copy(alpha = 0.52f),
+                        aquaCaustic.copy(alpha = 0.46f),
+                        Color.White.copy(alpha = 0.14f)
                     )
                 ),
-                style = Stroke(width = 3.dp.toPx())
+                style = Stroke(width = 2.5.dp.toPx())
             )
         }
-
-        // High-Contrast Editorial Media Cards & Headlines directly behind the Mini-Player & Bottom Tab Bar
-        // so you can clearly see the top/bottom 13.5dp meniscus bevels stretching & refracting the text
-        // and artwork while the frosted center keeps the bar's foreground UI legible!
-        val driftX = sin(phase * 0.7f) * 18.dp.toPx()
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = listOf(Color(0xFFFF6B98), Color(0xFF5A98FF))
-            ),
-            topLeft = Offset(w * 0.05f + driftX, h * 0.77f),
-            size = Size(w * 0.42f, 62.dp.toPx()),
-            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
-        )
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = listOf(Color(0xFF7AF5C8), Color(0xFF14A878))
-            ),
-            topLeft = Offset(w * 0.51f + driftX, h * 0.77f),
-            size = Size(w * 0.44f, 62.dp.toPx()),
-            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
-        )
-
-        drawText(
-            textMeasurer = textMeasurer,
-            text = "Chill House Beats",
-            topLeft = Offset(w * 0.05f + driftX, h * 0.842f),
-            style = headlineStyle
-        )
-        drawText(
-            textMeasurer = textMeasurer,
-            text = "Coastal Lounge",
-            topLeft = Offset(w * 0.05f + driftX, h * 0.865f),
-            style = subHeadlineStyle
-        )
-
-        drawText(
-            textMeasurer = textMeasurer,
-            text = "Tropical House Essentials",
-            topLeft = Offset(w * 0.50f + driftX, h * 0.842f),
-            style = headlineStyle
-        )
-        drawText(
-            textMeasurer = textMeasurer,
-            text = "SeaGlass Dance",
-            topLeft = Offset(w * 0.50f + driftX, h * 0.865f),
-            style = subHeadlineStyle
-        )
-
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = listOf(Color(0xFF3E8EFF), Color(0xFFA8DCFF))
-            ),
-            topLeft = Offset(w * 0.05f - driftX * 0.6f, h * 0.905f),
-            size = Size(w * 0.42f, 84.dp.toPx()),
-            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
-        )
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = listOf(Color(0xFFFFB248), Color(0xFF32D8B4))
-            ),
-            topLeft = Offset(w * 0.51f - driftX * 0.6f, h * 0.905f),
-            size = Size(w * 0.44f, 84.dp.toPx()),
-            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx())
-        )
     }
 }

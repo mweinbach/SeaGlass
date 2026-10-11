@@ -745,13 +745,19 @@ fun SeaGlassSwitch(
     val motion = LocalSeaGlassMotionScheme.current
     val density = LocalDensity.current
 
-    val thumbProgress by animateFloatAsState(
-        targetValue = if (checked) 1f else 0f,
-        animationSpec = motion.fastSpatial,
-        label = "switchThumbSpatial"
+    val targetSwitchVal = if (checked) 1f else 0f
+    val leadThumb by animateFloatAsState(
+        targetValue = targetSwitchVal,
+        animationSpec = spring(dampingRatio = 0.64f, stiffness = 560f),
+        label = "switchLeadThumb"
+    )
+    val trailThumb by animateFloatAsState(
+        targetValue = targetSwitchVal,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f),
+        label = "switchTrailThumb"
     )
     val tintProgress by animateFloatAsState(
-        targetValue = if (checked) 1f else 0f,
+        targetValue = targetSwitchVal,
         animationSpec = motion.defaultEffects,
         label = "switchTintEffects"
     )
@@ -763,14 +769,17 @@ fun SeaGlassSwitch(
         )
     }
 
-    val motionStretch = abs((if (checked) 1f else 0f) - thumbProgress).coerceIn(0f, 1f)
+    val leftThumbFrac = min(leadThumb, trailThumb).coerceIn(-0.08f, 1.08f)
+    val rightThumbFrac = max(leadThumb, trailThumb).coerceIn(-0.08f, 1.08f)
+    val stretchFrac = (rightThumbFrac - leftThumbFrac).coerceIn(0f, 0.85f)
     val trackWidthDp = 56.dp
     val trackHeightDp = 32.dp
-    val thumbWidthDp = 26.dp
+    val baseThumbWidthDp = 26.dp
     val thumbHeightDp = 24.dp
     val padPx = with(density) { 3.dp.toPx() }
-    val travelPx = with(density) { (trackWidthDp - thumbWidthDp - 6.dp).toPx() }
-    val thumbOffsetX = (padPx + travelPx * thumbProgress).roundToInt()
+    val travelPx = with(density) { (trackWidthDp - baseThumbWidthDp - 6.dp).toPx() }
+    val thumbOffsetX = (padPx + travelPx * leftThumbFrac).roundToInt()
+    val dynamicThumbWidthDp = baseThumbWidthDp + with(density) { (travelPx * stretchFrac).toDp() }
 
     val contentColor = remember(trackMaterial.tintColorArgb, trackMaterial.tintDensity) {
         Color(
@@ -796,15 +805,14 @@ fun SeaGlassSwitch(
                 contentRole = SeaGlassContentRole.TEXT_AND_ICONS
             )
     ) {
-        // 3D Water-Drop Lens Thumb
+        // 3D Liquid Lens Thumb with Lead/Trail Droplet Stretch
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .offset { IntOffset(thumbOffsetX, 0) }
-                .size(width = thumbWidthDp, height = thumbHeightDp)
+                .size(width = dynamicThumbWidthDp, height = thumbHeightDp)
                 .graphicsLayer {
-                    scaleX = 1f + 0.28f * motionStretch
-                    scaleY = 1f - 0.14f * motionStretch
+                    scaleY = 1f - 0.14f * stretchFrac
                 }
                 .clip(RoundedCornerShape(14.dp))
                 .background(
@@ -1000,10 +1008,16 @@ fun SeaGlassSegmentedButtonRow(
     val density = LocalDensity.current
     val count = options.size.coerceAtLeast(1)
 
-    val animatedIndex by animateFloatAsState(
-        targetValue = selectedIndex.coerceIn(0, count - 1).toFloat(),
-        animationSpec = motion.defaultSpatial,
-        label = "segmentedIndicator"
+    val targetSegFloat = selectedIndex.coerceIn(0, count - 1).toFloat()
+    val leadSegIndex by animateFloatAsState(
+        targetValue = targetSegFloat,
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 540f),
+        label = "segmentedLeadEdge"
+    )
+    val trailSegIndex by animateFloatAsState(
+        targetValue = targetSegFloat,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f),
+        label = "segmentedTrailEdge"
     )
     var barWidthPx by remember { mutableFloatStateOf(800f) }
 
@@ -1020,16 +1034,16 @@ fun SeaGlassSegmentedButtonRow(
         SeaGlassColorMath.argbToOklab(containerMaterial.tintColorArgb).l < 0.48f
     }
     val pillTopColor = if (isDarkBar) {
-        Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.52f)
+        Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.56f)
     } else {
         Color(
-            SeaGlassColorMath.lerpOklab(indicatorMaterial.tintColorArgb, 0xFFFFFFFF.toInt(), 0.44f)
-        ).copy(alpha = 0.62f)
+            SeaGlassColorMath.lerpOklab(indicatorMaterial.tintColorArgb, 0xFFFFFFFF.toInt(), 0.34f)
+        ).copy(alpha = 0.66f)
     }
     val pillBottomColor = if (isDarkBar) {
-        Color(0xFF0A1E30).copy(alpha = 0.36f)
+        Color(0xFF0A1E30).copy(alpha = 0.38f)
     } else {
-        Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.42f)
+        Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.48f)
     }
 
     ProvideSeaGlassLegibleContent(contentColor = contentColor) {
@@ -1047,18 +1061,19 @@ fun SeaGlassSegmentedButtonRow(
         ) {
             val innerW = (barWidthPx - with(density) { 8.dp.toPx() }).coerceAtLeast(1f)
             val slotW = innerW / count
-            val slotWidthDp = with(density) { slotW.toDp() }
-            val indicatorOffsetX = (animatedIndex * slotW).roundToInt()
-            val motionStretch = abs(selectedIndex - animatedIndex).coerceIn(0f, 1.2f)
+            val leftSeg = min(leadSegIndex, trailSegIndex)
+            val rightSeg = max(leadSegIndex, trailSegIndex) + 1f
+            val stretchSpan = abs(leadSegIndex - trailSegIndex).coerceIn(0f, 1.5f)
+            val indicatorOffsetX = (leftSeg * slotW).roundToInt()
+            val indicatorWidthDp = with(density) { ((rightSeg - leftSeg) * slotW).toDp() }
 
             Box(
                 modifier = Modifier
                     .offset { IntOffset(indicatorOffsetX, 0) }
-                    .width(slotWidthDp)
+                    .width(indicatorWidthDp)
                     .fillMaxHeight()
                     .graphicsLayer {
-                        scaleX = 1f + motionStretch * 0.24f
-                        scaleY = 1f - motionStretch * 0.10f
+                        scaleY = 1f - stretchSpan * 0.10f
                     }
                     .clip(RoundedCornerShape(19.dp))
                     .background(Brush.verticalGradient(listOf(pillTopColor, pillBottomColor)))
@@ -2070,7 +2085,7 @@ fun SeaGlassCascadedModelMorph(
             )
             Text(
                 text = "$effortLabel ⌄",
-                color = Color(0xFFC41238),
+                color = LocalContentColor.current.copy(alpha = 0.78f),
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontWeight = FontWeight.Black,
                     fontSize = 12.sp
@@ -2141,7 +2156,7 @@ fun SeaGlassCascadedModelMorph(
 
             Text(
                 text = effortLabel,
-                color = Color(0xFFB8143A),
+                color = LocalContentColor.current.copy(alpha = 0.85f),
                 style = MaterialTheme.typography.labelLarge.copy(
                     fontWeight = FontWeight.Black,
                     fontSize = 14.sp
