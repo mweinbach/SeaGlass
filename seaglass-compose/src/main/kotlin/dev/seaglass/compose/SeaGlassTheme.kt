@@ -107,6 +107,11 @@ fun animateSeaGlassMaterialAsState(
         motionScheme.defaultSpatial,
         label = "cornerSmoothing"
     )
+    val transparency by animateFloatAsState(
+        targetMaterial.transparency,
+        motionScheme.defaultEffects,
+        label = "transparency"
+    )
 
     return remember {
         derivedStateOf {
@@ -124,7 +129,8 @@ fun animateSeaGlassMaterialAsState(
                 thicknessDp = thicknessDp.coerceAtLeast(1f),
                 cornerRadiusDp = cornerRadiusDp.coerceAtLeast(0f),
                 cornerSmoothing = cornerSmoothing.coerceIn(2.0f, 4.0f),
-                ambientAdaptation = targetMaterial.ambientAdaptation
+                ambientAdaptation = targetMaterial.ambientAdaptation,
+                transparency = transparency.coerceIn(0f, 1f)
             )
         }
     }

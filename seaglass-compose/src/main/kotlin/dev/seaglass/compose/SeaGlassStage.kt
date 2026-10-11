@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path as ComposePath
@@ -43,16 +45,25 @@ import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSandGrainTexture
 import dev.seaglass.core.SeaGlassSdfEngine
 import dev.seaglass.core.backend.SeaGlassUniformBlock
-import kotlin.math.max
+import kotlin.math.abs
 import kotlin.math.min
 
 /**
- * Coordinates zero-copy GPU backdrop capture between background content ([Modifier.seaGlassBackdrop])
- * and foreground SeaGlass UI elements ([Modifier.seaGlass] / [SeaGlassFluidGroup]).
+ * Coordinates zero-copy GPU backdrop capture and shared full-stage subsurface blur pyramids
+ * between background content ([Modifier.seaGlassBackdrop]) and foreground SeaGlass UI elements
+ * ([Modifier.seaGlass] / [SeaGlassFluidGroup]).
+ *
+ * By blurring [frostedBackdropLayer] and [refractedEdgeBackdropLayer] once at the full stage
+ * coordinate origin `(0, 0, stageWidth, stageHeight)` rather than inside negatively-translated
+ * per-card child `RenderNode`s, Android HWUI never crops or insets the blur at card boundaries—
+ * guaranteeing **100% edge-to-edge transparent frosted & refracted glass** up to the exact pixel
+ * border of every card, pill, and coalescing droplet.
  */
 @Stable
 class SeaGlassStageState internal constructor(
-    val backdropLayer: GraphicsLayer
+    val backdropLayer: GraphicsLayer,
+    val frostedBackdropLayer: GraphicsLayer,
+    val refractedEdgeBackdropLayer: GraphicsLayer
 ) {
     var backdropOriginInRoot: Offset by mutableStateOf(Offset.Zero)
         internal set
@@ -65,22 +76,52 @@ class SeaGlassStageState internal constructor(
 
     var recordTick: Int by mutableIntStateOf(0)
         internal set
-}
 
-/**
- * Creates and remembers a [SeaGlassStageState] backed by a hardware-accelerated [GraphicsLayer].
- */
-@Composable
-fun rememberSeaGlassStageState(): SeaGlassStageState {
-    val graphicsLayer = rememberGraphicsLayer()
-    return remember(graphicsLayer) {
-        SeaGlassStageState(backdropLayer = graphicsLayer)
+    var requestedFrostPx: Float by mutableFloatStateOf(44f)
+        internal set
+
+    private var appliedFrostPx: Float = -1f
+
+    internal fun ensureStageBlurUpdated(frostPx: Float) {
+        val target = frostPx.coerceAtLeast(1.0f)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && abs(target - appliedFrostPx) > 0.5f) {
+            appliedFrostPx = target
+            frostedBackdropLayer.renderEffect = AndroidRenderEffect.createBlurEffect(
+                target,
+                target,
+                Shader.TileMode.CLAMP
+            ).asComposeRenderEffect()
+
+            val edgeBlur = (target * 0.28f).coerceAtLeast(1.0f)
+            refractedEdgeBackdropLayer.renderEffect = AndroidRenderEffect.createBlurEffect(
+                edgeBlur,
+                edgeBlur,
+                Shader.TileMode.CLAMP
+            ).asComposeRenderEffect()
+        }
     }
 }
 
 /**
- * Captures the composable's draw hierarchy into [stageState]'s GPU [GraphicsLayer] so
- * foreground [Modifier.seaGlass] elements can refract, frost, and tint it in real time.
+ * Creates and remembers a [SeaGlassStageState] backed by shared hardware-accelerated [GraphicsLayer]s.
+ */
+@Composable
+fun rememberSeaGlassStageState(): SeaGlassStageState {
+    val rawLayer = rememberGraphicsLayer()
+    val frostedLayer = rememberGraphicsLayer()
+    val edgeLayer = rememberGraphicsLayer()
+    return remember(rawLayer, frostedLayer, edgeLayer) {
+        SeaGlassStageState(
+            backdropLayer = rawLayer,
+            frostedBackdropLayer = frostedLayer,
+            refractedEdgeBackdropLayer = edgeLayer
+        )
+    }
+}
+
+/**
+ * Captures the composable's draw hierarchy into [stageState]'s GPU [GraphicsLayer]s so
+ * foreground [Modifier.seaGlass] elements can refract, frost, and tint it edge-to-edge in real time.
  */
 fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
     return this
@@ -89,10 +130,19 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
             stageState.backdropSize = coordinates.size
         }
         .drawWithContent {
-            stageState.backdropLayer.record(
-                size = IntSize(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1))
-            ) {
+            val stageIntSize = IntSize(
+                size.width.toInt().coerceAtLeast(1),
+                size.height.toInt().coerceAtLeast(1)
+            )
+            stageState.backdropLayer.record(size = stageIntSize) {
                 this@drawWithContent.drawContent()
+            }
+            stageState.ensureStageBlurUpdated(stageState.requestedFrostPx)
+            stageState.frostedBackdropLayer.record(size = stageIntSize) {
+                drawLayer(stageState.backdropLayer)
+            }
+            stageState.refractedEdgeBackdropLayer.record(size = stageIntSize) {
+                drawLayer(stageState.backdropLayer)
             }
             stageState.hasRecordedBackdrop = true
             stageState.recordTick++
@@ -101,23 +151,17 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
 }
 
 /**
- * Renders a real-time **Liquid Sea Glass** surface over [stageState]:
+ * Renders a 100% edge-to-edge transparent **Liquid Sea Glass** surface over [stageState]:
  *
- * 1. **Ambient Elevation Shadow & Colored Caustic Under-Glow**: Casts a soft ambient shadow
- *    plus a translucent pastel caustic glow beneath the bottom-right rim.
- * 2. **Dual-Zone 3D Liquid Glass Lens Meniscus + Subsurface Sea-Glass Frost**:
- *    - **Outer Meniscus Ring (`meniscusLayer`)**: Magnifies and refracts the background with a
- *      crisper lens blur (`0.22 × frostRadius`) around the curved 3D perimeter and across
- *      `sminCubic` liquid bridges.
- *    - **Inner Frosted Plateau (`frostedLayer`)**: Deep subsurface sea-glass diffusion blur
- *      inside the meniscus ring.
- * 3. **Exact Newton-Raphson `sminCubic` Metaball Contours**: Smooth $C^2$-continuous coalescing
- *    contours with zero polygon kinks.
- * 4. **Volumetric Oklab Beer-Lambert Body Absorption + Tiled Sand-Grain Micro-Facet Texture**:
- *    Translucent pastel volume tinting paired with a multi-octave toroidal sand-grain
- *    `BitmapShader` (`SeaGlassSandGrainTexture`).
- * 5. **4-Layer 3D Meniscus Lighting**: Inner refractive depth groove, leeward internal caustic
- *    arc, wide windward frosted bevel sheen, and crisp outer Fresnel chalk rim.
+ * 1. **Zero Edge Cutoff / Full Edge-to-Edge Transparency**:
+ *    - Samples from [SeaGlassStageState.frostedBackdropLayer] and
+ *      [SeaGlassStageState.refractedEdgeBackdropLayer] (which are blurred at the full stage bounds),
+ *      eliminating Skia `RenderNode` child crop margins at card borders.
+ *    - [SeaGlassMaterial.transparency] (`0f..1f`) smoothly dials the frosted glass from dense
+ *      tumbled sea glass (`0f`) to crystal-clear transparent glass (`1f`).
+ * 2. **Liquid Glass Refracting Light & Chromatic Dispersion**:
+ *    - Bends and magnifies the background image (`ior`) with an opposing chromatic-refraction
+ *      pass and an additive (`BlendMode.Plus`) refractive light rim along the curved perimeter.
  */
 @Composable
 fun Modifier.seaGlass(
@@ -132,25 +176,13 @@ fun Modifier.seaGlass(
         tierOverride ?: SeaGlassDeviceTier.detect(context)
     }
 
-    val frostedLayer = rememberGraphicsLayer()
-    val meniscusLayer = rememberGraphicsLayer()
     val uniformBlock = remember { SeaGlassUniformBlock() }
     val outerAndroidPath = remember { Path() }
-    val innerPlateauAndroidPath = remember { Path() }
+    val innerGlintAndroidPath = remember { Path() }
 
     val ambientShadowPaint = remember {
         AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
             style = AndroidPaint.Style.FILL
-        }
-    }
-    val causticUnderGlowPaint = remember {
-        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
-            style = AndroidPaint.Style.FILL
-        }
-    }
-    val meniscusGroovePaint = remember {
-        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
-            style = AndroidPaint.Style.STROKE
         }
     }
     val sandGrainPaint = remember {
@@ -173,13 +205,11 @@ fun Modifier.seaGlass(
             val cornerPx = min(material.cornerRadiusDp * density, min(widthPx, heightPx) * 0.5f)
             val thicknessPx = material.thicknessDp * density
             val smoothRadiusPx = smoothRadiusDp * density
-            val frostPx = (material.frostRadiusDp * density).coerceAtLeast(1.5f)
-            // Crisper lens blur at the 3D curved meniscus rim so background refraction is clearly visible
-            val meniscusBlurPx = (frostPx * 0.22f).coerceIn(1.0f, 10f)
-            val meniscusWidthPx = (thicknessPx * 0.52f).coerceIn(
-                6f * density,
-                min(widthPx, heightPx) * 0.28f
-            )
+
+            // Frost opacity is inverse of transparency (higher transparency = clearer see-through glass)
+            val frostOpacity = (1.0f - material.transparency).coerceIn(0.03f, 0.96f)
+            val effectiveFrostPx = (material.frostRadiusDp * density * (0.25f + 0.75f * frostOpacity))
+                .coerceAtLeast(1.5f)
 
             val activeNodes = if (!nodesOptional.isNullOrEmpty()) {
                 nodesOptional
@@ -198,7 +228,7 @@ fun Modifier.seaGlass(
                 )
             }
 
-            // Build exact C^2-continuous sminCubic outer contour and inset 3D meniscus plateau contour
+            // Build exact C^2-continuous sminCubic outer contour and 1.8dp-inset chromatic glint contour
             SeaGlassContourPathBuilder.buildCoalescingScenePath(
                 nodes = activeNodes,
                 smoothRadiusPx = smoothRadiusPx,
@@ -208,43 +238,22 @@ fun Modifier.seaGlass(
             SeaGlassContourPathBuilder.buildCoalescingScenePath(
                 nodes = activeNodes,
                 smoothRadiusPx = smoothRadiusPx,
-                outPath = innerPlateauAndroidPath,
-                insetPx = meniscusWidthPx
+                outPath = innerGlintAndroidPath,
+                insetPx = 1.8f * density
             )
 
             val composeOuterPath: ComposePath = outerAndroidPath.asComposePath()
-            val composePlateauPath: ComposePath = innerPlateauAndroidPath.asComposePath()
+            val composeInnerGlintPath: ComposePath = innerGlintAndroidPath.asComposePath()
 
-            // Configure soft ambient shadow + colored sea-glass caustic under-glow
+            // Subtle ambient elevation shadow
             val shadowColorArgb = SeaGlassColorMath.lerpOklab(
                 material.tintColorArgb,
-                0xFF071624.toInt(),
-                0.70f
+                0xFF061524.toInt(),
+                0.72f
             )
-            ambientShadowPaint.color = (0x2E shl 24) or (shadowColorArgb and 0x00FFFFFF)
-            ambientShadowPaint.maskFilter = BlurMaskFilter(11f * density, BlurMaskFilter.Blur.NORMAL)
-
-            val causticGlowArgb = SeaGlassColorMath.lerpOklab(
-                material.tintColorArgb,
-                0xFFFFFFFF.toInt(),
-                0.18f
-            )
-            causticUnderGlowPaint.color = (0x34 shl 24) or (causticGlowArgb and 0x00FFFFFF)
-            causticUnderGlowPaint.maskFilter = BlurMaskFilter(14f * density, BlurMaskFilter.Blur.NORMAL)
-
-            // Configure 3D inner meniscus refraction groove (darkened tinted ring between rim & plateau)
-            val grooveArgb = SeaGlassColorMath.lerpOklab(
-                material.tintColorArgb,
-                0xFF0A2032.toInt(),
-                0.52f
-            )
-            val grooveAlpha = ((0.18f + (1f - material.coarseness) * 0.16f) * 255f).toInt().coerceIn(20, 95)
-            meniscusGroovePaint.color = (grooveAlpha shl 24) or (grooveArgb and 0x00FFFFFF)
-            meniscusGroovePaint.strokeWidth = (meniscusWidthPx * 0.48f).coerceAtLeast(2f * density)
-            meniscusGroovePaint.maskFilter = BlurMaskFilter(
-                (meniscusWidthPx * 0.42f).coerceAtLeast(2f * density),
-                BlurMaskFilter.Blur.NORMAL
-            )
+            val shadowAlpha = ((0.08f + frostOpacity * 0.12f) * 255f).toInt().coerceIn(10, 46)
+            ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
+            ambientShadowPaint.maskFilter = BlurMaskFilter(9f * density, BlurMaskFilter.Blur.NORMAL)
 
             onDrawWithContent {
                 val tick = stageState?.recordTick ?: 0
@@ -255,7 +264,12 @@ fun Modifier.seaGlass(
                     Offset.Zero
                 }
 
-                // Pack the backend-agnostic 256-byte std140 UBO block for Vulkan/GLES3/AGSL parity
+                if (stageState != null) {
+                    stageState.requestedFrostPx = effectiveFrostPx
+                    stageState.ensureStageBlurUpdated(effectiveFrostPx)
+                }
+
+                // Pack the backend-agnostic 256-byte std140 UBO block
                 uniformBlock.pack(
                     widthPx = widthPx,
                     heightPx = heightPx,
@@ -269,97 +283,61 @@ fun Modifier.seaGlass(
 
                 val nCanvas = drawContext.canvas.nativeCanvas
 
-                // Pass 0: Ambient drop shadow + colored sea-glass caustic under-glow
+                // Pass 0: Subtle ambient elevation shadow
                 nCanvas.save()
-                nCanvas.translate(0f, 5.5f * density)
+                nCanvas.translate(0f, 4f * density)
                 nCanvas.drawPath(outerAndroidPath, ambientShadowPaint)
-                nCanvas.translate(2.5f * density, 2.5f * density)
-                nCanvas.drawPath(innerPlateauAndroidPath, causticUnderGlowPaint)
                 nCanvas.restore()
 
-                val layerW = widthPx.toInt().coerceAtLeast(1)
-                val layerH = heightPx.toInt().coerceAtLeast(1)
-
-                // Pass 1: Dual-Zone GPU RenderNode Backdrop (Liquid Glass Meniscus Lens + Frosted Sea-Glass Core)
+                // Pass 1: 100% Edge-to-Edge Continuous Frosted & Refracted Backdrop
                 if (hasBackdrop && activeTier != SeaGlassDeviceTier.LIGHTWEIGHT_TINT) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        val rimBlurEffect = AndroidRenderEffect.createBlurEffect(
-                            meniscusBlurPx,
-                            meniscusBlurPx,
-                            Shader.TileMode.CLAMP
-                        )
-                        meniscusLayer.renderEffect = rimBlurEffect.asComposeRenderEffect()
+                    val lensScale = 1.0f +
+                        (material.ior - 1.0f) * 0.08f * (1.0f - 0.35f * material.coarseness)
+                    val refractShiftPx = (material.ior - 1.0f) *
+                        (8f * density) *
+                        (1.0f - 0.35f * material.coarseness)
+                    val edgeRefractShiftPx = -refractShiftPx * (0.75f + material.chromaticDispersion * 0.55f)
 
-                        val coreBlurEffect = AndroidRenderEffect.createBlurEffect(
-                            frostPx,
-                            frostPx,
-                            Shader.TileMode.CLAMP
-                        )
-                        frostedLayer.renderEffect = coreBlurEffect.asComposeRenderEffect()
-                    } else {
-                        meniscusLayer.renderEffect = null
-                        frostedLayer.renderEffect = null
-                    }
-
-                    // 3D Meniscus Lens Magnification & Snell Refraction Shift around the perimeter
-                    val lensMagnification = 1.0f +
-                        (material.ior - 1.0f) * 0.28f * (1.0f - 0.40f * material.coarseness)
-                    val meniscusShiftPx = (material.ior - 1.0f) *
-                        thicknessPx *
-                        (1.0f - 0.35f * material.coarseness) *
-                        0.55f
-
-                    meniscusLayer.record(size = IntSize(layerW, layerH)) {
+                    clipPath(composeOuterPath) {
+                        // Draw the full-stage frosted backdrop translated into local coordinates
                         scale(
-                            scaleX = lensMagnification,
-                            scaleY = lensMagnification,
+                            scaleX = lensScale,
+                            scaleY = lensScale,
                             pivot = Offset(widthPx * 0.5f, heightPx * 0.5f)
                         ) {
                             translate(
-                                left = -relOffset.x + meniscusShiftPx,
-                                top = -relOffset.y + meniscusShiftPx * 0.9f
+                                left = -relOffset.x + refractShiftPx,
+                                top = -relOffset.y + refractShiftPx * 0.8f
                             ) {
-                                drawLayer(stageState.backdropLayer)
+                                drawLayer(stageState.frostedBackdropLayer)
                             }
                         }
-                    }
 
-                    // Interior Sea-Glass Subsurface Frosted Core
-                    val coreShiftPx = (material.ior - 1.0f) *
-                        thicknessPx *
-                        (1.0f - 0.65f * material.coarseness) *
-                        0.18f
-
-                    frostedLayer.record(size = IntSize(layerW, layerH)) {
+                        // Blend in the crisper, opposing-refracted Liquid Glass light layer
+                        // When transparency is high, more of this crisp refracting layer shines through!
+                        val crispRefractWeight = (0.20f + material.transparency * 0.38f + (material.ior - 1.0f) * 0.22f)
+                            .coerceIn(0.14f, 0.65f)
+                        stageState.refractedEdgeBackdropLayer.alpha = crispRefractWeight
                         translate(
-                            left = -relOffset.x - coreShiftPx,
-                            top = -relOffset.y - coreShiftPx
+                            left = -relOffset.x + edgeRefractShiftPx,
+                            top = -relOffset.y - edgeRefractShiftPx * 0.7f
                         ) {
-                            drawLayer(stageState.backdropLayer)
+                            drawLayer(stageState.refractedEdgeBackdropLayer)
                         }
-                    }
-
-                    // Draw lens-refracted meniscus across full contour, then deeply frosted core in interior plateau
-                    clipPath(composeOuterPath) {
-                        drawLayer(meniscusLayer)
-                        clipPath(composePlateauPath) {
-                            drawLayer(frostedLayer)
-                        }
+                        stageState.refractedEdgeBackdropLayer.alpha = 1f
                     }
                 }
 
-                // Pass 2: Volumetric Oklab Beer-Lambert Tint + Sanded Micro-Grit + 4-Layer 3D Meniscus Rim
-                drawLiquidSeaGlassOptics(
+                // Pass 2: Edge-to-Edge Transparent Sea-Glass Tint, Sand Coarseness, & Liquid Glass Refracting Rim
+                drawContinuousLiquidSeaGlass(
                     composeOuterPath = composeOuterPath,
-                    composePlateauPath = composePlateauPath,
+                    composeInnerGlintPath = composeInnerGlintPath,
                     outerAndroidPath = outerAndroidPath,
-                    innerPlateauAndroidPath = innerPlateauAndroidPath,
                     material = material,
                     activeNodes = activeNodes,
                     widthPx = widthPx,
                     heightPx = heightPx,
-                    meniscusWidthPx = meniscusWidthPx,
-                    meniscusGroovePaint = meniscusGroovePaint,
+                    frostOpacity = frostOpacity,
                     sandGrainPaint = sandGrainPaint,
                     shaderLocalMatrix = shaderLocalMatrix
                 )
@@ -370,17 +348,15 @@ fun Modifier.seaGlass(
         }
 }
 
-private fun DrawScope.drawLiquidSeaGlassOptics(
+private fun DrawScope.drawContinuousLiquidSeaGlass(
     composeOuterPath: ComposePath,
-    composePlateauPath: ComposePath,
+    composeInnerGlintPath: ComposePath,
     outerAndroidPath: Path,
-    innerPlateauAndroidPath: Path,
     material: SeaGlassMaterial,
     activeNodes: List<SeaGlassSdfEngine.SdfNode>,
     widthPx: Float,
     heightPx: Float,
-    meniscusWidthPx: Float,
-    meniscusGroovePaint: AndroidPaint,
+    frostOpacity: Float,
     sandGrainPaint: AndroidPaint,
     shaderLocalMatrix: AndroidMatrix
 ) {
@@ -391,27 +367,28 @@ private fun DrawScope.drawLiquidSeaGlassOptics(
         primaryTintArgb
     }
 
-    // 1. Volumetric Oklab Beer-Lambert Sea-Glass Body Transmittance
-    // Kept translucent (0.16..0.52) so the refracted & frosted backdrop shines vividly through the glass!
+    // 1. Edge-to-Edge Transparent Volumetric Oklab Beer-Lambert Body Tint
+    // Controlled by frostOpacity = (1 - material.transparency) so sliding "Frosted Glass Transparency"
+    // smoothly dials from crystal-clear see-through glass to rich frosted sea glass!
     val transmittedStartArgb = SeaGlassColorMath.computeBeerLambertTransmission(
-        backdropArgb = 0xFFF2F8FC.toInt(),
+        backdropArgb = 0xFFF4FAFF.toInt(),
         tintArgb = primaryTintArgb,
         tintDensity = material.tintDensity,
         coarseness = material.coarseness,
-        normalizedThickness = 0.80f
+        normalizedThickness = 0.85f
     )
     val transmittedEndArgb = SeaGlassColorMath.computeBeerLambertTransmission(
-        backdropArgb = 0xFFD6E8F5.toInt(),
+        backdropArgb = 0xFFDCECF8.toInt(),
         tintArgb = secondaryTintArgb,
         tintDensity = material.tintDensity,
         coarseness = material.coarseness,
-        normalizedThickness = 1.25f
+        normalizedThickness = 1.20f
     )
 
     val startBodyColor = Color(transmittedStartArgb)
     val endBodyColor = Color(transmittedEndArgb)
-    val bodyAlpha = (0.16f + material.tintDensity * 0.34f + material.coarseness * 0.08f)
-        .coerceIn(0.14f, 0.54f)
+    val bodyAlpha = (frostOpacity * (0.12f + material.tintDensity * 0.52f))
+        .coerceIn(0.02f, 0.65f)
 
     drawPath(
         path = composeOuterPath,
@@ -425,106 +402,110 @@ private fun DrawScope.drawLiquidSeaGlassOptics(
         )
     )
 
-    // 2. Tactile Sand-Tumbled Micro-Coarseness Texture (Toroidal 128x128 BitmapShader)
-    // Scale the sand-grain pattern with display density so micro-facets have authentic physical size
+    // 2. Continuous Edge-to-Edge Sand-Tumbled Micro-Facet Texture
     val grainScale = (density * 0.55f).coerceIn(0.8f, 2.2f)
     shaderLocalMatrix.reset()
     shaderLocalMatrix.setScale(grainScale, grainScale)
     sandGrainPaint.shader?.setLocalMatrix(shaderLocalMatrix)
-    val grainAlpha = (material.coarseness * 245f).toInt().coerceIn(18, 245)
-    sandGrainPaint.alpha = grainAlpha
+    val grainAlpha = (material.coarseness * (0.22f + 0.78f * frostOpacity) * 205f)
+        .toInt()
+        .coerceIn(0, 210)
 
-    val nCanvas = drawContext.canvas.nativeCanvas
-    nCanvas.save()
-    nCanvas.clipPath(outerAndroidPath)
-    // Draw sand-grain micro-facets across the entire sea-glass body
-    nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
+    if (grainAlpha > 4) {
+        sandGrainPaint.alpha = grainAlpha
+        val nCanvas = drawContext.canvas.nativeCanvas
+        nCanvas.save()
+        nCanvas.clipPath(outerAndroidPath)
+        nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
+        nCanvas.restore()
+    }
 
-    // Draw 3D inner meniscus refraction groove along the plateau boundary
-    nCanvas.drawPath(innerPlateauAndroidPath, meniscusGroovePaint)
-    nCanvas.restore()
-
-    // 3. Subsurface Frosted Velvety Sheen in the Upper-Left Dome
-    val chalkWhite = Color(0xFFFAFDFF)
-    val domeFrostAlpha = (0.08f + material.coarseness * 0.22f).coerceIn(0.06f, 0.30f)
-    drawPath(
-        path = composePlateauPath,
-        brush = Brush.radialGradient(
-            colors = listOf(
-                chalkWhite.copy(alpha = domeFrostAlpha),
-                startBodyColor.copy(alpha = domeFrostAlpha * 0.4f),
-                Color.Transparent
-            ),
-            center = Offset(widthPx * 0.28f, heightPx * 0.22f),
-            radius = max(widthPx, heightPx) * 0.78f
-        )
-    )
-
-    // 4. 4-Component 3D Liquid Glass + Sea Glass Meniscus Rim Lighting:
-    val windwardChalkColor = Color(
+    // 3. Apple Liquid Glass Directional Refracting Light Rim
+    // Uses BlendMode.Plus for the inner refractive sheen so it ADDS light photons to the background
+    // colors passing through the edge rather than painting an opaque border!
+    val windwardSpecColor = Color(
         SeaGlassColorMath.lerpOklab(
             primaryTintArgb,
             0xFFFFFFFF.toInt(),
-            (0.78f + material.coarseness * 0.16f).coerceIn(0f, 0.96f)
+            0.86f
+        )
+    )
+    val prismaticCyan = Color(
+        SeaGlassColorMath.lerpOklab(
+            primaryTintArgb,
+            0xFF60F4FF.toInt(),
+            0.74f
+        )
+    )
+    val prismaticAmberCoral = Color(
+        SeaGlassColorMath.lerpOklab(
+            secondaryTintArgb,
+            0xFFFFAA84.toInt(),
+            0.70f
         )
     )
     val leewardCausticColor = Color(
         SeaGlassColorMath.lerpOklab(
             secondaryTintArgb,
             0xFFFFFFFF.toInt(),
-            0.30f
-        )
-    )
-    val prismaticCyanRim = Color(
-        SeaGlassColorMath.lerpOklab(
-            primaryTintArgb,
-            0xFF78F0FF.toInt(),
-            (material.chromaticDispersion * 0.65f).coerceIn(0f, 0.65f)
-        )
-    )
-    val prismaticCoralRim = Color(
-        SeaGlassColorMath.lerpOklab(
-            secondaryTintArgb,
-            0xFFFF9EBA.toInt(),
-            (material.chromaticDispersion * 0.65f).coerceIn(0f, 0.65f)
+            0.56f
         )
     )
 
-    val rimStrength = (0.48f + material.rimChalkiness * 0.48f).coerceIn(0.35f, 0.96f)
+    val rimLight = (0.38f + material.rimChalkiness * 0.58f).coerceIn(0.20f, 0.96f)
 
-    // 4a. Wide Soft Meniscus Bevel Sheen + Leeward Internal Refracted Caustic Arc
-    val bevelSheenWidth = (meniscusWidthPx * 0.55f).coerceIn(3f * density, 10f * density)
+    // 3a. Wide Additive Refracted Light Sheen inside the curved lip (BlendMode.Plus)
     clipPath(composeOuterPath) {
         drawPath(
             path = composeOuterPath,
             brush = Brush.linearGradient(
                 colorStops = arrayOf(
-                    0.00f to windwardChalkColor.copy(alpha = rimStrength * 0.52f),
-                    0.35f to prismaticCyanRim.copy(alpha = rimStrength * 0.18f),
-                    0.68f to prismaticCoralRim.copy(alpha = rimStrength * 0.22f),
-                    1.00f to leewardCausticColor.copy(alpha = rimStrength * 0.58f)
+                    0.00f to windwardSpecColor.copy(alpha = rimLight * 0.36f),
+                    0.28f to prismaticCyan.copy(alpha = rimLight * 0.16f),
+                    0.50f to Color.Transparent,
+                    0.72f to prismaticAmberCoral.copy(alpha = rimLight * 0.16f),
+                    1.00f to leewardCausticColor.copy(alpha = rimLight * 0.42f)
                 ),
                 start = Offset.Zero,
                 end = Offset(widthPx, heightPx)
             ),
-            style = Stroke(width = bevelSheenWidth)
+            style = Stroke(width = 4.2f * density),
+            blendMode = BlendMode.Plus
         )
     }
 
-    // 4b. Crisp Outer Specular-Chalk Fresnel Meniscus Edge
-    val outerRimWidth = (1.6f + material.coarseness * 0.8f) * density
+    // 3b. Prismatic Chromatic-Refraction Inner Glint (BlendMode.Plus)
     drawPath(
-        path = composeOuterPath,
+        path = composeInnerGlintPath,
         brush = Brush.linearGradient(
             colorStops = arrayOf(
-                0.00f to Color.White.copy(alpha = (rimStrength * 0.96f).coerceAtMost(0.98f)),
-                0.30f to windwardChalkColor.copy(alpha = rimStrength * 0.72f),
-                0.65f to leewardCausticColor.copy(alpha = rimStrength * 0.45f),
-                1.00f to windwardChalkColor.copy(alpha = rimStrength * 0.84f)
+                0.00f to prismaticCyan.copy(alpha = rimLight * 0.48f),
+                0.26f to prismaticCyan.copy(alpha = rimLight * 0.08f),
+                0.50f to Color.Transparent,
+                0.74f to prismaticAmberCoral.copy(alpha = rimLight * 0.08f),
+                1.00f to prismaticAmberCoral.copy(alpha = rimLight * 0.52f)
             ),
             start = Offset.Zero,
             end = Offset(widthPx, heightPx)
         ),
-        style = Stroke(width = outerRimWidth)
+        style = Stroke(width = 1.5f * density),
+        blendMode = BlendMode.Plus
+    )
+
+    // 3c. Crisp 1.35dp Directional Specular-Refraction Lip
+    drawPath(
+        path = composeOuterPath,
+        brush = Brush.linearGradient(
+            colorStops = arrayOf(
+                0.00f to Color.White.copy(alpha = (rimLight * 0.92f).coerceAtMost(0.96f)),
+                0.24f to windwardSpecColor.copy(alpha = rimLight * 0.58f),
+                0.50f to windwardSpecColor.copy(alpha = rimLight * 0.14f),
+                0.76f to leewardCausticColor.copy(alpha = rimLight * 0.54f),
+                1.00f to windwardSpecColor.copy(alpha = rimLight * 0.84f)
+            ),
+            start = Offset.Zero,
+            end = Offset(widthPx, heightPx)
+        ),
+        style = Stroke(width = 1.35f * density)
     )
 }

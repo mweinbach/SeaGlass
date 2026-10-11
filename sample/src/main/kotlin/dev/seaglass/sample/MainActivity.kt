@@ -115,9 +115,12 @@ fun SeaGlassShowcaseApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
     var actionOrbDetached by remember { mutableStateOf(false) }
 
-    // Live adjustable optical parameters initialized for rich sea-glass grit + liquid meniscus refraction
+    // Live adjustable optical parameters initialized for transparent frosted sea glass + liquid meniscus refraction
+    var transparency by remember(activePalette) {
+        mutableFloatStateOf(0.74f)
+    }
     var coarseness by remember(activePalette) {
-        mutableFloatStateOf((activePalette.primaryGlass.coarseness + 0.10f).coerceIn(0f, 1f))
+        mutableFloatStateOf(activePalette.primaryGlass.coarseness)
     }
     var frostRadiusDp by remember(activePalette) {
         mutableFloatStateOf(activePalette.primaryGlass.frostRadiusDp)
@@ -129,14 +132,15 @@ fun SeaGlassShowcaseApp() {
         mutableFloatStateOf(18f)
     }
     var ior by remember(activePalette) {
-        mutableFloatStateOf(1.56f)
+        mutableFloatStateOf(1.58f)
     }
     var rimChalkiness by remember(activePalette) {
-        mutableFloatStateOf(0.84f)
+        mutableFloatStateOf(0.78f)
     }
 
     val customPrimaryMaterial = remember(
         activePalette,
+        transparency,
         coarseness,
         frostRadiusDp,
         tintDensity,
@@ -145,6 +149,7 @@ fun SeaGlassShowcaseApp() {
         rimChalkiness
     ) {
         activePalette.primaryGlass.copy(
+            transparency = transparency,
             coarseness = coarseness,
             frostRadiusDp = frostRadiusDp,
             tintDensity = tintDensity,
@@ -156,6 +161,7 @@ fun SeaGlassShowcaseApp() {
 
     val customSurfaceMaterial = remember(
         activePalette,
+        transparency,
         coarseness,
         frostRadiusDp,
         tintDensity,
@@ -164,12 +170,13 @@ fun SeaGlassShowcaseApp() {
         rimChalkiness
     ) {
         activePalette.surfaceGlass.copy(
-            coarseness = (coarseness + 0.08f).coerceIn(0f, 1f),
-            frostRadiusDp = (frostRadiusDp + 4f).coerceAtMost(56f),
-            tintDensity = (tintDensity * 0.68f).coerceIn(0.14f, 0.85f),
+            transparency = (transparency + 0.06f).coerceIn(0f, 0.96f),
+            coarseness = (coarseness + 0.06f).coerceIn(0f, 1f),
+            frostRadiusDp = (frostRadiusDp + 3f).coerceAtMost(56f),
+            tintDensity = (tintDensity * 0.65f).coerceIn(0.12f, 0.85f),
             thicknessDp = thicknessDp,
             ior = ior,
-            rimChalkiness = (rimChalkiness + 0.08f).coerceIn(0f, 1f)
+            rimChalkiness = (rimChalkiness + 0.06f).coerceIn(0f, 1f)
         )
     }
 
@@ -225,12 +232,15 @@ fun SeaGlassShowcaseApp() {
                         stageState = stageState,
                         primaryMaterial = customPrimaryMaterial,
                         tertiaryMaterial = activePalette.tertiaryGlass.copy(
+                            transparency = transparency,
                             coarseness = coarseness,
                             frostRadiusDp = frostRadiusDp,
                             ior = ior,
                             thicknessDp = thicknessDp
                         ),
                         surfaceMaterial = customSurfaceMaterial,
+                        transparency = transparency,
+                        onTransparencyChange = { transparency = it },
                         coarseness = coarseness,
                         onCoarsenessChange = { coarseness = it },
                         frostRadiusDp = frostRadiusDp,
@@ -243,7 +253,8 @@ fun SeaGlassShowcaseApp() {
                         onIorChange = { ior = it },
                         rimChalkiness = rimChalkiness,
                         onRimChalkinessChange = { rimChalkiness = it },
-                        onApplyPreset = { c, f, d, t, i, r ->
+                        onApplyPreset = { tr, c, f, d, t, i, r ->
+                            transparency = tr
                             coarseness = c
                             frostRadiusDp = f
                             tintDensity = d
@@ -257,6 +268,7 @@ fun SeaGlassShowcaseApp() {
                         stageState = stageState,
                         primaryMaterial = customPrimaryMaterial,
                         tertiaryMaterial = activePalette.tertiaryGlass.copy(
+                            transparency = transparency,
                             coarseness = coarseness,
                             frostRadiusDp = frostRadiusDp,
                             ior = ior,
@@ -427,6 +439,8 @@ private fun OpticsLabSection(
     primaryMaterial: SeaGlassMaterial,
     tertiaryMaterial: SeaGlassMaterial,
     surfaceMaterial: SeaGlassMaterial,
+    transparency: Float,
+    onTransparencyChange: (Float) -> Unit,
     coarseness: Float,
     onCoarsenessChange: (Float) -> Unit,
     frostRadiusDp: Float,
@@ -439,7 +453,7 @@ private fun OpticsLabSection(
     onIorChange: (Float) -> Unit,
     rimChalkiness: Float,
     onRimChalkinessChange: (Float) -> Unit,
-    onApplyPreset: (Float, Float, Float, Float, Float, Float) -> Unit
+    onApplyPreset: (Float, Float, Float, Float, Float, Float, Float) -> Unit
 ) {
     val motion = LocalSeaGlassMotionScheme.current
     val density = LocalDensity.current
@@ -589,8 +603,8 @@ private fun OpticsLabSection(
     ) {
         SeaGlassPill(
             label = "Sanded Beach",
-            selected = coarseness in 0.45f..0.68f,
-            onClick = { onApplyPreset(0.56f, 24f, 0.50f, 18f, 1.54f, 0.86f) },
+            selected = transparency in 0.62f..0.78f,
+            onClick = { onApplyPreset(0.72f, 0.44f, 20f, 0.48f, 18f, 1.58f, 0.80f) },
             stageState = stageState,
             selectedMaterial = primaryMaterial,
             unselectedMaterial = surfaceMaterial,
@@ -598,8 +612,8 @@ private fun OpticsLabSection(
         )
         SeaGlassPill(
             label = "Liquid Lens",
-            selected = coarseness < 0.30f,
-            onClick = { onApplyPreset(0.18f, 14f, 0.42f, 24f, 1.68f, 0.78f) },
+            selected = transparency > 0.78f,
+            onClick = { onApplyPreset(0.88f, 0.16f, 12f, 0.36f, 24f, 1.72f, 0.86f) },
             stageState = stageState,
             selectedMaterial = primaryMaterial,
             unselectedMaterial = surfaceMaterial,
@@ -607,8 +621,8 @@ private fun OpticsLabSection(
         )
         SeaGlassPill(
             label = "Heavy Frost",
-            selected = coarseness > 0.70f,
-            onClick = { onApplyPreset(0.84f, 34f, 0.58f, 16f, 1.46f, 0.94f) },
+            selected = transparency < 0.62f,
+            onClick = { onApplyPreset(0.42f, 0.76f, 32f, 0.56f, 16f, 1.48f, 0.88f) },
             stageState = stageState,
             selectedMaterial = primaryMaterial,
             unselectedMaterial = surfaceMaterial,
@@ -629,6 +643,14 @@ private fun OpticsLabSection(
                 letterSpacing = 1.2.sp
             ),
             color = LocalContentColor.current.copy(alpha = 0.75f)
+        )
+
+        OpticalSliderRow(
+            title = "Frosted Glass Transparency",
+            valueText = String.format(Locale.US, "%.0f%%", transparency * 100f),
+            value = transparency,
+            valueRange = 0.08f..0.95f,
+            onValueChange = onTransparencyChange
         )
 
         OpticalSliderRow(
@@ -1188,48 +1210,49 @@ private fun ExpressiveTidalBackdrop(
         val dx = cos(phase) * w * 0.12f
         val dy = sin(phase) * h * 0.06f
 
-        // Vivid Material 3 Expressive Diagonal Color-Field Ribbons
+        // Vivid Material 3 Expressive Diagonal Color-Field Ribbons (spanning edge-to-edge -25% to +125%
+        // so rich colors pass continuously through the left and right edges of every glass surface!)
         rotate(degrees = -16f, pivot = Offset(w * 0.5f, h * 0.24f)) {
             drawRoundRect(
                 brush = Brush.horizontalGradient(
-                    colors = listOf(vividCoral, sunlitAmber)
+                    colors = listOf(vividCoral, sunlitAmber, vividCoral)
                 ),
-                topLeft = Offset(w * 0.04f + dx * 0.4f, h * 0.16f),
-                size = Size(w * 0.92f, 82.dp.toPx()),
-                cornerRadius = CornerRadius(41.dp.toPx(), 41.dp.toPx())
+                topLeft = Offset(-w * 0.25f + dx * 0.4f, h * 0.14f),
+                size = Size(w * 1.50f, 118.dp.toPx()),
+                cornerRadius = CornerRadius(59.dp.toPx(), 59.dp.toPx())
             )
         }
 
         rotate(degrees = 14f, pivot = Offset(w * 0.5f, h * 0.42f)) {
             drawRoundRect(
                 brush = Brush.horizontalGradient(
-                    colors = listOf(deepCobalt, coastalJade)
+                    colors = listOf(deepCobalt, coastalJade, deepCobalt)
                 ),
-                topLeft = Offset(w * 0.02f - dx * 0.35f, h * 0.36f),
-                size = Size(w * 0.96f, 88.dp.toPx()),
-                cornerRadius = CornerRadius(44.dp.toPx(), 44.dp.toPx())
+                topLeft = Offset(-w * 0.25f - dx * 0.35f, h * 0.34f),
+                size = Size(w * 1.50f, 124.dp.toPx()),
+                cornerRadius = CornerRadius(62.dp.toPx(), 62.dp.toPx())
             )
         }
 
         rotate(degrees = -11f, pivot = Offset(w * 0.5f, h * 0.66f)) {
             drawRoundRect(
                 brush = Brush.horizontalGradient(
-                    colors = listOf(seaAmethyst, vividCoral)
+                    colors = listOf(seaAmethyst, vividCoral, sunlitAmber)
                 ),
-                topLeft = Offset(w * 0.06f + dx * 0.3f, h * 0.60f),
-                size = Size(w * 0.88f, 78.dp.toPx()),
-                cornerRadius = CornerRadius(39.dp.toPx(), 39.dp.toPx())
+                topLeft = Offset(-w * 0.25f + dx * 0.3f, h * 0.58f),
+                size = Size(w * 1.50f, 120.dp.toPx()),
+                cornerRadius = CornerRadius(60.dp.toPx(), 60.dp.toPx())
             )
         }
 
         rotate(degrees = 9f, pivot = Offset(w * 0.5f, h * 0.88f)) {
             drawRoundRect(
                 brush = Brush.horizontalGradient(
-                    colors = listOf(sunlitAmber, orbPrimary)
+                    colors = listOf(sunlitAmber, orbPrimary, deepCobalt)
                 ),
-                topLeft = Offset(w * 0.04f - dx * 0.3f, h * 0.84f),
-                size = Size(w * 0.92f, 76.dp.toPx()),
-                cornerRadius = CornerRadius(38.dp.toPx(), 38.dp.toPx())
+                topLeft = Offset(-w * 0.25f - dx * 0.3f, h * 0.82f),
+                size = Size(w * 1.50f, 116.dp.toPx()),
+                cornerRadius = CornerRadius(58.dp.toPx(), 58.dp.toPx())
             )
         }
 
