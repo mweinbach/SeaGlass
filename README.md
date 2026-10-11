@@ -30,23 +30,28 @@ Standard translucent UI treatments on Android either rely on a generic Gaussian 
 
 ```text
 SeaGlass/
-├── seaglass-core/       # Kotlin + C++20 (NDK/GLES3) optical physics, Oklab math,
-│                        # 2D SDF coalescing engine, AGSL & GLSL shaders, device tier detector
-├── seaglass-compose/    # Jetpack Compose & Material 3 Expressive UI foundation:
-│                        # SeaGlassStage, Modifier.seaGlass, SeaGlassFluidGroup,
-│                        # SeaGlassSurface, SeaGlassCard, SeaGlassButton, SeaGlassIconButton,
-│                        # SeaGlassExtendedFab, SeaGlassPill, SeaGlassFilterChip, SeaGlassBadge,
-│                        # SeaGlassTopAppBar, SeaGlassFluidBar, SeaGlassMiniPlayerBar,
-│                        # SeaGlassFloatingToolbar, SeaGlassSearchBar, SeaGlassTextField,
-│                        # SeaGlassSwitch, SeaGlassCheckbox, SeaGlassRadioButton,
-│                        # SeaGlassSegmentedButtonRow, SeaGlassLiquidSlider,
-│                        # SeaGlassLinearProgressIndicator, SeaGlassCircularProgressIndicator,
-│                        # SeaGlassListItem, SeaGlassSnackbar, SeaGlassDialogCard,
-│                        # SeaGlassBottomSheetSurface, SeaGlassTwoElementMorph, SeaGlassBuddingCluster
-├── seaglass-view/       # Classic Android View & Drawable interop:
-│                        # SeaGlassFrameLayout, SeaGlassCardView, SeaGlassButtonView, SeaGlassDrawable
-├── sample/              # Interactive SeaGlass Optical Lab & M3 Expressive Fluid Showcase app
-└── docs/agents/         # Deep technical & mathematical blueprints
+├── android/                 # Android Gradle workspace (Kotlin, Jetpack Compose, Android Views, NDK/AGSL)
+│   ├── seaglass-core/       # Kotlin + C++20 (NDK/GLES3/Vulkan) optical physics, Oklab math,
+│   │                        # 2D SDF coalescing engine, AGSL & GLSL shaders, device tier & corner detector
+│   ├── seaglass-compose/    # Jetpack Compose & Material 3 Expressive UI foundation:
+│   │                        # SeaGlassStage, Modifier.seaGlass, SeaGlassFluidGroup,
+│   │                        # SeaGlassSurface, SeaGlassCard, SeaGlassButton, SeaGlassIconButton,
+│   │                        # SeaGlassExtendedFab, SeaGlassPill, SeaGlassFilterChip, SeaGlassBadge,
+│   │                        # SeaGlassTopAppBar, SeaGlassFluidBar, SeaGlassMiniPlayerBar,
+│   │                        # SeaGlassFloatingToolbar, SeaGlassSearchBar, SeaGlassTextField,
+│   │                        # SeaGlassSwitch, SeaGlassCheckbox, SeaGlassRadioButton,
+│   │                        # SeaGlassSegmentedButtonRow, SeaGlassLiquidSlider,
+│   │                        # SeaGlassLinearProgressIndicator, SeaGlassCircularProgressIndicator,
+│   │                        # SeaGlassListItem, SeaGlassSnackbar, SeaGlassDialogCard,
+│   │                        # SeaGlassBottomSheetSurface, SeaGlassTwoElementMorph, SeaGlassBuddingCluster,
+│   │                        # SeaGlassSkipBridge (Swift / Skip interop)
+│   ├── seaglass-view/       # Classic Android View & Drawable interop:
+│   │                        # SeaGlassFrameLayout, SeaGlassCardView, SeaGlassButtonView, SeaGlassDrawable
+│   └── sample/              # Interactive SeaGlass Optical Lab & M3 Expressive Fluid Showcase app
+├── windows/                 # Windows GPU graphics & UI foundation
+└── docs/                    # Deep technical & mathematical blueprints + Swift/Skip interop
+    ├── agents/
+    └── skip/
 ```
 
 ---

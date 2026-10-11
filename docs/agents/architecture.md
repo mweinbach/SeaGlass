@@ -54,7 +54,7 @@ Every parameter required to evaluate a coalescing cluster of up to 4 SeaGlass sh
 | `8..11` | `128..191` | `uNodeCorners[0..3]` | `rTopRight`, `rBottomRight`, `rBottomLeft`, `rTopLeft` |
 | `12..15` | `192..255` | `uNodeTints[0..3]` | `linearR`, `linearG`, `linearB`, `nodeThicknessPx` |
 
-Because every member is a `vec4`, there is **zero alignment padding ambiguity** between Vulkan `std140`/`std430`, OpenGL ES 3.0 `std140`, and C++20 `struct alignas(16) SeaGlassUniformBlockStd140` (`seaglass-core/src/main/cpp/seaglass_backend_abi.h`).
+Because every member is a `vec4`, there is **zero alignment padding ambiguity** between Vulkan `std140`/`std430`, OpenGL ES 3.0 `std140`, and C++20 `struct alignas(16) SeaGlassUniformBlockStd140` (`android/seaglass-core/src/main/cpp/seaglass_backend_abi.h`).
 
 ### 2.2 Multi-Dialect Shader Compiler (`SeaGlassShaderCompiler`)
 `SeaGlassShaderCompiler.compileForDialect(dialect)` generates complete shader sources from a shared optical & SDF core:

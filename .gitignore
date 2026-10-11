@@ -13,6 +13,29 @@ captures/
 .externalNativeBuild/
 .cxx/
 
+# Windows / Visual Studio / .NET / C++ / Rust build outputs
+.vs/
+**/bin/
+**/obj/
+**/out/
+**/x64/
+**/ARM64/
+**/Debug/
+**/Release/
+**/target/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.aps
+*.ncb
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
 # macOS
 .DS_Store
 

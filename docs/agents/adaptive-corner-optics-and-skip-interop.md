@@ -23,7 +23,7 @@ When a translucent glass element with a fixed corner radius $r_{\text{fixed}}$ i
 
 ## 2. 4-Tier Hardware Display Corner Detection Cascade
 
-Implemented in [`SeaGlassCornerAdaptationSolver.detectDeviceCorners`](../../seaglass-core/src/main/kotlin/dev/seaglass/core/SeaGlassDeviceCornerOptics.kt):
+Implemented in [`SeaGlassCornerAdaptationSolver.detectDeviceCorners`](../../android/seaglass-core/src/main/kotlin/dev/seaglass/core/SeaGlassDeviceCornerOptics.kt):
 
 | Tier | Source | API / Mechanism | Notes |
 | :--- | :--- | :--- | :--- |

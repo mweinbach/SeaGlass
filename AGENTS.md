@@ -1,6 +1,6 @@
-# AGENTS.md — SeaGlass Android Graphics & UI Foundation
+# AGENTS.md — SeaGlass Graphics & UI Foundation (Android & Windows)
 
-SeaGlass is a high-performance GPU graphics and UI foundation for Kotlin Android applications that fuses three ideas into one cohesive system:
+SeaGlass is a high-performance GPU graphics and UI foundation for **Android** (`android/`) and **Windows** (`windows/`) applications that fuses three ideas into one cohesive system:
 
 1. **Sanded Sea Glass Optics**: Ocean-tumbled, sand-frosted glass with isotropic micro-facet surface coarseness (`coarseness`), volumetric Beer-Lambert body tinting in perceptual Oklab color space (`tintColor`, `tintDensity`, `thicknessDp`), softened edge refraction (`ior`), and chalky Oren-Nayar / rough-Fresnel rim illumination (`rimChalkiness`)—never glossy plastic or harsh mirror-specular glare.
 2. **Material 3 Expressive Geometry & Pastels**: Saturated-yet-soft sea-glass pastel palettes (Seafoam Mint, Cobalt Tide, Beach Amber, Sea Lavender, Rose Quartz Shell, Kelp Forest, Milk Glass Frost, Obsidian Tide), squircle/superellipse contours, asymmetric expressive corner morphing, and dual-spring physics (`spatial` springs that allow organic bounce vs. `effects` springs with zero overshoot for color/opacity/frost).
@@ -12,10 +12,12 @@ SeaGlass is a high-performance GPU graphics and UI foundation for Kotlin Android
 
 | Path | Module / Purpose |
 | :--- | :--- |
-| `:seaglass-core` (`seaglass-core/`) | Backend-agnostic Kotlin + C++20 (`seaglass_backend_abi.h`) optical math, Oklab/Beer-Lambert color physics, 2D SDF coalescing engine (`SeaGlassSdfEngine`), 256-byte `std140` UBO ABI (`SeaGlassUniformBlock`), multi-dialect shader compiler (`SeaGlassShaderCompiler`: Vulkan GLSL 450 / SPIR-V, OpenGL ES 3.00, and Android AGSL), and pluggable GPU backends (`VulkanSeaGlassBackend`, `Gles3SeaGlassBackend`, `SeaGlassDeviceTier`). |
-| `:seaglass-compose` (`seaglass-compose/`) | Jetpack Compose & Material 3 Expressive UI foundation: `SeaGlassStage` zero-copy backdrop capture, `Modifier.seaGlass`, `SeaGlassFluidGroup` SDF coalescing coordinator, `SeaGlassTheme` (`ColorScheme.toSeaGlassMaterials`), `SeaGlassSurface`, `SeaGlassCard`, `SeaGlassButton`, `SeaGlassIconButton`, `SeaGlassExtendedFab`, `SeaGlassPill`, `SeaGlassFilterChip`, `SeaGlassBadge`, `SeaGlassTopAppBar`, `SeaGlassFluidBar`, `SeaGlassMiniPlayerBar`, `SeaGlassFloatingToolbar`, `SeaGlassSearchBar`, `SeaGlassTextField`, `SeaGlassSwitch`, `SeaGlassCheckbox`, `SeaGlassRadioButton`, `SeaGlassSegmentedButtonRow`, `SeaGlassLiquidSlider`, `SeaGlassLinearProgressIndicator`, `SeaGlassCircularProgressIndicator`, `SeaGlassListItem`, `SeaGlassSnackbar`, `SeaGlassDialogCard`, `SeaGlassBottomSheetSurface`, `SeaGlassIcon`, and the dynamic morphing suite (`SeaGlassTwoElementMorph`, `SeaGlassBuddingCluster`, `SeaGlassMorphingButton`, `SeaGlassChoreographedShapeOrb`). |
-| `:seaglass-view` (`seaglass-view/`) | Classic Android `View` / XML interop (`SeaGlassFrameLayout`, `SeaGlassCardView`, `SeaGlassButtonView`, `SeaGlassDrawable` with multi-node SDF coalescing and 20-shape morphing) backed by `:seaglass-core` so legacy or hybrid View hierarchies can embed SeaGlass without Compose. |
-| `:sample` (`sample/`) | Interactive **SeaGlass Optical Lab & Expressive Showcase** Android app demonstrating live parameter tuning, M3 Expressive palette morphing, draggable SDF liquid coalescing, and GPU backend telemetry. |
+| `android/` | Root of the Android Gradle project (`settings.gradle.kts`, `build.gradle.kts`, `gradlew`). |
+| `android/seaglass-core/` (`:seaglass-core`) | Backend-agnostic Kotlin + C++20 (`seaglass_backend_abi.h`) optical math, Oklab/Beer-Lambert color physics, 2D SDF coalescing engine (`SeaGlassSdfEngine`), 256-byte `std140` UBO ABI (`SeaGlassUniformBlock`), multi-dialect shader compiler (`SeaGlassShaderCompiler`: Vulkan GLSL 450 / SPIR-V, OpenGL ES 3.00, and Android AGSL), and pluggable GPU backends (`VulkanSeaGlassBackend`, `Gles3SeaGlassBackend`, `SeaGlassDeviceTier`). |
+| `android/seaglass-compose/` (`:seaglass-compose`) | Jetpack Compose & Material 3 Expressive UI foundation: `SeaGlassStage` zero-copy backdrop capture, `Modifier.seaGlass`, `SeaGlassFluidGroup` SDF coalescing coordinator, `SeaGlassTheme` (`ColorScheme.toSeaGlassMaterials`), `SeaGlassSurface`, `SeaGlassCard`, `SeaGlassButton`, `SeaGlassIconButton`, `SeaGlassExtendedFab`, `SeaGlassPill`, `SeaGlassFilterChip`, `SeaGlassBadge`, `SeaGlassTopAppBar`, `SeaGlassFluidBar`, `SeaGlassMiniPlayerBar`, `SeaGlassFloatingToolbar`, `SeaGlassSearchBar`, `SeaGlassTextField`, `SeaGlassSwitch`, `SeaGlassCheckbox`, `SeaGlassRadioButton`, `SeaGlassSegmentedButtonRow`, `SeaGlassLiquidSlider`, `SeaGlassLinearProgressIndicator`, `SeaGlassCircularProgressIndicator`, `SeaGlassListItem`, `SeaGlassSnackbar`, `SeaGlassDialogCard`, `SeaGlassBottomSheetSurface`, `SeaGlassIcon`, `SeaGlassSkipBridge`, and the dynamic morphing suite (`SeaGlassTwoElementMorph`, `SeaGlassBuddingCluster`, `SeaGlassMorphingButton`, `SeaGlassChoreographedShapeOrb`). |
+| `android/seaglass-view/` (`:seaglass-view`) | Classic Android `View` / XML interop (`SeaGlassFrameLayout`, `SeaGlassCardView`, `SeaGlassButtonView`, `SeaGlassDrawable` with multi-node SDF coalescing and 20-shape morphing) backed by `:seaglass-core` so legacy or hybrid View hierarchies can embed SeaGlass without Compose. |
+| `android/sample/` (`:sample`) | Interactive **SeaGlass Optical Lab & Expressive Showcase** Android app demonstrating live parameter tuning, M3 Expressive palette morphing, draggable SDF liquid coalescing, and GPU backend telemetry. |
+| `windows/` | Windows GPU graphics & UI foundation and sample showcase (companion to `android/`). |
 | `docs/agents/` | Deep architectural blueprints and mathematical specifications for agents working on shaders, UI components, or device tiers. |
 
 ---
@@ -52,19 +54,21 @@ Read the relevant blueprint before modifying shaders, optical physics, motion sp
 
 ---
 
-## Build, Test, and Verification Commands
+## Build, Test, and Verification Commands (Android)
+
+Run Gradle commands from `android/` (or pass `-p android`):
 
 - **Run all JVM unit tests (Oklab math, Beer-Lambert optics, SDF geometry & coalescing, uniform packing, shader source validation)**:
   ```bash
-  ./gradlew testDebugUnitTest
+  cd android && ./gradlew testDebugUnitTest
   ```
 - **Assemble all library AARs and the `:sample` debug APK**:
   ```bash
-  ./gradlew assembleDebug
+  cd android && ./gradlew assembleDebug
   ```
 - **Install and launch the `:sample` showcase on a connected device or emulator**:
   ```bash
-  adb install -r sample/build/outputs/apk/debug/sample-debug.apk
+  adb install -r android/sample/build/outputs/apk/debug/sample-debug.apk
   adb shell am start -n dev.seaglass.sample/.MainActivity
   ```
 - **Inspect layout & capture visual evidence on device**:
