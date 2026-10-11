@@ -75,6 +75,7 @@ import dev.seaglass.compose.LocalSeaGlassTiltState
 import dev.seaglass.compose.SeaGlassBuddingCluster
 import dev.seaglass.compose.SeaGlassButton
 import dev.seaglass.compose.SeaGlassCard
+import dev.seaglass.compose.SeaGlassChoreographedShapeOrb
 import dev.seaglass.compose.SeaGlassFluidBar
 import dev.seaglass.compose.SeaGlassMorphMode
 import dev.seaglass.compose.SeaGlassMorphingButton
@@ -954,7 +955,15 @@ private fun FluidCoalescingSection(
         )
     }
 
-    // 1. Dynamic 2-Element Morph Primitive (SeaGlassTwoElementMorph) + Budding Cluster + M3 Polygon Morphs
+    // 1. M3 Expressive Choreographed Shape Shifter Orb (Flower -> Small Circle -> Cookie9 -> Large Orb -> Clover4)
+    SeaGlassChoreographedShapeOrb(
+        stageState = stageState,
+        autoPlay = true,
+        primaryMaterial = primaryMaterial,
+        secondaryMaterial = tertiaryMaterial
+    )
+
+    // 2. Dynamic 2-Element Morph Primitive (SeaGlassTwoElementMorph) + Budding Cluster + M3 Polygon Morphs
     var twoElementExpanded by remember { mutableStateOf(false) }
     var buddingExpanded by remember { mutableStateOf(true) }
     var morphBtn0Active by remember { mutableStateOf(false) }

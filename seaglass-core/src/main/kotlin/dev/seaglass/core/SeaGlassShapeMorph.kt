@@ -57,6 +57,41 @@ enum class SeaGlassShapeKind(val displayName: String, val shortLabel: String) {
     Slanted("Expressive Slanted", "Slanted")
 }
 
+/**
+ * Defines a single stage in a Material 3 Expressive × Liquid Sea Glass shape choreography.
+ *
+ * @property shape Target [SeaGlassShapeKind] geometry at this stage.
+ * @property scale Relative size multiplier (e.g. `0.70f` for a compact small circle, `1.28f` for a large expanded circle/flower).
+ * @property aspectRatio Width-to-height ratio (`1.0f` equiaxed, `1.55f` wide capsule/squircle).
+ * @property rotationDegrees Cumulative angular spin in degrees at this stage.
+ * @property viaCircleBridge When true and morphing between two non-circular lobed shapes (e.g. `Flower -> Cookie9`),
+ *   morphs down into a taut surface-tension `Circle` in the first half and blooms back out into [shape]
+ *   with elastic spring overshoot in the second half.
+ * @property label Optional human-readable label for UI display.
+ */
+data class SeaGlassShapeStage(
+    val shape: SeaGlassShapeKind,
+    val scale: Float = 1.0f,
+    val aspectRatio: Float = 1.0f,
+    val rotationDegrees: Float = 0f,
+    val viaCircleBridge: Boolean = true,
+    val label: String = shape.shortLabel
+)
+
+/**
+ * Instantaneous spatial transform (scale, aspect, rotation, and optical energy) evaluated
+ * during a choreographed shape transition.
+ */
+data class ChoreographedShapeTransform(
+    val scaleX: Float,
+    val scaleY: Float,
+    val rotationDegrees: Float,
+    val morphEnergy: Float,
+    val activeStartShape: SeaGlassShapeKind,
+    val activeEndShape: SeaGlassShapeKind,
+    val activeSubProgress: Float
+)
+
 object SeaGlassShapeMorph {
 
     private data class PolygonCacheKey(
@@ -371,6 +406,175 @@ object SeaGlassShapeMorph {
             outPath = outPath
         )
     }
+
+    /**
+     * Evaluates a two-phase Material 3 Expressive **Morph-In (to Circle) -> Morph-Out (to Target)**
+     * choreography between [startStage] and [endStage] at spring [progress] (supporting elastic
+     * overshoot beyond `[0..1]`).
+     *
+     * When [SeaGlassShapeStage.viaCircleBridge] is enabled and both stages are lobed/polygonal
+     * (`startStage.shape != Circle && endStage.shape != Circle && startStage.shape != endStage.shape`):
+     * - **Phase 1 (`p in 0.0..0.42`)**: Pulls the starting petals (`Flower`, `Cookie9`, etc.)
+     *   inward into a taut, compact `Circle` droplet while dipping scale by `-14%`.
+     * - **Phase 2 (`p > 0.42`, including spring overshoot `p > 1.0`)**: Blooms outward from the
+     *   `Circle` into `endStage.shape` and `endStage.scale`, so all new petals/lobes emerge
+     *   symmetrically and overshoot with lively M3 Expressive bounce!
+     */
+    fun evaluateChoreographedTransform(
+        startStage: SeaGlassShapeStage,
+        endStage: SeaGlassShapeStage,
+        progress: Float
+    ): ChoreographedShapeTransform {
+        val clamped = progress.coerceIn(0f, 1f)
+        val overshoot = progress - clamped
+
+        val useCircleMidpoint = endStage.viaCircleBridge &&
+            startStage.shape != endStage.shape &&
+            startStage.shape != SeaGlassShapeKind.Circle &&
+            endStage.shape != SeaGlassShapeKind.Circle
+
+        val activeStart: SeaGlassShapeKind
+        val activeEnd: SeaGlassShapeKind
+        val subProgress: Float
+
+        if (useCircleMidpoint) {
+            val pivot = 0.42f
+            if (clamped < pivot && progress <= pivot) {
+                activeStart = startStage.shape
+                activeEnd = SeaGlassShapeKind.Circle
+                val rawU = (progress / pivot).coerceIn(-0.25f, 1.0f)
+                // Smooth ease-in toward the circle pinch point
+                subProgress = if (rawU >= 0f) rawU * rawU * (3f - 2f * rawU) else rawU
+            } else {
+                activeStart = SeaGlassShapeKind.Circle
+                activeEnd = endStage.shape
+                // Preserve full spring overshoot (e.g. progress = 1.14 -> subProgress = 1.24!)
+                subProgress = ((progress - pivot) / (1f - pivot)).coerceIn(0f, 1.28f)
+            }
+        } else {
+            activeStart = startStage.shape
+            activeEnd = endStage.shape
+            subProgress = progress.coerceIn(-0.25f, 1.28f)
+        }
+
+        // Base scale interpolation + mid-morph "gather & bloom" pulse + elastic spring overshoot
+        val baseScale = startStage.scale + (endStage.scale - startStage.scale) * progress
+        val gatherDip = if (useCircleMidpoint) {
+            -0.15f * sin(clamped * PI).toFloat()
+        } else {
+            -0.07f * sin(clamped * PI).toFloat()
+        }
+        val effectiveScale = (baseScale + gatherDip + overshoot * 0.18f).coerceIn(0.42f, 1.65f)
+
+        val currentAspect = (startStage.aspectRatio +
+            (endStage.aspectRatio - startStage.aspectRatio) * progress).coerceIn(0.55f, 2.2f)
+
+        val scaleX = effectiveScale * sqrt(currentAspect)
+        val scaleY = effectiveScale / sqrt(currentAspect)
+
+        val rotation = startStage.rotationDegrees +
+            (endStage.rotationDegrees - startStage.rotationDegrees) * progress
+
+        val energy = (sin(clamped * PI).toFloat() + abs(overshoot) * 2.2f).coerceIn(0f, 1f)
+
+        return ChoreographedShapeTransform(
+            scaleX = scaleX,
+            scaleY = scaleY,
+            rotationDegrees = rotation,
+            morphEnergy = energy,
+            activeStartShape = activeStart,
+            activeEndShape = activeEnd,
+            activeSubProgress = subProgress
+        )
+    }
+
+    /**
+     * Populates [outPath] with the choreographed contour between [startStage] and [endStage]
+     * at spring [progress].
+     */
+    fun buildChoreographedPolygonPath(
+        startStage: SeaGlassShapeStage,
+        endStage: SeaGlassShapeStage,
+        progress: Float,
+        widthPx: Float,
+        heightPx: Float,
+        outPath: Path
+    ) {
+        val transform = evaluateChoreographedTransform(startStage, endStage, progress)
+        buildMorphedPolygonPath(
+            startKind = transform.activeStartShape,
+            endKind = transform.activeEndShape,
+            progress = transform.activeSubProgress,
+            widthPx = widthPx,
+            heightPx = heightPx,
+            outPath = outPath
+        )
+    }
+
+    /**
+     * Default 8-stage Material 3 Expressive playful shape choreography tour:
+     * Morphs from `Flower` -> `Small Circle` -> `Cookie 9` -> `Large Circle` -> `Clover 4` ->
+     * `Wide Capsule` -> `Sunny 8` -> `Heart` -> `Squircle`!
+     */
+    val DefaultPlayfulChoreography: List<SeaGlassShapeStage> = listOf(
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Flower,
+            scale = 1.06f,
+            rotationDegrees = 0f,
+            viaCircleBridge = true,
+            label = "Flower Bloom"
+        ),
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Circle,
+            scale = 0.72f,
+            rotationDegrees = 45f,
+            viaCircleBridge = false,
+            label = "Small Droplet"
+        ),
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Cookie9,
+            scale = 1.14f,
+            rotationDegrees = 95f,
+            viaCircleBridge = true,
+            label = "Cookie 9"
+        ),
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Circle,
+            scale = 1.24f,
+            rotationDegrees = 140f,
+            viaCircleBridge = false,
+            label = "Large Orb"
+        ),
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Clover4,
+            scale = 1.08f,
+            rotationDegrees = 195f,
+            viaCircleBridge = true,
+            label = "4-Leaf Clover"
+        ),
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Capsule,
+            scale = 0.88f,
+            aspectRatio = 1.48f,
+            rotationDegrees = 180f,
+            viaCircleBridge = false,
+            label = "Liquid Pill"
+        ),
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Sunny,
+            scale = 1.15f,
+            rotationDegrees = 240f,
+            viaCircleBridge = true,
+            label = "Sunny Star"
+        ),
+        SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Heart,
+            scale = 1.10f,
+            rotationDegrees = 360f,
+            viaCircleBridge = true,
+            label = "Heart Gem"
+        )
+    )
 
     /**
      * Evaluates the normalized polar radius scale $r(\theta) \in [0.45, 1.05]$ of [kind]

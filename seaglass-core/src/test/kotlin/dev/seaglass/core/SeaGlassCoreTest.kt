@@ -275,5 +275,35 @@ class SeaGlassCoreTest {
             smoothRadiusPx = 42f
         )
         assertTrue("Coalescing Cookie9 + Flower bridge midpoint must be inside (d=${eval.signedDistancePx})", eval.isInside)
+
+        // Verify two-phase via-Circle choreographed shape morph (Flower -> Circle -> Cookie9)
+        val stageFlower = SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Flower,
+            scale = 1.0f,
+            rotationDegrees = 0f,
+            viaCircleBridge = true
+        )
+        val stageCookie = SeaGlassShapeStage(
+            shape = SeaGlassShapeKind.Cookie9,
+            scale = 1.2f,
+            rotationDegrees = 90f,
+            viaCircleBridge = true
+        )
+        val phase1 = SeaGlassShapeMorph.evaluateChoreographedTransform(
+            startStage = stageFlower,
+            endStage = stageCookie,
+            progress = 0.25f
+        )
+        assertEquals(SeaGlassShapeKind.Flower, phase1.activeStartShape)
+        assertEquals(SeaGlassShapeKind.Circle, phase1.activeEndShape)
+
+        val phase2Overshoot = SeaGlassShapeMorph.evaluateChoreographedTransform(
+            startStage = stageFlower,
+            endStage = stageCookie,
+            progress = 1.12f
+        )
+        assertEquals(SeaGlassShapeKind.Circle, phase2Overshoot.activeStartShape)
+        assertEquals(SeaGlassShapeKind.Cookie9, phase2Overshoot.activeEndShape)
+        assertTrue("Spring overshoot should exceed 1.0 in phase 2", phase2Overshoot.activeSubProgress > 1.0f)
     }
 }

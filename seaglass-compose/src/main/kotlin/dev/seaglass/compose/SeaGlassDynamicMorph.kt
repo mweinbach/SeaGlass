@@ -33,9 +33,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +70,8 @@ import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSdfEngine
 import dev.seaglass.core.SeaGlassShapeKind
 import dev.seaglass.core.SeaGlassShapeMorph
+import dev.seaglass.core.SeaGlassShapeStage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
@@ -555,6 +559,10 @@ fun SeaGlassMorphingButton(
     modifier: Modifier = Modifier,
     restingShape: SeaGlassShapeKind = SeaGlassShapeKind.Cookie9,
     activeShape: SeaGlassShapeKind = SeaGlassShapeKind.Squircle,
+    restingScale: Float = 1.0f,
+    activeScale: Float = 1.06f,
+    spinDegreesOnMorph: Float = 45f,
+    viaCircleBridge: Boolean = true,
     restingMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
     activeMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.tertiaryGlass,
     content: @Composable BoxScope.() -> Unit
@@ -571,24 +579,51 @@ fun SeaGlassMorphingButton(
 
     val morphProgress by animateFloatAsState(
         targetValue = when {
-            isPressed -> (if (active) 0.65f else 0.35f)
+            isPressed -> (if (active) 0.58f else 0.42f)
             active -> 1f
             else -> 0f
         },
-        animationSpec = spring(dampingRatio = 0.56f, stiffness = 380f),
+        animationSpec = spring(dampingRatio = 0.50f, stiffness = 340f),
         label = "morphBtnShapeProgress"
     )
+
+    val startStage = remember(restingShape, restingScale, viaCircleBridge) {
+        SeaGlassShapeStage(
+            shape = restingShape,
+            scale = restingScale,
+            rotationDegrees = 0f,
+            viaCircleBridge = viaCircleBridge
+        )
+    }
+    val endStage = remember(activeShape, activeScale, spinDegreesOnMorph, viaCircleBridge) {
+        SeaGlassShapeStage(
+            shape = activeShape,
+            scale = activeScale,
+            rotationDegrees = spinDegreesOnMorph,
+            viaCircleBridge = viaCircleBridge
+        )
+    }
+
+    val choreo = remember(startStage, endStage, morphProgress) {
+        SeaGlassShapeMorph.evaluateChoreographedTransform(
+            startStage = startStage,
+            endStage = endStage,
+            progress = morphProgress
+        )
+    }
 
     val currentMaterial = remember(
         restingMaterial,
         activeMaterial,
         morphProgress,
+        choreo.morphEnergy,
         pressFraction
     ) {
         SeaGlassShapeMorph.computeDynamicFlexMaterial(
             startMaterial = restingMaterial,
             endMaterial = activeMaterial,
-            progress = morphProgress.coerceIn(0f, 1f)
+            progress = morphProgress.coerceIn(0f, 1f),
+            velocityPxPerSec = choreo.morphEnergy * 1400f
         ).pressed(pressFraction)
     }
 
@@ -618,8 +653,8 @@ fun SeaGlassMorphingButton(
                 }
                 .graphicsLayer {
                     val bounce = 1f + 0.05f * pressFraction
-                    scaleX = bounce
-                    scaleY = 1f - 0.035f * pressFraction
+                    scaleX = choreo.scaleX * bounce
+                    scaleY = choreo.scaleY * (1f - 0.035f * pressFraction)
                 }
                 .clickable(
                     interactionSource = interactionSource,
@@ -630,11 +665,11 @@ fun SeaGlassMorphingButton(
                     stageState = stageState,
                     material = currentMaterial,
                     touchPointInLocal = touchOffset,
-                    touchIntensity = pressFraction,
+                    touchIntensity = max(pressFraction, choreo.morphEnergy * 0.7f),
                     customContourPathBuilder = { wPx, hPx, outPath ->
-                        SeaGlassShapeMorph.buildMorphedPolygonPath(
-                            startKind = restingShape,
-                            endKind = activeShape,
+                        SeaGlassShapeMorph.buildChoreographedPolygonPath(
+                            startStage = startStage,
+                            endStage = endStage,
                             progress = morphProgress,
                             widthPx = wPx,
                             heightPx = hPx,
@@ -644,6 +679,207 @@ fun SeaGlassMorphingButton(
                 ),
             content = content
         )
+    }
+}
+
+/**
+ * Material 3 Expressive Choreographed Shape Shifter Orb (`Flower -> Small Circle -> Cookie9 ->
+ * Large Circle -> Clover4 -> Liquid Pill -> Sunny -> Heart`).
+ *
+ * Implements the signature M3 Expressive **Morph-Down to Circle & Morph-Back-Out** choreography:
+ * - Between any two lobed shapes, retracts petals inward into a taut `Circle` while dipping scale,
+ *   twirls angularly, and blooms back out into the next shape (or into a small/large circle or pill)
+ *   with under-damped spatial spring overshoot!
+ * - Can run continuously in [autoPlay] loop mode or advance on tap.
+ */
+@Composable
+fun SeaGlassChoreographedShapeOrb(
+    stageState: SeaGlassStageState?,
+    modifier: Modifier = Modifier,
+    stages: List<SeaGlassShapeStage> = SeaGlassShapeMorph.DefaultPlayfulChoreography,
+    autoPlay: Boolean = true,
+    stepIntervalMillis: Long = 1750L,
+    primaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
+    secondaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.tertiaryGlass
+) {
+    require(stages.size >= 2) { "stages must contain at least 2 keyframes" }
+
+    var prevIndex by remember { mutableIntStateOf(0) }
+    var targetIndex by remember { mutableIntStateOf(0) }
+    val transitionProgress = remember { Animatable(1f) }
+    val scope = rememberCoroutineScope()
+
+    fun advanceTo(nextIdx: Int) {
+        val clampedNext = (nextIdx + stages.size) % stages.size
+        if (clampedNext == targetIndex && transitionProgress.value > 0.9f) {
+            prevIndex = targetIndex
+            targetIndex = (targetIndex + 1) % stages.size
+        } else {
+            prevIndex = targetIndex
+            targetIndex = clampedNext
+        }
+        scope.launch {
+            transitionProgress.snapTo(0f)
+            transitionProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = 0.48f,
+                    stiffness = 290f
+                )
+            )
+        }
+    }
+
+    LaunchedEffect(autoPlay, stages.size, stepIntervalMillis) {
+        if (autoPlay) {
+            while (true) {
+                delay(stepIntervalMillis)
+                advanceTo((targetIndex + 1) % stages.size)
+            }
+        }
+    }
+
+    val startStage = stages[prevIndex.coerceIn(0, stages.size - 1)]
+    val endStage = stages[targetIndex.coerceIn(0, stages.size - 1)]
+    val rawP = transitionProgress.value
+
+    val choreo = remember(startStage, endStage, rawP) {
+        SeaGlassShapeMorph.evaluateChoreographedTransform(
+            startStage = startStage,
+            endStage = endStage,
+            progress = rawP
+        )
+    }
+
+    val activeMaterial = remember(
+        primaryMaterial,
+        secondaryMaterial,
+        targetIndex,
+        rawP,
+        choreo.morphEnergy
+    ) {
+        val useAlt = targetIndex % 2 == 1
+        val fromMat = if (useAlt) primaryMaterial else secondaryMaterial
+        val toMat = if (useAlt) secondaryMaterial else primaryMaterial
+        SeaGlassShapeMorph.computeDynamicFlexMaterial(
+            startMaterial = fromMat,
+            endMaterial = toMat,
+            progress = rawP.coerceIn(0f, 1f),
+            velocityPxPerSec = choreo.morphEnergy * 1500f,
+            areaExpansionRatio = choreo.scaleX * choreo.scaleY
+        )
+    }
+
+    val labelColor = remember(activeMaterial.tintColorArgb, activeMaterial.tintDensity) {
+        Color(
+            SeaGlassColorMath.optimalContentColorFor(
+                activeMaterial.tintColorArgb,
+                activeMaterial.tintDensity
+            )
+        )
+    }
+
+    var touchOffset by remember { mutableStateOf<Offset?>(null) }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(142.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(116.dp)
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val down = event.changes.firstOrNull { it.pressed }
+                                if (down != null) touchOffset = down.position
+                            }
+                        }
+                    }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { advanceTo((targetIndex + 1) % stages.size) }
+                    )
+                    .graphicsLayer {
+                        scaleX = choreo.scaleX
+                        scaleY = choreo.scaleY
+                        rotationZ = choreo.rotationDegrees
+                    }
+                    .seaGlass(
+                        stageState = stageState,
+                        material = activeMaterial,
+                        touchPointInLocal = touchOffset,
+                        touchIntensity = choreo.morphEnergy * 0.85f,
+                        customContourPathBuilder = { wPx, hPx, outPath ->
+                            SeaGlassShapeMorph.buildChoreographedPolygonPath(
+                                startStage = startStage,
+                                endStage = endStage,
+                                progress = rawP,
+                                widthPx = wPx,
+                                heightPx = hPx,
+                                outPath = outPath
+                            )
+                        }
+                    )
+            ) {
+                // Counter-rotate inner typography so labels stay level while the glass shape twirls!
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.graphicsLayer {
+                        rotationZ = -choreo.rotationDegrees
+                        val invX = 1f / choreo.scaleX.coerceAtLeast(0.65f)
+                        val invY = 1f / choreo.scaleY.coerceAtLeast(0.65f)
+                        scaleX = invX.coerceIn(0.78f, 1.22f)
+                        scaleY = invY.coerceIn(0.78f, 1.22f)
+                    }
+                ) {
+                    Text(
+                        text = endStage.label.uppercase( java.util.Locale.US ),
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Black,
+                            fontSize = 11.sp
+                        ),
+                        color = labelColor
+                    )
+                    Text(
+                        text = String.format(java.util.Locale.US, "%.2f× · Tap ↻", endStage.scale),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp
+                        ),
+                        color = labelColor.copy(alpha = 0.82f)
+                    )
+                }
+            }
+        }
+
+        // Quick Stage Choreography Strip (Flower -> Small Circle -> Cookie 9 -> Large Orb -> Clover)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            stages.take(5).forEachIndexed { idx, st ->
+                SeaGlassPill(
+                    label = st.label.substringBefore(" "),
+                    selected = targetIndex == idx,
+                    onClick = { advanceTo(idx) },
+                    stageState = stageState,
+                    selectedMaterial = primaryMaterial,
+                    unselectedMaterial = secondaryMaterial.copy(transparency = 0.72f),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
     }
 }
 
