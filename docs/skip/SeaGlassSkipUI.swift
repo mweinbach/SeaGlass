@@ -146,3 +146,44 @@ public struct SeaGlassCornerPodView<Content: View>: View {
         #endif
     }
 }
+
+/// iOS-style Floating Concentric SeaGlass Detent Sheet overlay for Swift / Skip apps.
+public struct SeaGlassFloatingSheetView<Content: View>: View {
+    private let isPresented: Bool
+    private let enableMorphAnimation: Bool
+    private let onDismiss: () -> Void
+    private let content: Content
+
+    public init(
+        isPresented: Bool,
+        enableMorphAnimation: Bool = true,
+        onDismiss: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.isPresented = isPresented
+        self.enableMorphAnimation = enableMorphAnimation
+        self.onDismiss = onDismiss
+        self.content = content()
+    }
+
+    public var body: some View {
+        #if SKIP
+        ComposeView { ctx in
+            SeaGlassSkipBridge.FloatingSheet(
+                visible: isPresented,
+                onDismissRequest: onDismiss,
+                enableMorphAnimation: enableMorphAnimation
+            ) {
+                content.Compose(ctx)
+            }
+        }
+        #else
+        if isPresented {
+            content
+                .padding(18)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 42, style: .continuous))
+                .padding(8)
+        }
+        #endif
+    }
+}

@@ -93,11 +93,14 @@ import dev.seaglass.compose.SeaGlassContextRingMorph
 import dev.seaglass.compose.SeaGlassDialogCard
 import dev.seaglass.compose.SeaGlassExtendedFab
 import dev.seaglass.compose.SeaGlassFilterChip
+import dev.seaglass.compose.SeaGlassFloatingSheet
+import dev.seaglass.compose.SeaGlassFloatingSheetSurface
 import dev.seaglass.compose.SeaGlassFloatingToolbar
 import dev.seaglass.compose.SeaGlassFluidBar
 import dev.seaglass.compose.SeaGlassGlyph
 import dev.seaglass.compose.SeaGlassIcon
 import dev.seaglass.compose.SeaGlassIconButton
+import dev.seaglass.compose.SeaGlassInspectorSheetContent
 import dev.seaglass.compose.SeaGlassLinearProgressIndicator
 import dev.seaglass.compose.SeaGlassListItem
 import dev.seaglass.compose.SeaGlassMiniPlayerBar
@@ -153,6 +156,8 @@ fun SeaGlassShowcaseApp() {
     var deviceCornerProfile by remember { mutableStateOf(SeaGlassDeviceHardwareProfile.AUTO_DETECT) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var actionOrbDetached by remember { mutableStateOf(false) }
+    var showFloatingInspectorSheet by remember { mutableStateOf(false) }
+    var sheetMorphAnimation by remember { mutableStateOf(true) }
 
     // Live adjustable optical parameters initialized for strong sea-glass tint + transparent frosted glass
     var transparency by remember(activePalette) {
@@ -236,12 +241,29 @@ fun SeaGlassShowcaseApp() {
 
         Box(modifier = Modifier.fillMaxSize()) {
             // 1. Luminous Material 3 Expressive coastal lightscape captured into the GPU stage
-            ExpressiveTidalBackdrop(
-                palette = activePalette,
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .seaGlassBackdrop(stageState)
-            )
+            ) {
+                ExpressiveTidalBackdrop(
+                    palette = activePalette,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                if (selectedTab == 2) {
+                    SessionTranscriptBackdropOverlay(
+                        isDark = activePalette == SeaGlassPalette.ObsidianTide,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                top = systemBarsPadding.calculateTopPadding() + 260.dp,
+                                start = 36.dp,
+                                end = 36.dp
+                            )
+                    )
+                }
+            }
 
             // 2. Foreground scrollable SeaGlass showcase content
             Column(
@@ -264,7 +286,8 @@ fun SeaGlassShowcaseApp() {
                     onCyclePalette = {
                         val all = SeaGlassPalette.entries
                         activePalette = all[(activePalette.ordinal + 1) % all.size]
-                    }
+                    },
+                    onOpenFloatingSheet = { showFloatingInspectorSheet = true }
                 )
 
                 // Expressive Palette Strip with color gems and non-truncated labels
@@ -346,25 +369,28 @@ fun SeaGlassShowcaseApp() {
                                 surfaceMaterial = customSurfaceMaterial
                             )
 
-                            2 -> PaletteGallerySection(
+                            2 -> FloatingSheetShowcaseSection(
+                                stageState = stageState,
+                                surfaceMaterial = customSurfaceMaterial,
+                                primaryMaterial = customPrimaryMaterial,
+                                morphAnimationEnabled = sheetMorphAnimation,
+                                onToggleMorphAnimation = { sheetMorphAnimation = it },
+                                isOverlayOpen = showFloatingInspectorSheet,
+                                onOpenOverlaySheet = { showFloatingInspectorSheet = true }
+                            )
+
+                            3 -> PaletteGallerySection(
                                 stageState = stageState,
                                 activePalette = activePalette,
                                 onSelectPalette = { activePalette = it }
                             )
 
-                            3 -> UiComponentLibrarySection(
+                            else -> UiComponentLibrarySection(
                                 stageState = stageState,
                                 primaryMaterial = customPrimaryMaterial,
                                 surfaceMaterial = customSurfaceMaterial,
-                                tertiaryMaterial = activePalette.tertiaryGlass
-                            )
-
-                            else -> BackendArchitectureSection(
-                                stageState = stageState,
-                                surfaceMaterial = customSurfaceMaterial,
-                                primaryMaterial = customPrimaryMaterial,
-                                tierOverride = tierOverride,
-                                onSelectTierOverride = { tierOverride = it }
+                                tertiaryMaterial = activePalette.tertiaryGlass,
+                                onOpenFloatingSheet = { showFloatingInspectorSheet = true }
                             )
                         }
                     }
@@ -409,9 +435,15 @@ fun SeaGlassShowcaseApp() {
                 )
 
                 SeaGlassFluidBar(
-                    items = listOf("Optics", "Morph", "Palettes", "Library", "Engine"),
+                    items = listOf("Optics", "Morph", "Sheet", "Palettes", "Library"),
                     selectedIndex = selectedTab,
-                    onSelect = { selectedTab = it.coerceIn(0, 4) },
+                    onSelect = {
+                        val next = it.coerceIn(0, 4)
+                        selectedTab = next
+                        if (next == 2) {
+                            showFloatingInspectorSheet = true
+                        }
+                    },
                     stageState = stageState,
                     barMaterial = customSurfaceMaterial,
                     indicatorMaterial = customPrimaryMaterial,
@@ -419,6 +451,28 @@ fun SeaGlassShowcaseApp() {
                     actionDetached = actionOrbDetached,
                     showActionOrb = false,
                     onActionClick = { actionOrbDetached = !actionOrbDetached }
+                )
+            }
+
+            // 4. Root iOS-Style Floating Concentric SeaGlass Detent Sheet Overlay
+            SeaGlassFloatingSheet(
+                visible = showFloatingInspectorSheet,
+                onDismissRequest = { showFloatingInspectorSheet = false },
+                stageState = stageState,
+                material = customSurfaceMaterial.copy(
+                    cornerRadiusDp = 42f,
+                    transparency = (transparency + 0.08f).coerceIn(0.32f, 0.88f),
+                    coarseness = coarseness,
+                    frostRadiusDp = (frostRadiusDp + 6f).coerceAtMost(48f),
+                    thicknessDp = 22f,
+                    rimChalkiness = 0.88f
+                ),
+                outerInsetDp = 8.dp,
+                enableMorphAnimation = sheetMorphAnimation
+            ) {
+                SeaGlassInspectorSheetContent(
+                    stageState = stageState,
+                    onDeleteSession = { showFloatingInspectorSheet = false }
                 )
             }
         }
@@ -430,7 +484,8 @@ private fun HeaderSpecimenBanner(
     stageState: SeaGlassStageState,
     palette: SeaGlassPalette,
     material: SeaGlassMaterial,
-    onCyclePalette: () -> Unit
+    onCyclePalette: () -> Unit,
+    onOpenFloatingSheet: () -> Unit = {}
 ) {
     var morphedExpanded by remember { mutableStateOf(false) }
     val cornerRadius by animateFloatAsState(
@@ -480,23 +535,50 @@ private fun HeaderSpecimenBanner(
                     )
                 }
 
-                SeaGlassButton(
-                    onClick = onCyclePalette,
-                    stageState = stageState,
-                    material = palette.tertiaryGlass.copy(
-                        cornerRadiusDp = 22f,
-                        thicknessDp = 16f,
-                        rimChalkiness = 0.86f
-                    ),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Next Tide ↻",
-                        maxLines = 1,
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = FontWeight.Bold
+                    SeaGlassButton(
+                        onClick = onCyclePalette,
+                        stageState = stageState,
+                        material = palette.tertiaryGlass.copy(
+                            cornerRadiusDp = 22f,
+                            thicknessDp = 16f,
+                            rimChalkiness = 0.86f
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 9.dp)
+                    ) {
+                        Text(
+                            text = "Tide ↻",
+                            maxLines = 1,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            )
                         )
-                    )
+                    }
+
+                    // (•••) Trigger Button that opens the iOS-style Floating Concentric Glass Sheet
+                    SeaGlassButton(
+                        onClick = onOpenFloatingSheet,
+                        stageState = stageState,
+                        material = palette.surfaceGlass.copy(
+                            cornerRadiusDp = 20f,
+                            thicknessDp = 16f
+                        ),
+                        contentPadding = PaddingValues(horizontal = 11.dp, vertical = 12.dp)
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            repeat(3) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(4.dp)
+                                        .clip(CircleShape)
+                                        .background(LocalContentColor.current)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1631,6 +1713,171 @@ private fun FluidCoalescingSection(
 }
 
 @Composable
+private fun FloatingSheetShowcaseSection(
+    stageState: SeaGlassStageState,
+    surfaceMaterial: SeaGlassMaterial,
+    primaryMaterial: SeaGlassMaterial,
+    morphAnimationEnabled: Boolean,
+    onToggleMorphAnimation: (Boolean) -> Unit,
+    isOverlayOpen: Boolean,
+    onOpenOverlaySheet: () -> Unit
+) {
+    // 1. iOS-Style Floating Session Top Bar: [=]  [Windows UI Redesign for SeaGlass...]  [•••]
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SeaGlassIconButton(
+            glyph = SeaGlassGlyph.Menu,
+            onClick = onOpenOverlaySheet,
+            stageState = stageState,
+            size = 46.dp,
+            material = surfaceMaterial
+        )
+
+        SeaGlassSurface(
+            stageState = stageState,
+            material = surfaceMaterial.copy(cornerRadiusDp = 24f, thicknessDp = 16f),
+            onClick = onOpenOverlaySheet,
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 9.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    text = "Windows UI Redesign for SeaGlass…",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.5.sp
+                    ),
+                    color = LocalContentColor.current
+                )
+                Text(
+                    text = "C:\\Users\\maxw6\\Projects\\SeaGlass",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp
+                    ),
+                    color = LocalContentColor.current.copy(alpha = 0.65f)
+                )
+            }
+        }
+
+        SeaGlassButton(
+            onClick = onOpenOverlaySheet,
+            stageState = stageState,
+            material = primaryMaterial.copy(cornerRadiusDp = 23f, thicknessDp = 16f),
+            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 14.dp),
+            modifier = Modifier.size(46.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                repeat(3) {
+                    Box(
+                        modifier = Modifier
+                            .size(4.2.dp)
+                            .clip(CircleShape)
+                            .background(LocalContentColor.current)
+                    )
+                }
+            }
+        }
+    }
+
+    // 2. Controls for Morph Animation vs. Slide Spring + Pop Full-Screen Overlay
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SeaGlassSegmentedButtonRow(
+            options = listOf("Morph Transition", "Slide Spring"),
+            selectedIndex = if (morphAnimationEnabled) 0 else 1,
+            onSelect = { onToggleMorphAnimation(it == 0) },
+            stageState = stageState,
+            containerMaterial = surfaceMaterial,
+            indicatorMaterial = primaryMaterial,
+            modifier = Modifier.weight(1f)
+        )
+
+        SeaGlassButton(
+            onClick = onOpenOverlaySheet,
+            stageState = stageState,
+            material = primaryMaterial.copy(cornerRadiusDp = 22f, thicknessDp = 16f),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+        ) {
+            Text(
+                text = "Pop Overlay ↗",
+                maxLines = 1,
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black)
+            )
+        }
+    }
+
+    if (!isOverlayOpen) {
+        // 3. Inline Native Floating Concentric SeaGlass Inspector Sheet Card when modal is dismissed
+        SeaGlassFloatingSheetSurface(
+            stageState = stageState,
+            material = surfaceMaterial.copy(
+                cornerRadiusDp = 42f,
+                transparency = (surfaceMaterial.transparency + 0.08f).coerceIn(0.32f, 0.88f),
+                thicknessDp = 22f,
+                rimChalkiness = 0.88f
+            )
+        ) {
+            SeaGlassInspectorSheetContent(
+                stageState = stageState,
+                onDeleteSession = onOpenOverlaySheet
+            )
+        }
+    }
+}
+
+@Composable
+private fun SessionTranscriptBackdropOverlay(
+    isDark: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val lines = remember {
+        listOf(
+            "tool schemas before calling them:",
+            "CronCreate",
+            "CronDelete",
+            "CronList",
+            "EnterPlanMode",
+            "EnterWorktree",
+            "ExitPlanMode",
+            "ExitWorktree",
+            "Monitor",
+            "NotebookEdit",
+            "PushNotification",
+            "SendMessage",
+            "TaskCreate",
+            "TaskGet",
+            "TaskList",
+            "VerifyPlanExecution"
+        )
+    }
+    val textColor = if (isDark) Color.White.copy(alpha = 0.88f) else Color.White.copy(alpha = 0.92f)
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        lines.forEachIndexed { idx, line ->
+            Text(
+                text = line,
+                color = if (idx == 0) textColor.copy(alpha = 0.72f) else textColor,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = if (idx == 0) FontWeight.SemiBold else FontWeight.Bold,
+                    fontSize = 18.sp,
+                    letterSpacing = (-0.2).sp
+                )
+            )
+        }
+    }
+}
+
+@Composable
 private fun PaletteGallerySection(
     stageState: SeaGlassStageState,
     activePalette: SeaGlassPalette,
@@ -1728,7 +1975,8 @@ private fun UiComponentLibrarySection(
     stageState: SeaGlassStageState,
     primaryMaterial: SeaGlassMaterial,
     surfaceMaterial: SeaGlassMaterial,
-    tertiaryMaterial: SeaGlassMaterial
+    tertiaryMaterial: SeaGlassMaterial,
+    onOpenFloatingSheet: () -> Unit = {}
 ) {
     var segmentIdx by remember { mutableIntStateOf(0) }
     var toolbarActionIdx by remember { mutableIntStateOf(0) }
@@ -2046,6 +2294,18 @@ private fun UiComponentLibrarySection(
                 }
 
                 else -> {
+                    SeaGlassButton(
+                        onClick = onOpenFloatingSheet,
+                        stageState = stageState,
+                        material = primaryMaterial,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Present Floating Concentric Sheet ↗",
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
                     SeaGlassSnackbar(
                         message = "Compile-once shader cache & dirty-slot UBO active",
                         actionLabel = if (showSnackbar) "Verified" else "Reset",

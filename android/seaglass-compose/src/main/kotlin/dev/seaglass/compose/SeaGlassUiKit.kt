@@ -123,7 +123,15 @@ enum class SeaGlassGlyph {
     Menu,
     Info,
     Layers,
-    AudioWave
+    AudioWave,
+    Pin,
+    Unread,
+    Mute,
+    Compact,
+    Fork,
+    Export,
+    ChevronRight,
+    DotGrid
 }
 
 /**
@@ -345,6 +353,149 @@ fun SeaGlassIcon(
                     val x = w * (0.18f + i * 0.16f)
                     val half = h * heights[i] * 0.5f
                     drawLine(tint, Offset(x, h * 0.5f - half), Offset(x, h * 0.5f + half), sw, StrokeCap.Round)
+                }
+            }
+
+            SeaGlassGlyph.Pin -> {
+                drawLine(tint, Offset(w * 0.32f, h * 0.14f), Offset(w * 0.68f, h * 0.14f), sw, StrokeCap.Round)
+                val body = Path().apply {
+                    moveTo(w * 0.36f, h * 0.14f)
+                    lineTo(w * 0.64f, h * 0.14f)
+                    lineTo(w * 0.60f, h * 0.44f)
+                    lineTo(w * 0.74f, h * 0.58f)
+                    lineTo(w * 0.26f, h * 0.58f)
+                    lineTo(w * 0.40f, h * 0.44f)
+                    close()
+                }
+                drawPath(body, color = tint, style = stroke)
+                drawLine(tint, Offset(w * 0.50f, h * 0.58f), Offset(w * 0.50f, h * 0.88f), sw, StrokeCap.Round)
+            }
+
+            SeaGlassGlyph.Unread -> {
+                val box = Path().apply {
+                    moveTo(w * 0.14f, h * 0.38f)
+                    lineTo(w * 0.50f, h * 0.14f)
+                    lineTo(w * 0.86f, h * 0.38f)
+                    lineTo(w * 0.86f, h * 0.82f)
+                    lineTo(w * 0.14f, h * 0.82f)
+                    close()
+                }
+                drawPath(box, color = tint, style = stroke)
+                val flap = Path().apply {
+                    moveTo(w * 0.14f, h * 0.38f)
+                    lineTo(w * 0.50f, h * 0.62f)
+                    lineTo(w * 0.86f, h * 0.38f)
+                }
+                drawPath(flap, color = tint, style = stroke)
+            }
+
+            SeaGlassGlyph.Mute -> {
+                val p = Path().apply {
+                    moveTo(w * 0.20f, h * 0.68f)
+                    lineTo(w * 0.80f, h * 0.68f)
+                    lineTo(w * 0.72f, h * 0.42f)
+                    cubicTo(w * 0.72f, h * 0.20f, w * 0.28f, h * 0.20f, w * 0.28f, h * 0.42f)
+                    close()
+                }
+                drawPath(p, color = tint, style = stroke)
+                drawArc(
+                    color = tint,
+                    startAngle = 15f,
+                    sweepAngle = 150f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.40f, h * 0.66f),
+                    size = Size(w * 0.20f, h * 0.18f),
+                    style = stroke
+                )
+            }
+
+            SeaGlassGlyph.Compact -> {
+                // Top downward arrow (stops above the center horizontal bar with a clean gap)
+                drawLine(tint, Offset(w * 0.50f, h * 0.08f), Offset(w * 0.50f, h * 0.35f), sw, StrokeCap.Round)
+                val topHead = Path().apply {
+                    moveTo(w * 0.35f, h * 0.23f)
+                    lineTo(w * 0.50f, h * 0.36f)
+                    lineTo(w * 0.65f, h * 0.23f)
+                }
+                drawPath(topHead, color = tint, style = stroke)
+                // Center horizontal bar
+                drawLine(tint, Offset(w * 0.16f, h * 0.50f), Offset(w * 0.84f, h * 0.50f), sw, StrokeCap.Round)
+                // Bottom upward arrow (stops below the center horizontal bar with a clean gap)
+                drawLine(tint, Offset(w * 0.50f, h * 0.92f), Offset(w * 0.50f, h * 0.65f), sw, StrokeCap.Round)
+                val botHead = Path().apply {
+                    moveTo(w * 0.35f, h * 0.77f)
+                    lineTo(w * 0.50f, h * 0.64f)
+                    lineTo(w * 0.65f, h * 0.77f)
+                }
+                drawPath(botHead, color = tint, style = stroke)
+            }
+
+            SeaGlassGlyph.Fork -> {
+                drawLine(tint, Offset(w * 0.50f, h * 0.86f), Offset(w * 0.50f, h * 0.52f), sw, StrokeCap.Round)
+                val leftBranch = Path().apply {
+                    moveTo(w * 0.50f, h * 0.54f)
+                    cubicTo(w * 0.50f, h * 0.36f, w * 0.24f, h * 0.34f, w * 0.22f, h * 0.20f)
+                }
+                val rightBranch = Path().apply {
+                    moveTo(w * 0.50f, h * 0.54f)
+                    cubicTo(w * 0.50f, h * 0.36f, w * 0.76f, h * 0.34f, w * 0.78f, h * 0.20f)
+                }
+                drawPath(leftBranch, color = tint, style = stroke)
+                drawPath(rightBranch, color = tint, style = stroke)
+                val lHead = Path().apply {
+                    moveTo(w * 0.16f, h * 0.34f)
+                    lineTo(w * 0.22f, h * 0.18f)
+                    lineTo(w * 0.38f, h * 0.22f)
+                }
+                val rHead = Path().apply {
+                    moveTo(w * 0.62f, h * 0.22f)
+                    lineTo(w * 0.78f, h * 0.18f)
+                    lineTo(w * 0.84f, h * 0.34f)
+                }
+                drawPath(lHead, color = tint, style = stroke)
+                drawPath(rHead, color = tint, style = stroke)
+            }
+
+            SeaGlassGlyph.Export -> {
+                val tray = Path().apply {
+                    moveTo(w * 0.34f, h * 0.40f)
+                    lineTo(w * 0.20f, h * 0.40f)
+                    lineTo(w * 0.20f, h * 0.84f)
+                    lineTo(w * 0.80f, h * 0.84f)
+                    lineTo(w * 0.80f, h * 0.40f)
+                    lineTo(w * 0.66f, h * 0.40f)
+                }
+                drawPath(tray, color = tint, style = stroke)
+                drawLine(tint, Offset(w * 0.50f, h * 0.62f), Offset(w * 0.50f, h * 0.14f), sw, StrokeCap.Round)
+                val arrow = Path().apply {
+                    moveTo(w * 0.34f, h * 0.28f)
+                    lineTo(w * 0.50f, h * 0.12f)
+                    lineTo(w * 0.66f, h * 0.28f)
+                }
+                drawPath(arrow, color = tint, style = stroke)
+            }
+
+            SeaGlassGlyph.ChevronRight -> {
+                val p = Path().apply {
+                    moveTo(w * 0.36f, h * 0.22f)
+                    lineTo(w * 0.66f, h * 0.50f)
+                    lineTo(w * 0.36f, h * 0.78f)
+                }
+                drawPath(p, color = tint, style = stroke)
+            }
+
+            SeaGlassGlyph.DotGrid -> {
+                val dotR = (min(w, h) * 0.055f).coerceAtLeast(1.2f)
+                for (row in -2..2) {
+                    for (col in -2..2) {
+                        if (abs(row) + abs(col) <= 3) {
+                            drawCircle(
+                                color = tint.copy(alpha = if (abs(row) + abs(col) <= 1) 0.85f else 0.45f),
+                                radius = dotR,
+                                center = Offset(w * (0.50f + col * 0.16f), h * (0.50f + row * 0.16f))
+                            )
+                        }
+                    }
                 }
             }
         }

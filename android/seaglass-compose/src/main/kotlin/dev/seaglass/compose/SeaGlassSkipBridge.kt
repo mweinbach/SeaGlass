@@ -318,4 +318,62 @@ object SeaGlassSkipBridge {
             expandedContent = { expandedContent() }
         )
     }
+
+    /**
+     * Skip-friendly iOS-style Floating Concentric SeaGlass Detent Sheet overlay with
+     * device-bezel corner matching, temporal de-aging during drag/morph, and optional
+     * morph animation.
+     */
+    @Composable
+    fun FloatingSheet(
+        visible: Boolean,
+        onDismissRequest: () -> Unit,
+        outerInsetDp: Float = 8f,
+        enableMorphAnimation: Boolean = true,
+        content: @Composable () -> Unit
+    ) {
+        SeaGlassFloatingSheet(
+            visible = visible,
+            onDismissRequest = onDismissRequest,
+            stageState = LocalSeaGlassStageState.current,
+            outerInsetDp = outerInsetDp.coerceAtLeast(0f).dp,
+            enableMorphAnimation = enableMorphAnimation
+        ) {
+            content()
+        }
+    }
+
+    /**
+     * Skip-friendly turnkey Floating Concentric SeaGlass Session Inspector Sheet with
+     * 6-action strip (`Pin`, `Unread`, `Mute`, `Compact`, `Fork`, `Export`), in-place
+     * morphing `Model` selector row, `Always Notify` toggle, and `Delete Session` action.
+     */
+    @Composable
+    fun FloatingInspectorSheet(
+        visible: Boolean,
+        onDismissRequest: () -> Unit,
+        title: String = "Windows UI Redesign for SeaGlass Elements",
+        subtitle: String = "C:\\Users\\maxw6\\Projects\\SeaGlass ...\\projects\\seaglass",
+        initialModel: String = "gemini-4-argon-eap",
+        contextTokensText: String = "199,692 tokens",
+        costText: String = "$0.96",
+        enableMorphAnimation: Boolean = true
+    ) {
+        SeaGlassFloatingSheet(
+            visible = visible,
+            onDismissRequest = onDismissRequest,
+            stageState = LocalSeaGlassStageState.current,
+            enableMorphAnimation = enableMorphAnimation
+        ) {
+            SeaGlassInspectorSheetContent(
+                stageState = LocalSeaGlassStageState.current,
+                title = title,
+                subtitle = subtitle,
+                initialModel = initialModel,
+                contextTokensText = contextTokensText,
+                costText = costText,
+                onDeleteSession = onDismissRequest
+            )
+        }
+    }
 }
