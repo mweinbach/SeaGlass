@@ -48,7 +48,12 @@ SeaGlass/
 │   ├── seaglass-view/       # Classic Android View & Drawable interop:
 │   │                        # SeaGlassFrameLayout, SeaGlassCardView, SeaGlassButtonView, SeaGlassDrawable
 │   └── sample/              # Interactive SeaGlass Optical Lab & M3 Expressive Fluid Showcase app
-├── windows/                 # Windows GPU graphics & UI foundation
+├── windows/                 # Windows GPU graphics & UI foundation (.NET / C# + C++20 ABI + HLSL SM 5.0):
+│   ├── SeaGlass.Core/       # Optical physics, Oklab math, 2D SDF engine, 20-shape morphing,
+│   │                        # adaptive corner optics, 256-byte cbuffer ABI & HLSL/GLSL shader compiler
+│   ├── SeaGlass.WinUI/      # WinUI 3 & Composition UI Kit with 1:1 Android component parity
+│   ├── SeaGlass.Sample/     # Interactive Windows Optical Lab & Expressive Showcase desktop app
+│   └── SeaGlass.Tests/      # xUnit test suite verifying optical math, SDF, shaders & UI components
 └── docs/                    # Deep technical & mathematical blueprints + Swift/Skip interop
     ├── agents/
     └── skip/
@@ -131,6 +136,7 @@ val seaGlassLayout = SeaGlassFrameLayout(context).apply {
 
 - [AGENTS.md](AGENTS.md) — Engineering rules, module invariants, and verification commands.
 - [Architecture Blueprint](docs/agents/architecture.md) — Multi-tier GPU pipeline, backdrop graph, and C++ GLES3 fallback.
+- [WinUI 3 Architecture & Components](docs/agents/winui-architecture-and-components.md) — Windows Visual Layer (`CompositionVisualSurface`), Direct2D / HLSL Shader Model 5.0 pipeline, Composition spring physics, and 1:1 WinUI component catalog.
 - [Optical Physics & Shaders](docs/agents/optical-physics-and-shaders.md) — SDF `smin` coalescing, Oklab Beer-Lambert absorption, and micro-facet frost shaders.
 - [Material 3 Expressive Tokens](docs/agents/material3-expressive-tokens.md) — Shape morphing, tonal palettes, and dual-spring physics.
 - [Device Compatibility & Performance](docs/agents/device-compatibility-and-performance.md) — API 26–37+ tier matrix and TBDR GPU optimization guide.

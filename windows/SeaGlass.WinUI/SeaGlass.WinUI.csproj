@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SeaGlass.WinUI</RootNamespace>
+    <AssemblyName>SeaGlass.WinUI</AssemblyName>
+    <Description>SeaGlass WinUI &amp; Windows Composition UI Kit Foundation with 1:1 Android Compose component, optical, SDF coalescing, 20-shape morphing, and dual-spring motion parity.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SeaGlass.Core\SeaGlass.Core.csproj" />
+  </ItemGroup>
+
+</Project>

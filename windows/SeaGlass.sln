@@ -1,0 +1,36 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SeaGlass.Core", "SeaGlass.Core\SeaGlass.Core.csproj", "{B1248F63-8E51-4F6B-9E82-6A12D0E34A01}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SeaGlass.WinUI", "SeaGlass.WinUI\SeaGlass.WinUI.csproj", "{B1248F63-8E51-4F6B-9E82-6A12D0E34A02}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SeaGlass.Sample", "SeaGlass.Sample\SeaGlass.Sample.csproj", "{B1248F63-8E51-4F6B-9E82-6A12D0E34A03}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SeaGlass.Tests", "SeaGlass.Tests\SeaGlass.Tests.csproj", "{B1248F63-8E51-4F6B-9E82-6A12D0E34A04}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A01}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A01}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A01}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A01}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A03}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A03}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A03}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A03}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B1248F63-8E51-4F6B-9E82-6A12D0E34A04}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

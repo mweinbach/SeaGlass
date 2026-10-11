@@ -17,8 +17,8 @@ SeaGlass is a high-performance GPU graphics and UI foundation for **Android** (`
 | `android/seaglass-compose/` (`:seaglass-compose`) | Jetpack Compose & Material 3 Expressive UI foundation: `SeaGlassStage` zero-copy backdrop capture, `Modifier.seaGlass`, `SeaGlassFluidGroup` SDF coalescing coordinator, `SeaGlassTheme` (`ColorScheme.toSeaGlassMaterials`), `SeaGlassSurface`, `SeaGlassCard`, `SeaGlassButton`, `SeaGlassIconButton`, `SeaGlassExtendedFab`, `SeaGlassPill`, `SeaGlassFilterChip`, `SeaGlassBadge`, `SeaGlassTopAppBar`, `SeaGlassFluidBar`, `SeaGlassMiniPlayerBar`, `SeaGlassFloatingToolbar`, `SeaGlassSearchBar`, `SeaGlassTextField`, `SeaGlassSwitch`, `SeaGlassCheckbox`, `SeaGlassRadioButton`, `SeaGlassSegmentedButtonRow`, `SeaGlassLiquidSlider`, `SeaGlassLinearProgressIndicator`, `SeaGlassCircularProgressIndicator`, `SeaGlassListItem`, `SeaGlassSnackbar`, `SeaGlassDialogCard`, `SeaGlassBottomSheetSurface`, `SeaGlassIcon`, `SeaGlassSkipBridge`, and the dynamic morphing suite (`SeaGlassTwoElementMorph`, `SeaGlassBuddingCluster`, `SeaGlassMorphingButton`, `SeaGlassChoreographedShapeOrb`). |
 | `android/seaglass-view/` (`:seaglass-view`) | Classic Android `View` / XML interop (`SeaGlassFrameLayout`, `SeaGlassCardView`, `SeaGlassButtonView`, `SeaGlassDrawable` with multi-node SDF coalescing and 20-shape morphing) backed by `:seaglass-core` so legacy or hybrid View hierarchies can embed SeaGlass without Compose. |
 | `android/sample/` (`:sample`) | Interactive **SeaGlass Optical Lab & Expressive Showcase** Android app demonstrating live parameter tuning, M3 Expressive palette morphing, draggable SDF liquid coalescing, and GPU backend telemetry. |
-| `windows/` | Windows GPU graphics & UI foundation and sample showcase (companion to `android/`). |
-| `docs/agents/` | Deep architectural blueprints and mathematical specifications for agents working on shaders, UI components, or device tiers. |
+| `windows/` | Windows GPU graphics & UI foundation (`.NET` / C# + C++20 `seaglass_backend_abi.h` + HLSL SM 5.0 / Direct2D): `windows/SeaGlass.Core` (optical physics, Oklab math, 2D SDF engine, 20-shape morphing, adaptive corner optics, HLSL/Vulkan/GLSL shader compiler), `windows/SeaGlass.WinUI` (WinUI 3 & Composition UI Kit with 1:1 component parity), `windows/SeaGlass.Sample` (interactive desktop showcase), and `windows/SeaGlass.Tests` (xUnit test suite). |
+| `docs/agents/` | Deep architectural blueprints and mathematical specifications for agents working on shaders, UI components, or device tiers across Android and Windows. |
 
 ---
 
@@ -27,6 +27,7 @@ SeaGlass is a high-performance GPU graphics and UI foundation for **Android** (`
 Read the relevant blueprint before modifying shaders, optical physics, motion springs, or device fallback tiers:
 
 - [`docs/agents/architecture.md`](docs/agents/architecture.md) — Multi-tier GPU rendering pipeline (`AGSL_FULL`, `RENDER_EFFECT_HYBRID`, `GLES3_NATIVE`, `LIGHTWEIGHT_TINT`), zero-copy `RenderNode` backdrop graph, and JNI native engine lifecycle.
+- [`docs/agents/winui-architecture-and-components.md`](docs/agents/winui-architecture-and-components.md) — Windows / WinUI 3 GPU rendering pipeline (`D2D1_HLSL_FULL`, `COMPOSITION_HYBRID`, `D3D11_WARP`, `LIGHTWEIGHT_TINT`), zero-copy `CompositionVisualSurface` backdrop graph, HLSL Shader Model 5.0 (`cbuffer` 256-byte parity), Composition spring physics, and 1:1 WinUI component catalog.
 - [`docs/agents/optical-physics-and-shaders.md`](docs/agents/optical-physics-and-shaders.md) — Exact equations and uniform layouts for SDF smooth-union (`smin`), analytical bevel normals, procedural sand-grain micro-coarseness, Oklab Beer-Lambert volumetric absorption, and rough-Fresnel chalky rim glow.
 - [`docs/agents/material3-expressive-tokens.md`](docs/agents/material3-expressive-tokens.md) — Material 3 Expressive color harmonization, sea-glass pastel palettes, squircle/corner-morphing geometry, and `spatial` vs. `effects` spring physics invariants.
 - [`docs/agents/device-compatibility-and-performance.md`](docs/agents/device-compatibility-and-performance.md) — Android API 26–37+ tier matrix, TBDR GPU tile-memory rules (Adreno, Mali, Xclipse, PowerVR), frame-time budgets, and verification procedures.
@@ -73,3 +74,22 @@ Run Gradle commands from `android/` (or pass `-p android`):
   ```
 - **Inspect layout & capture visual evidence on device**:
   - Use `android screen capture` or `adb exec-out screencap -p` to verify optical rendering, tint legibility, and SDF coalescing on live hardware/emulator frames.
+
+---
+
+## Build, Test, and Verification Commands (Windows / WinUI)
+
+Run `.NET` commands from `windows/` (or pass `windows/SeaGlass.sln`):
+
+- **Run all Windows unit tests (Oklab math, Beer-Lambert optics, SDF coalescing, 20-shape morphing, adaptive corner optics, 256-byte `cbuffer` packing, HLSL/Vulkan/GLSL shader generation, and WinUI component state)**:
+  ```bash
+  dotnet test windows/SeaGlass.sln
+  ```
+- **Build all Windows libraries and the `SeaGlass.Sample` showcase app**:
+  ```bash
+  dotnet build windows/SeaGlass.sln
+  ```
+- **Launch the interactive Windows showcase app**:
+  ```bash
+  dotnet run --project windows/SeaGlass.Sample/SeaGlass.Sample.csproj
+  ```

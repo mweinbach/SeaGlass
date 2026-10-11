@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>SeaGlass.Core</RootNamespace>
+    <AssemblyName>SeaGlass.Core</AssemblyName>
+    <Description>SeaGlass Backend-Agnostic Optical Physics, Perceptual Oklab Beer-Lambert Color Math, 2D SDF Liquid Coalescing (sminCubic), 20-Shape Expressive Morphing, Adaptive Corner Optics, 256-Byte cbuffer/std140 ABI, and Multi-Dialect HLSL/Vulkan/GLSL Shader Compiler for Windows and WinUI.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="include\seaglass_backend_abi.h" Pack="true" PackagePath="build\native\include\" />
+  </ItemGroup>
+
+</Project>
