@@ -47,7 +47,7 @@ object SeaGlassSkipBridge {
     fun resolvePalette(paletteId: String): SeaGlassPalette {
         val clean = paletteId.trim().lowercase(Locale.US)
         return SeaGlassPalette.entries.firstOrNull {
-            it.id.lowercase(Locale.US) == clean || it.name.lowercase(Locale.US) == clean
+            it.id.lowercase(Locale.US) == clean || it.displayName.lowercase(Locale.US) == clean
         } ?: SeaGlassPalette.SeafoamMint
     }
 

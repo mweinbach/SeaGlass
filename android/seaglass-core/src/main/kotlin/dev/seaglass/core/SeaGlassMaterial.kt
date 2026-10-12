@@ -94,42 +94,16 @@ data class SeaGlassMaterial(
 
     /**
      * Evaluates **Temporal De-Aging & Solidification** on this material during motion or morphing:
-     * - While the glass is malleable and moving ([malleability] $\to 1.0$), it reverses its sand-tumbled
-     *   state in time—shedding its coarse sand texture ([coarseness] $\to 0$), clarifying its body
-     *   ([transparency] $\to 0.92$, [frostRadiusDp] $\to 2.5\text{dp}$), and boosting refractive lensing.
-     * - As the animation finalizes and settles into its resting place ([malleability] $\to 0.0$),
-     *   the glass solidifies and re-crystallizes its full sand-frosted surface treatment.
+     * preserves the glass's exact tint, transparency, and coarseness so dragging or morphing
+     * a control, slider, or sheet never shifts its tint or opacity.
      */
-    fun deaged(malleability: Float): SeaGlassMaterial {
-        val m = malleability.coerceIn(0f, 1f)
-        if (m <= 0.005f) return this
-        // Fast melt into clear liquid glass on motion onset; smooth re-crystallization on settle
-        val melt = (m * (1.35f - 0.35f * m)).coerceIn(0f, 1f)
-        val targetClearTransparency = kotlin.math.max(transparency, 0.92f)
-        return copy(
-            coarseness = (coarseness * (1f - 0.88f * melt)).coerceIn(0f, 1f),
-            transparency = (transparency + (targetClearTransparency - transparency) * 0.80f * melt)
-                .coerceIn(0f, 1f),
-            frostRadiusDp = (frostRadiusDp * (1f - 0.82f * melt) + 2.0f * melt).coerceAtLeast(0f),
-            ior = (ior + 0.08f * melt).coerceIn(1.0f, 2.0f),
-            chromaticDispersion = (chromaticDispersion + 0.16f * melt).coerceIn(0f, 1f)
-        )
-    }
+    fun deaged(malleability: Float): SeaGlassMaterial = this
 
     /**
-     * Returns a physically compressed state of this material for touch/press interactions:
-     * pressing the glass increases refractive rim light and volumetric tint saturation.
+     * Returns the pressed state of this material for touch/press interactions without altering
+     * its tint density or optical opacity.
      */
-    fun pressed(pressProgress: Float = 1f): SeaGlassMaterial {
-        val p = pressProgress.coerceIn(0f, 1f)
-        if (p == 0f) return this
-        return copy(
-            tintDensity = (tintDensity + 0.08f * p).coerceIn(0f, 1f),
-            rimChalkiness = (rimChalkiness + 0.16f * p).coerceIn(0f, 1f),
-            thicknessDp = (thicknessDp * (1f + 0.18f * p)).coerceAtMost(36f),
-            cornerRadiusDp = (cornerRadiusDp * (1f - 0.10f * p)).coerceAtLeast(8f)
-        )
-    }
+    fun pressed(pressProgress: Float = 1f): SeaGlassMaterial = this
 
     /**
      * Returns an elevated/expanded state of this material with deeper subsurface frost

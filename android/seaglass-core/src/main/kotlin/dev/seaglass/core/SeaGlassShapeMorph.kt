@@ -699,9 +699,14 @@ object SeaGlassShapeMorph {
         val totalEnergy = max(morphEnergy, velocityEnergy * 0.75f).coerceIn(0f, 1f)
 
         val scaleFactor = sqrt(areaExpansionRatio.coerceIn(0.5f, 4.0f))
-        val deagedBase = base.deaged(totalEnergy)
+        val melt = (totalEnergy * (1.35f - 0.35f * totalEnergy)).coerceIn(0f, 1f)
+        val targetClearTransparency = max(base.transparency, 0.92f)
 
-        return deagedBase.copy(
+        return base.copy(
+            coarseness = (base.coarseness * (1f - 0.88f * melt)).coerceIn(0f, 1f),
+            transparency = (base.transparency + (targetClearTransparency - base.transparency) * 0.80f * melt)
+                .coerceIn(0f, 1f),
+            frostRadiusDp = (base.frostRadiusDp * (1f - 0.82f * melt) + 2.0f * melt).coerceAtLeast(0f),
             ior = (base.ior + 0.10f * totalEnergy + 0.04f * (scaleFactor - 1f)).coerceIn(1.0f, 1.95f),
             chromaticDispersion = (base.chromaticDispersion + 0.22f * totalEnergy).coerceIn(0f, 1f),
             rimChalkiness = (base.rimChalkiness + 0.16f * totalEnergy).coerceIn(0f, 1f),

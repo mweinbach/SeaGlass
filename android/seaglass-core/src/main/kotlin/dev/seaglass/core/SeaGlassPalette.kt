@@ -8,7 +8,7 @@ package dev.seaglass.core
  * and volcanic obsidian) with saturated Material 3 Expressive pastel chroma and contrast-safe
  * foreground tokens.
  */
-enum class SeaGlassPalette(
+data class SeaGlassPalette(
     val id: String,
     val displayName: String,
     val tagline: String,
@@ -21,7 +21,14 @@ enum class SeaGlassPalette(
     val onPrimaryGlassArgb: Int,
     val onSurfaceGlassArgb: Int
 ) {
-    SeafoamMint(
+    /** Backwards-compatible name property matching the former enum constant name/displayName. */
+    val name: String get() = displayName
+
+    /** Backwards-compatible ordinal index in [entries]. */
+    val ordinal: Int get() = entries.indexOfFirst { it.id == id }.coerceAtLeast(0)
+
+    companion object {
+    val SeafoamMint = SeaGlassPalette(
         id = "seafoam_mint",
         displayName = "Seafoam Mint",
         tagline = "Surf-tumbled turquoise soda-lime glass with chalky tidal frost",
@@ -93,9 +100,9 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFFE8FFF9.toInt(),
         onPrimaryGlassArgb = 0xFF06261E.toInt(),
         onSurfaceGlassArgb = 0xFF092E25.toInt()
-    ),
+    )
 
-    CobaltTide(
+    val CobaltTide = SeaGlassPalette(
         id = "cobalt_tide",
         displayName = "Cobalt Tide",
         tagline = "Vintage apothecary ocean bottle blue softened to expressive periwinkle",
@@ -167,9 +174,9 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFFEEF5FF.toInt(),
         onPrimaryGlassArgb = 0xFF07193B.toInt(),
         onSurfaceGlassArgb = 0xFF0B2046.toInt()
-    ),
+    )
 
-    BeachAmber(
+    val BeachAmber = SeaGlassPalette(
         id = "beach_amber",
         displayName = "Beach Amber",
         tagline = "Sun-warmed honey and driftwood amber glass with fine sand grit",
@@ -241,9 +248,9 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFFFFF8F0.toInt(),
         onPrimaryGlassArgb = 0xFF331A02.toInt(),
         onSurfaceGlassArgb = 0xFF381E04.toInt()
-    ),
+    )
 
-    SeaLavender(
+    val SeaLavender = SeaGlassPalette(
         id = "sea_lavender",
         displayName = "Sea Lavender",
         tagline = "Sun-purpled manganese amethyst glass with velvety matte diffusion",
@@ -315,9 +322,9 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFFFBF6FF.toInt(),
         onPrimaryGlassArgb = 0xFF230B42.toInt(),
         onSurfaceGlassArgb = 0xFF2A114B.toInt()
-    ),
+    )
 
-    RoseQuartzShell(
+    val RoseQuartzShell = SeaGlassPalette(
         id = "rose_quartz_shell",
         displayName = "Rose Quartz Shell",
         tagline = "Rare coral-pink and cranberry tumbled glass with pearlescent bevel",
@@ -389,9 +396,9 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFFFFF5F8.toInt(),
         onPrimaryGlassArgb = 0xFF3B091D.toInt(),
         onSurfaceGlassArgb = 0xFF420E23.toInt()
-    ),
+    )
 
-    KelpForest(
+    val KelpForest = SeaGlassPalette(
         id = "kelp_forest",
         displayName = "Kelp Forest",
         tagline = "Deep botanical forest-emerald sea glass with heavy surf grit",
@@ -463,9 +470,9 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFFF0FFF6.toInt(),
         onPrimaryGlassArgb = 0xFF062615.toInt(),
         onSurfaceGlassArgb = 0xFF0A2E1B.toInt()
-    ),
+    )
 
-    MilkGlassFrost(
+    val MilkGlassFrost = SeaGlassPalette(
         id = "milk_glass_frost",
         displayName = "Milk Glass Frost",
         tagline = "High-scatter alabaster-opal milk glass with dense sand-frosted diffusion",
@@ -537,9 +544,9 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFFFFFFFF.toInt(),
         onPrimaryGlassArgb = 0xFF0E2030.toInt(),
         onSurfaceGlassArgb = 0xFF122638.toInt()
-    ),
+    )
 
-    ObsidianTide(
+    val ObsidianTide = SeaGlassPalette(
         id = "obsidian_tide",
         displayName = "Obsidian Tide",
         tagline = "Volcanic smoked sapphire sea glass for dark-mode interfaces",
@@ -611,5 +618,17 @@ enum class SeaGlassPalette(
         accentRimArgb = 0xFF8CC4FF.toInt(),
         onPrimaryGlassArgb = 0xFFECF5FF.toInt(),
         onSurfaceGlassArgb = 0xFFE2EEFA.toInt()
-    );
+    )
+
+    val entries: List<SeaGlassPalette> = listOf(
+        SeafoamMint,
+        CobaltTide,
+        BeachAmber,
+        SeaLavender,
+        RoseQuartzShell,
+        KelpForest,
+        MilkGlassFrost,
+        ObsidianTide
+    )
+    }
 }

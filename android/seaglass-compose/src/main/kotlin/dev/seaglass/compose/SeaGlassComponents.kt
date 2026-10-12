@@ -88,22 +88,32 @@ fun ProvideSeaGlassLegibleContent(
 }
 
 /**
- * Non-consuming pointer observer that tracks the live 2D touch point `(touchX, touchY)` and
- * press state on a SeaGlass surface so off-center taps tilt the glass in 3D, shift side
- * refraction, and bloom an HDR caustic wave right under the finger—without blocking child
- * buttons or sliders.
+ * Non-consuming pointer observer that tracks the live 2D touch point `(touchX, touchY)`,
+ * press state, and whether the pointer has dragged past touch slop (`> 6dp`) so surfaces
+ * stay flat on simple taps and only expand/stretch when tapped and dragged (or for interactive
+ * controls), snapping back with a spatial spring on release.
  */
 private fun Modifier.observeSeaGlassTouch(
-    onTouchUpdate: (Offset?, Boolean) -> Unit
+    onTouchUpdate: (pos: Offset?, down: Boolean, dragging: Boolean) -> Unit
 ): Modifier = this.pointerInput(Unit) {
+    val dragThresholdPx = 6.dp.toPx()
     awaitPointerEventScope {
+        var downOrigin: Offset? = null
+        var isDragging = false
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             val pressedChange = event.changes.firstOrNull { it.pressed }
             if (pressedChange != null) {
-                onTouchUpdate(pressedChange.position, true)
+                val pos = pressedChange.position
+                val origin = downOrigin ?: pos.also { downOrigin = it }
+                if (!isDragging && (pos - origin).getDistance() >= dragThresholdPx) {
+                    isDragging = true
+                }
+                onTouchUpdate(pos, true, isDragging)
             } else {
-                onTouchUpdate(null, false)
+                downOrigin = null
+                isDragging = false
+                onTouchUpdate(null, false, false)
             }
         }
     }
@@ -111,8 +121,8 @@ private fun Modifier.observeSeaGlassTouch(
 
 /**
  * Foundational SeaGlass container surface with Material 3 Expressive state morphing,
- * adaptive touch-point 3D perspective tilt, HDR touch caustic flare, and automatic
- * Oklab contrast-safe foreground content color.
+ * uniform press/drag expansion that snaps back on release, and automatic
+ * Oklab contrast-safe foreground content color. Never applies 3D perspective tilt.
  */
 @Composable
 fun SeaGlassSurface(
@@ -140,40 +150,23 @@ fun SeaGlassSurface(
 
     var surfaceOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     var surfaceSize by remember { mutableStateOf(IntSize.Zero) }
-    var lastTouchOffset by remember { mutableStateOf<Offset?>(null) }
-    var isPointerDown by remember { mutableStateOf(false) }
 
-    val isPressed = isClickablePressed || isPointerDown
+    // Only expand when this surface itself is an interactive button (onClick != null);
+    // dragging sliders or grabber bars inside a sheet/card must never scale or tint the container.
+    val isActiveInteraction = onClick != null && isClickablePressed
     val pressFraction by animateFloatAsState(
-        targetValue = if (isPressed) 1f else 0f,
+        targetValue = if (isActiveInteraction) 1f else 0f,
         animationSpec = motion.fastSpatial,
         label = "surfacePress"
     )
 
     val effectiveMaterial by animateSeaGlassMaterialAsState(
-        targetMaterial = material.pressed(pressFraction),
+        targetMaterial = material,
         motionScheme = motion
     )
 
-    // Compute normalized off-center touch vector [-1..+1] for 3D perspective press tilt
-    val cx = max(surfaceSize.width * 0.5f, 1f)
-    val cy = max(surfaceSize.height * 0.5f, 1f)
-    val normTouchX = lastTouchOffset?.let { ((it.x - cx) / cx).coerceIn(-1f, 1f) } ?: 0f
-    val normTouchY = lastTouchOffset?.let { ((it.y - cy) / cy).coerceIn(-1f, 1f) } ?: 0f
-
-    val tiltRotX by animateFloatAsState(
-        targetValue = -normTouchY * 4.8f * pressFraction,
-        animationSpec = motion.fastSpatial,
-        label = "tiltRotX"
-    )
-    val tiltRotY by animateFloatAsState(
-        targetValue = normTouchX * 4.8f * pressFraction,
-        animationSpec = motion.fastSpatial,
-        label = "tiltRotY"
-    )
-
-    val scaleX = 1f + 0.022f * pressFraction
-    val scaleY = 1f - 0.018f * pressFraction
+    // Uniform 2D expansion on active button press that snaps back cleanly (zero 3D rotation).
+    val expandScale = 1f + 0.024f * pressFraction
 
     val contentColor = remember(effectiveMaterial.tintColorArgb, effectiveMaterial.tintDensity) {
         Color(
@@ -309,23 +302,14 @@ fun SeaGlassSurface(
                     surfaceOriginInRoot = coords.positionInRoot()
                     surfaceSize = coords.size
                 }
-                .observeSeaGlassTouch { pos, down ->
-                    if (pos != null) lastTouchOffset = pos
-                    isPointerDown = down
-                }
                 .graphicsLayer {
-                    this.scaleX = scaleX
-                    this.scaleY = scaleY
-                    this.rotationX = tiltRotX
-                    this.rotationY = tiltRotY
-                    this.cameraDistance = 14f * this.density
+                    this.scaleX = expandScale
+                    this.scaleY = expandScale
                 }
                 .then(clickableModifier)
                 .seaGlass(
                     stageState = stageState,
                     material = effectiveMaterial,
-                    touchPointInLocal = lastTouchOffset,
-                    touchIntensity = pressFraction,
                     contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
                     cornerAdaptationMode = cornerAdaptationMode,
                     cornerMask = cornerMask,
@@ -345,8 +329,8 @@ fun SeaGlassSurface(
 }
 
 /**
- * Tactile tumbled sea-glass button that physically compresses on touch with adaptive
- * touch-point HDR caustic flare and 3D perspective tilt.
+ * Tactile tumbled sea-glass button that expands uniformly on press or drag and snaps back on release,
+ * with zero 3D perspective tilt.
  */
 @Composable
 fun SeaGlassButton(
@@ -364,7 +348,6 @@ fun SeaGlassButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isClickablePressed by interactionSource.collectIsPressedAsState()
 
-    var buttonSize by remember { mutableStateOf(IntSize.Zero) }
     var lastTouchOffset by remember { mutableStateOf<Offset?>(null) }
     var isPointerDown by remember { mutableStateOf(false) }
 
@@ -380,21 +363,7 @@ fun SeaGlassButton(
         motionScheme = motion
     )
 
-    val cx = max(buttonSize.width * 0.5f, 1f)
-    val cy = max(buttonSize.height * 0.5f, 1f)
-    val normTouchX = lastTouchOffset?.let { ((it.x - cx) / cx).coerceIn(-1f, 1f) } ?: 0f
-    val normTouchY = lastTouchOffset?.let { ((it.y - cy) / cy).coerceIn(-1f, 1f) } ?: 0f
-
-    val tiltRotX by animateFloatAsState(
-        targetValue = -normTouchY * 6.0f * pressFraction,
-        animationSpec = motion.fastSpatial,
-        label = "btnTiltX"
-    )
-    val tiltRotY by animateFloatAsState(
-        targetValue = normTouchX * 6.0f * pressFraction,
-        animationSpec = motion.fastSpatial,
-        label = "btnTiltY"
-    )
+    val expandScale = 1f + 0.035f * pressFraction
 
     val contentColor = remember(animatedMaterial.tintColorArgb, animatedMaterial.tintDensity) {
         Color(
@@ -410,17 +379,13 @@ fun SeaGlassButton(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
             modifier = modifier
-                .onSizeChanged { buttonSize = it }
-                .observeSeaGlassTouch { pos, down ->
+                .observeSeaGlassTouch { pos, down, _ ->
                     if (pos != null) lastTouchOffset = pos
                     isPointerDown = down
                 }
                 .graphicsLayer {
-                    scaleX = 1f + 0.045f * pressFraction
-                    scaleY = 1f - 0.038f * pressFraction
-                    rotationX = tiltRotX
-                    rotationY = tiltRotY
-                    cameraDistance = 12f * density
+                    scaleX = expandScale
+                    scaleY = expandScale
                 }
                 .clickable(
                     interactionSource = interactionSource,

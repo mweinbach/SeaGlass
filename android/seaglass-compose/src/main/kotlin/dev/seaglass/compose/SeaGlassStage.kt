@@ -619,19 +619,8 @@ fun Modifier.seaGlass(
                     stageState.ensureStageBlurUpdated(effectiveFrostPx)
                 }
 
-                val touchNormX = if (touchPointInLocal != null && touchIntensity > 0.01f) {
-                    ((touchPointInLocal.x - cx) / max(cx, 1f)).coerceIn(-1f, 1f) * touchIntensity * 0.55f
-                } else {
-                    0f
-                }
-                val touchNormY = if (touchPointInLocal != null && touchIntensity > 0.01f) {
-                    ((touchPointInLocal.y - cy) / max(cy, 1f)).coerceIn(-1f, 1f) * touchIntensity * 0.55f
-                } else {
-                    0f
-                }
-
-                val combinedTiltX = (tiltState.tiltX + touchNormX).coerceIn(-1f, 1f)
-                val combinedTiltY = (tiltState.tiltY + touchNormY).coerceIn(-1f, 1f)
+                val combinedTiltX = tiltState.tiltX.coerceIn(-1f, 1f)
+                val combinedTiltY = tiltState.tiltY.coerceIn(-1f, 1f)
                 val activeLightAngleDeg = Math.toDegrees(
                     atan2(combinedTiltY.toDouble(), combinedTiltX.toDouble())
                 ).toFloat()
@@ -652,7 +641,7 @@ fun Modifier.seaGlass(
 
                 val nCanvas = drawContext.canvas.nativeCanvas
 
-                // Pass 0: Tilt-responsive ambient elevation shadow
+                // Pass 0: Ambient elevation shadow
                 nCanvas.save()
                 nCanvas.translate(
                     -combinedTiltX * 4.0f * density,
@@ -661,7 +650,7 @@ fun Modifier.seaGlass(
                 nCanvas.drawPath(outerAndroidPath, ambientShadowPaint)
                 nCanvas.restore()
 
-                val highPointPivot = touchPointInLocal ?: Offset(
+                val highPointPivot = Offset(
                     cx + combinedTiltX * minDimPx * 0.14f,
                     cy + combinedTiltY * minDimPx * 0.14f
                 )
@@ -671,13 +660,10 @@ fun Modifier.seaGlass(
                 // with zero boolean inner-ring cutout so edges, corners, and interior form one
                 // continuous piece of glass!
                 if (hasBackdrop && activeTier != SeaGlassDeviceTier.LIGHTWEIGHT_TINT) {
-                    val touchLensBoost = 1.0f + touchIntensity * 0.035f
-                    val coreLensScale = (1.0f + (material.ior - 1.0f) * 0.055f * (1.0f - 0.45f * sandWear)) *
-                        touchLensBoost
+                    val coreLensScale = 1.0f + (material.ior - 1.0f) * 0.055f * (1.0f - 0.45f * sandWear)
 
                     val maxRefractPx = (material.ior - 1.0f) *
                         (18f * density) *
-                        (1.0f + touchIntensity * 0.28f) *
                         (1.0f - 0.42f * sandWear)
 
                     val coreRefractX = -combinedTiltX * maxRefractPx * 0.36f
@@ -758,8 +744,10 @@ fun Modifier.seaGlass(
                     shaderLocalMatrix = shaderLocalMatrix
                 )
 
-                // Pass 3: Foreground UI content
-                drawContent()
+                // Pass 3: Foreground UI content clipped to the exact glass contour
+                clipPath(composeOuterPath) {
+                    this@onDrawWithContent.drawContent()
+                }
             }
         }
 }
@@ -917,33 +905,4 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
     nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
     nCanvas.drawPath(outerAndroidPath, outerContactLipPaint)
     nCanvas.restore()
-
-    // 3. Subtle Tint-Harmonized Touch Compression Wave (only on active touch, never a white center spot!)
-    if (touchPointInLocal != null && touchIntensity > 0.01f) {
-        val baseTintSrgb = Color(primaryTintArgb)
-        val hdrTintGlow = Color(
-            red = (baseTintSrgb.red * 1.25f).coerceAtMost(1.35f),
-            green = (baseTintSrgb.green * 1.25f).coerceAtMost(1.35f),
-            blue = (baseTintSrgb.blue * 1.25f).coerceAtMost(1.35f),
-            alpha = 1.0f,
-            colorSpace = ColorSpaces.ExtendedSrgb
-        )
-        clipPath(composeOuterPath) {
-            val waveRadius = max(widthPx, heightPx) * (0.30f + 0.34f * touchIntensity)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        hdrTintGlow.copy(alpha = 0.22f * touchIntensity),
-                        Color(primaryTintArgb).copy(alpha = 0.10f * touchIntensity),
-                        Color.Transparent
-                    ),
-                    center = touchPointInLocal,
-                    radius = waveRadius
-                ),
-                radius = waveRadius,
-                center = touchPointInLocal,
-                blendMode = BlendMode.Plus
-            )
-        }
-    }
 }

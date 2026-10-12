@@ -635,4 +635,40 @@ class SeaGlassCoreTest {
         assertEquals("Tilt-only update must only dirty slot 3 (uLightAndMeta)", 1 shl 3, block.dirtySlotsMask)
         assertEquals(rev1 + 1, block.contentRevision)
     }
+
+    @Test
+    fun paletteDataClassCopyAndGestureBarSheetConcentricCornersWork() {
+        // 1. Verify SeaGlassPalette is a data class that can be cloned with runtime overrides
+        val base = SeaGlassPalette.SeafoamMint
+        val customPrimary = base.primaryGlass.copy(transparency = 0.85f, tintDensity = 0.42f)
+        val cloned = base.copy(primaryGlass = customPrimary)
+        assertEquals(0.85f, cloned.primaryGlass.transparency, 1e-4f)
+        assertEquals(0.42f, cloned.primaryGlass.tintDensity, 1e-4f)
+        assertEquals(base.id, cloned.id)
+        assertEquals(0, base.ordinal)
+
+        // 2. Verify a floating bottom sheet elevated by Android's 36dp gesture navigation bar
+        // (dx = 10dp = 30px, dy = 46dp = 138px on a 3.0 density Pixel display with 153px = 51dp bezel)
+        // still matches the concentric bezel radius (~123px = 41dp) rather than shrinking below baseCornerRadiusPx.
+        val pixelBezel = SeaGlassCornerRadiiPx.uniform(153f)
+        val sheetRadii = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
+            elementLeftPx = 30f,
+            elementTopPx = 1500f,
+            elementRightPx = 1314f,
+            elementBottomPx = 2854f, // 2992 - 138px (36dp nav bar + 10dp inset)
+            containerWidthPx = 1344f,
+            containerHeightPx = 2992f,
+            containerCornersPx = pixelBezel,
+            baseCornerRadiusPx = 96f, // 32dp
+            influenceDistancePx = 192f, // 64dp
+            mode = SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY,
+            cornerMask = SeaGlassCornerMask.ALL,
+            allowAsymmetricCorners = false
+        )
+        assertTrue(
+            "Bottom sheet above gesture nav bar (${sheetRadii.bottomLeftPx}px) must expand above 32dp (96px) toward concentric 41dp (123px)",
+            sheetRadii.bottomLeftPx > 115f
+        )
+        assertEquals(sheetRadii.topLeftPx, sheetRadii.bottomLeftPx, 0.01f)
+    }
 }

@@ -48,9 +48,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
@@ -59,6 +61,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -390,12 +393,10 @@ fun SeaGlassTwoElementMorph(
                             }
                         )
                         .graphicsLayer {
-                            // Velocity-driven liquid stretch during morph + press squish
-                            scaleX = 1f + 0.03f * pressFraction + 0.035f * inFlightEnergy
-                            scaleY = 1f - 0.025f * pressFraction - 0.022f * inFlightEnergy
-                            rotationX = -normY * 5.0f * pressFraction
-                            rotationY = normX * 5.0f * pressFraction
-                            cameraDistance = 14f * this.density
+                            // Uniform expansion during press/morph (zero 3D rotation)
+                            val expand = 1f + 0.025f * pressFraction + 0.020f * inFlightEnergy
+                            scaleX = expand
+                            scaleY = expand
                         }
                         .seaGlass(
                             stageState = stageState,
@@ -650,11 +651,9 @@ fun Modifier.seaGlassInteractive(
             }
         }
         .graphicsLayer {
-            scaleX = stretchX * (1f + 0.035f * pressFraction)
-            scaleY = stretchY * (1f - 0.028f * pressFraction)
-            rotationX = -normY * 6.0f * pressFraction
-            rotationY = normX * 6.0f * pressFraction
-            cameraDistance = 12f * density
+            val expand = 1f + 0.03f * pressFraction
+            scaleX = stretchX * expand
+            scaleY = stretchY * expand
         }
         .seaGlass(
             stageState = stageState,
@@ -1446,9 +1445,9 @@ fun SeaGlassMultiShapeMorph(
                     }
                 }
                 .graphicsLayer {
-                    val pulse = 1f + 0.04f * pressFraction
+                    val pulse = 1f + 0.03f * pressFraction
                     scaleX = pulse
-                    scaleY = 1f - 0.03f * pressFraction
+                    scaleY = pulse
                 }
                 .then(
                     if (onClick != null) {
@@ -1479,4 +1478,137 @@ fun SeaGlassMultiShapeMorph(
             content = { content(currentDisplayShape) }
         )
     }
+}
+
+private val seaGlassMorphAnchorRects = mutableStateMapOf<String, Rect>()
+
+/**
+ * Returns the live root-coordinate bounding box recorded by [Modifier.seaGlassMorphSource] for [id],
+ * or `null` if the trigger is not currently mounted.
+ */
+fun seaGlassMorphAnchor(id: String): Rect? = seaGlassMorphAnchorRects[id]
+
+/**
+ * Records a compact trigger button's live bounding box in root screen coordinates so a target
+ * [SeaGlassMorphContainer], [SeaGlassFloatingSheet], or [Modifier.seaGlassMorphGlass] card can
+ * morph out of (and retract back into) the trigger's exact position and size.
+ */
+fun Modifier.seaGlassMorphSource(id: String): Modifier = onGloballyPositioned { coords ->
+    val pos = coords.positionInRoot()
+    val size = coords.size
+    if (size.width > 0 && size.height > 0) {
+        seaGlassMorphAnchorRects[id] = Rect(
+            left = pos.x,
+            top = pos.y,
+            right = pos.x + size.width,
+            bottom = pos.y + size.height
+        )
+    }
+}
+
+/**
+ * Morphs any composable card out of a recorded trigger anchor ([anchorId]) through a round
+ * liquid lens when [expanded] becomes `true`, and retracts it back into the trigger anchor
+ * before collapsing to `0x0` size when [expanded] becomes `false`.
+ */
+fun Modifier.seaGlassMorphGlass(
+    anchorId: String,
+    expanded: Boolean,
+    stageState: SeaGlassStageState? = null,
+    material: SeaGlassMaterial? = null,
+    cornerRadiusDp: Float = 22f
+): Modifier = composed {
+    val density = LocalDensity.current
+    val resolvedStage = stageState ?: LocalSeaGlassStageState.current
+    val palette = LocalSeaGlassPalette.current
+    val baseMaterial = material ?: palette.surfaceGlass
+
+    val targetProgress = if (expanded) 1f else 0f
+    val morphProgress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = if (expanded) {
+            spring(dampingRatio = 0.70f, stiffness = 380f)
+        } else {
+            spring(dampingRatio = 0.86f, stiffness = 460f)
+        },
+        label = "seaGlassMorphGlassProgress"
+    )
+    val effectsProgress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = spring(dampingRatio = 1.0f, stiffness = 500f),
+        label = "seaGlassMorphGlassEffects"
+    )
+
+    if (effectsProgress <= 0.005f && !expanded) {
+        return@composed this.layout { _, _ ->
+            layout(0, 0) {}
+        }
+    }
+
+    var restingOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+    var restingSize by remember { mutableStateOf(IntSize.Zero) }
+    val triggerRect = seaGlassMorphAnchor(anchorId)
+
+    val p = morphProgress.coerceAtLeast(0f)
+    val grown = (p / 0.50f).coerceIn(0f, 1f)
+    val rawTravel = (p / 0.86f).coerceIn(0f, 1f)
+    val travel = rawTravel * rawTravel * (3f - 2f * rawTravel)
+    val spread = ((p - 0.22f) / 0.78f).coerceIn(0f, 1f)
+    val shaped = spread
+    val bounce = 1f + (p - 1f).coerceIn(-0.03f, 0.03f)
+
+    val endW = restingSize.width.toFloat().coerceAtLeast(1f)
+    val endH = restingSize.height.toFloat().coerceAtLeast(1f)
+    val startW = triggerRect?.width?.coerceAtLeast(28f) ?: (endW * 0.42f)
+    val startH = triggerRect?.height?.coerceAtLeast(28f) ?: (endH * 0.22f)
+    val dropDiameter = min(max(startW, startH) * 1.65f, min(endW, endH))
+
+    val midW = startW + (dropDiameter - startW) * grown
+    val midH = startH + (dropDiameter - startH) * grown
+    val maxW = max(28f, endW * 1.12f)
+    val maxH = max(28f, endH * 1.12f)
+    val curW = ((midW + (endW - midW) * spread) * bounce).coerceIn(28f, maxW)
+    val curH = ((midH + (endH - midH) * spread) * bounce).coerceIn(28f, maxH)
+
+    val endCx = restingOriginInRoot.x + endW * 0.5f
+    val endCy = restingOriginInRoot.y + endH * 0.5f
+    val startCx = triggerRect?.center?.x ?: endCx
+    val startCy = triggerRect?.center?.y ?: (endCy - 60f * density.density)
+
+    val translateX = if (restingSize.width > 0) (startCx - endCx) * (1f - travel) else 0f
+    val translateY = if (restingSize.height > 0) (startCy - endCy) * (1f - travel) else 0f
+    val morphScaleX = if (restingSize.width > 0) (curW / endW).coerceIn(0.15f, 1.08f) else (0.6f + 0.4f * p)
+    val morphScaleY = if (restingSize.height > 0) (curH / endH).coerceIn(0.15f, 1.08f) else (0.6f + 0.4f * p)
+    val blurPx = ((1f - effectsProgress) * (1f - effectsProgress) * 14f * density.density).coerceAtLeast(0f)
+
+    val baseCorner = if (cornerRadiusDp < 0f) 999f else cornerRadiusDp
+    val animatedCornerDp = 120f + (baseCorner - 120f) * shaped
+    val activeMaterial = remember(baseMaterial, animatedCornerDp) {
+        baseMaterial.copy(cornerRadiusDp = animatedCornerDp)
+    }
+
+    this
+        .onGloballyPositioned { coords ->
+            restingOriginInRoot = coords.positionInRoot()
+            restingSize = coords.size
+        }
+        .graphicsLayer {
+            this.translationX = translateX
+            this.translationY = translateY
+            this.scaleX = morphScaleX
+            this.scaleY = morphScaleY
+            this.alpha = (effectsProgress * 1.35f).coerceIn(0f, 1f)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurPx > 0.6f) {
+                this.compositingStrategy = CompositingStrategy.Offscreen
+                this.renderEffect = SeaGlassShaderProgramCache
+                    .obtainBlurRenderEffect(blurPx, Shader.TileMode.DECAL)
+                    .asComposeRenderEffect()
+            } else {
+                this.renderEffect = null
+            }
+        }
+        .seaGlass(
+            stageState = resolvedStage,
+            material = activeMaterial
+        )
 }

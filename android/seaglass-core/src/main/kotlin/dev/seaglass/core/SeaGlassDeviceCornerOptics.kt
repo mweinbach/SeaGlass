@@ -676,21 +676,21 @@ object SeaGlassCornerAdaptationSolver {
                     clampedBase
                 }
             }
-            val dist = sqrt(dx * dx + dy * dy)
-            val rawT = ((influenceDistancePx - dist) / transitionSpanPx).coerceIn(0f, 1f)
+            val edgeDist = min(dx, dy)
+            val rawT = ((influenceDistancePx - edgeDist) / transitionSpanPx).coerceIn(0f, 1f)
             val proximityWeight = rawT * rawT * (3f - 2f * rawT) * strength
 
             if (proximityWeight <= 0.001f && mode != SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) {
                 return clampedBase
             }
 
-            val effectiveInset = (min(dx, dy) * 0.65f + max(dx, dy) * 0.35f)
+            val effectiveInset = edgeDist
             val rawConcentric = (outerRadiusPx - effectiveInset)
                 .coerceIn(floorPx, maxAsymmetricCornerPx)
 
             return when (mode) {
                 SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED -> {
-                    if (dist < influenceDistancePx * 0.85f) {
+                    if (edgeDist < influenceDistancePx * 0.85f) {
                         rawConcentric
                     } else {
                         min(clampedBase, halfMinDimPx * 0.45f).coerceAtLeast(floorPx)

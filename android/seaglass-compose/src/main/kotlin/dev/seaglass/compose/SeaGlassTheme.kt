@@ -80,12 +80,7 @@ val LocalSeaGlassDeviceCornerSpec = staticCompositionLocalOf {
 }
 val LocalSeaGlassContainerCornerScope = staticCompositionLocalOf<SeaGlassContainerCornerScope?> { null }
 val LocalSeaGlassCornerAdaptationConfig = staticCompositionLocalOf {
-    SeaGlassCornerAdaptationConfig.concentricProximity(
-        proximityThresholdDp = SeaGlassCornerAdaptationConfig.DEFAULT_PROXIMITY_THRESHOLD_DP,
-        fullMatchDistanceDp = SeaGlassCornerAdaptationConfig.DEFAULT_FULL_MATCH_DISTANCE_DP,
-        allowAsymmetricCorners = false,
-        adaptToParentContainer = false
-    )
+    SeaGlassCornerAdaptationConfig.Disabled
 }
 
 /**
