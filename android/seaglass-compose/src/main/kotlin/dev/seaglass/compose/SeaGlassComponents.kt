@@ -29,7 +29,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -47,8 +49,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -77,19 +82,44 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * Provides [LocalContentColor] for crisp, un-haloed typography and icons on SeaGlass surfaces.
- * Legibility is achieved optically through the glass's deep subsurface blur, `BlendMode.Screen`
- * luminance lift, and rich Oklab sea-glass body tint—never via artificial text shadows.
+ * Provides [LocalContentColor] for crisp, tonal glass-engraved typography and iconography on SeaGlass surfaces.
  */
 @Composable
 fun ProvideSeaGlassLegibleContent(
     contentColor: Color,
     content: @Composable () -> Unit
 ) {
-    CompositionLocalProvider(
-        LocalContentColor provides contentColor,
-        content = content
-    )
+    val insideEtched = LocalInsideSeaGlassEtched.current
+    if (insideEtched) {
+        CompositionLocalProvider(
+            LocalContentColor provides contentColor,
+            content = content
+        )
+    } else {
+        val isLightInk = (contentColor.red * 0.299f + contentColor.green * 0.587f + contentColor.blue * 0.114f) > 0.55f
+        val etchShadow = remember(isLightInk) {
+            if (isLightInk) {
+                Shadow(
+                    color = Color(0x90040C18),
+                    offset = Offset(-0.7f, -1.6f),
+                    blurRadius = 0.1f
+                )
+            } else {
+                Shadow(
+                    color = Color(0xA8FFFFFF),
+                    offset = Offset(0.75f, 1.85f),
+                    blurRadius = 0.1f
+                )
+            }
+        }
+        val currentStyle = LocalTextStyle.current
+        val etchedStyle = remember(currentStyle, etchShadow) {
+            currentStyle.copy(shadow = etchShadow)
+        }
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
+            ProvideTextStyle(value = etchedStyle, content = content)
+        }
+    }
 }
 
 /**
@@ -380,36 +410,42 @@ fun SeaGlassButton(
     }
 
     ProvideSeaGlassLegibleContent(contentColor = contentColor) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = modifier
-                .observeSeaGlassTouch { pos, down, _ ->
-                    if (pos != null) lastTouchOffset = pos
-                    isPointerDown = down
-                }
-                .graphicsLayer {
-                    scaleX = expandScale
-                    scaleY = expandScale
-                }
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick
-                )
-                .seaGlass(
-                    stageState = stageState,
-                    material = animatedMaterial,
-                    touchPointInLocal = lastTouchOffset,
-                    touchIntensity = pressFraction,
-                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
-                    cornerAdaptationMode = cornerAdaptationMode,
-                    cornerMask = cornerMask,
-                    cornerProximityThresholdDp = cornerProximityThresholdDp
-                )
-                .padding(contentPadding),
-            content = content
-        )
+        CompositionLocalProvider(LocalInsideSeaGlassEtched provides true) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = modifier
+                    .observeSeaGlassTouch { pos, down, _ ->
+                        if (pos != null) lastTouchOffset = pos
+                        isPointerDown = down
+                    }
+                    .graphicsLayer {
+                        scaleX = expandScale
+                        scaleY = expandScale
+                    }
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
+                    .seaGlass(
+                        stageState = stageState,
+                        material = animatedMaterial,
+                        touchPointInLocal = lastTouchOffset,
+                        touchIntensity = pressFraction,
+                        contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
+                        cornerAdaptationMode = cornerAdaptationMode,
+                        cornerMask = cornerMask,
+                        cornerProximityThresholdDp = cornerProximityThresholdDp
+                    )
+                    .seaGlassEtched(
+                        tintColorArgb = animatedMaterial.tintColorArgb,
+                        coarseness = animatedMaterial.coarseness
+                    )
+                    .padding(contentPadding),
+                content = content
+            )
+        }
     }
 }
 
@@ -531,39 +567,54 @@ fun SeaGlassMiniPlayerBar(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Album Artwork Thumbnail
+            // Etched Sea-Glass Album Artwork Medallion (recessed intaglio well + etched vinyl disc)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(40.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFFE86A50),
-                                Color(0xFFD84E38)
-                            )
-                        )
+                    .seaGlassBeveledInlay(
+                        tintColorArgb = material.tintColorArgb,
+                        coarseness = material.coarseness,
+                        cornerRadiusDp = 12f
                     )
             ) {
                 Canvas(modifier = Modifier.size(22.dp)) {
+                    val isLightInk = (contentColor.red * 0.299f + contentColor.green * 0.587f + contentColor.blue * 0.114f) > 0.55f
+                    val lipColor = if (isLightInk) Color(0xFF040C18).copy(alpha = 0.58f) else Color.White.copy(alpha = 0.85f)
+                    val sw = 2.1.dp.toPx()
+                    translate(left = 0.4.dp.toPx(), top = 1.0.dp.toPx()) {
+                        drawCircle(
+                            color = lipColor,
+                            radius = size.minDimension * 0.42f,
+                            style = Stroke(width = sw)
+                        )
+                        drawCircle(
+                            color = lipColor,
+                            radius = size.minDimension * 0.15f
+                        )
+                    }
                     drawCircle(
-                        color = Color(0xFF28120C).copy(alpha = 0.82f),
+                        color = contentColor,
                         radius = size.minDimension * 0.42f,
-                        style = Stroke(width = 2.dp.toPx())
+                        style = Stroke(width = sw)
                     )
                     drawCircle(
-                        color = Color(0xFFFFDFC8),
-                        radius = size.minDimension * 0.14f
+                        color = contentColor,
+                        radius = size.minDimension * 0.15f
                     )
                 }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Track Title & Artist Subtitle
+            // Track Title & Artist Subtitle (Etched Into Glass)
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .seaGlassEtched(
+                        tintColorArgb = material.tintColorArgb,
+                        coarseness = material.coarseness
+                    ),
                 verticalArrangement = Arrangement.Center
             ) {
                 Text(
@@ -571,23 +622,23 @@ fun SeaGlassMiniPlayerBar(
                     color = contentColor,
                     maxLines = 1,
                     style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
                         fontSize = 14.sp,
                         letterSpacing = (-0.1).sp
                     )
                 )
                 Text(
                     text = subtitle,
-                    color = contentColor.copy(alpha = 0.78f),
+                    color = contentColor.copy(alpha = 0.90f),
                     maxLines = 1,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontWeight = FontWeight.Normal,
+                        fontWeight = FontWeight.SemiBold,
                         fontSize = 12.sp
                     )
                 )
             }
 
-            // Play / Pause Vector Button
+            // Play / Pause Vector Button (Etched Into Glass)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -601,19 +652,16 @@ fun SeaGlassMiniPlayerBar(
                 Canvas(modifier = Modifier.size(18.dp)) {
                     val w = size.width
                     val h = size.height
+                    val isLightInk = (contentColor.red * 0.299f + contentColor.green * 0.587f + contentColor.blue * 0.114f) > 0.55f
+                    val lipColor = if (isLightInk) Color(0xFF040C18).copy(alpha = 0.62f) else Color.White.copy(alpha = 0.85f)
                     if (isPlaying) {
-                        drawRoundRect(
-                            color = contentColor,
-                            topLeft = Offset(w * 0.16f, h * 0.12f),
-                            size = Size(w * 0.24f, h * 0.76f),
-                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-                        )
-                        drawRoundRect(
-                            color = contentColor,
-                            topLeft = Offset(w * 0.60f, h * 0.12f),
-                            size = Size(w * 0.24f, h * 0.76f),
-                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-                        )
+                        val r = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        translate(left = 0.45.dp.toPx(), top = 1.05.dp.toPx()) {
+                            drawRoundRect(lipColor, Offset(w * 0.16f, h * 0.12f), Size(w * 0.24f, h * 0.76f), r)
+                            drawRoundRect(lipColor, Offset(w * 0.60f, h * 0.12f), Size(w * 0.24f, h * 0.76f), r)
+                        }
+                        drawRoundRect(contentColor, Offset(w * 0.16f, h * 0.12f), Size(w * 0.24f, h * 0.76f), r)
+                        drawRoundRect(contentColor, Offset(w * 0.60f, h * 0.12f), Size(w * 0.24f, h * 0.76f), r)
                     } else {
                         val playPath = Path().apply {
                             moveTo(w * 0.18f, h * 0.10f)
@@ -621,12 +669,15 @@ fun SeaGlassMiniPlayerBar(
                             lineTo(w * 0.18f, h * 0.90f)
                             close()
                         }
+                        translate(left = 0.45.dp.toPx(), top = 1.05.dp.toPx()) {
+                            drawPath(playPath, color = lipColor)
+                        }
                         drawPath(playPath, color = contentColor)
                     }
                 }
             }
 
-            // Fast-Forward (▶▶) Vector Button
+            // Fast-Forward (▶▶) Vector Button (Etched Into Glass)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -640,6 +691,8 @@ fun SeaGlassMiniPlayerBar(
                 Canvas(modifier = Modifier.size(22.dp)) {
                     val w = size.width
                     val h = size.height
+                    val isLightInk = (contentColor.red * 0.299f + contentColor.green * 0.587f + contentColor.blue * 0.114f) > 0.55f
+                    val lipColor = if (isLightInk) Color(0xFF040C18).copy(alpha = 0.62f) else Color.White.copy(alpha = 0.85f)
                     val tri1 = Path().apply {
                         moveTo(w * 0.06f, h * 0.16f)
                         lineTo(w * 0.50f, h * 0.50f)
@@ -651,6 +704,10 @@ fun SeaGlassMiniPlayerBar(
                         lineTo(w * 0.94f, h * 0.50f)
                         lineTo(w * 0.50f, h * 0.84f)
                         close()
+                    }
+                    translate(left = 0.45.dp.toPx(), top = 1.05.dp.toPx()) {
+                        drawPath(tri1, color = lipColor)
+                        drawPath(tri2, color = lipColor)
                     }
                     drawPath(tri1, color = contentColor)
                     drawPath(tri2, color = contentColor)
@@ -841,62 +898,69 @@ fun SeaGlassFluidBar(
                     )
             )
 
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val baseInkColor = Color(
-                    SeaGlassColorMath.optimalContentColorFor(
-                        barMaterial.tintColorArgb,
-                        barMaterial.tintDensity
-                    )
-                )
-                // Palette-harmonized high-contrast active tab accent color
-                val activeAccentColor = if (isDarkBar) {
-                    Color(0xFFECF6FF)
-                } else {
-                    Color(
+            CompositionLocalProvider(LocalInsideSeaGlassEtched provides true) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .seaGlassEtched(
+                            tintColorArgb = barMaterial.tintColorArgb,
+                            coarseness = barMaterial.coarseness
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val baseInkColor = Color(
                         SeaGlassColorMath.optimalContentColorFor(
-                            indicatorMaterial.tintColorArgb,
-                            0.90f
+                            barMaterial.tintColorArgb,
+                            barMaterial.tintDensity
                         )
                     )
-                }
+                    // Palette-harmonized high-contrast active tab accent color
+                    val activeAccentColor = if (isDarkBar) {
+                        Color(0xFFECF6FF)
+                    } else {
+                        Color(
+                            SeaGlassColorMath.optimalContentColorFor(
+                                indicatorMaterial.tintColorArgb,
+                                0.90f
+                            )
+                        )
+                    }
 
-                ProvideSeaGlassLegibleContent(contentColor = baseInkColor) {
-                    items.forEachIndexed { index, title ->
-                        val selected = index == selectedIndex
-                        val tint = if (selected) activeAccentColor else baseInkColor.copy(alpha = 0.72f)
+                    ProvideSeaGlassLegibleContent(contentColor = baseInkColor) {
+                        items.forEachIndexed { index, title ->
+                            val selected = index == selectedIndex
+                            val tint = if (selected) activeAccentColor else baseInkColor.copy(alpha = 0.88f)
 
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = { onSelect(index) }
-                                )
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                NavBarTabVectorIcon(
-                                    index = index,
-                                    color = tint,
-                                    modifier = Modifier.size(21.dp)
-                                )
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = title,
-                                    color = tint,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                                        fontSize = 11.sp
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = { onSelect(index) }
                                     )
-                                )
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    NavBarTabVectorIcon(
+                                        index = index,
+                                        color = tint,
+                                        modifier = Modifier.size(21.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = title,
+                                        color = tint,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                            fontSize = 11.sp
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -943,121 +1007,147 @@ private fun NavBarTabVectorIcon(
     color: Color,
     modifier: Modifier = Modifier
 ) {
+    val insideEtched = LocalInsideSeaGlassEtched.current
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
         val strokeW = 2.1.dp.toPx()
-
-        when (index % 5) {
-            0 -> {
-                val house = Path().apply {
-                    moveTo(w * 0.50f, h * 0.10f)
-                    lineTo(w * 0.90f, h * 0.46f)
-                    lineTo(w * 0.80f, h * 0.46f)
-                    lineTo(w * 0.80f, h * 0.88f)
-                    lineTo(w * 0.58f, h * 0.88f)
-                    lineTo(w * 0.58f, h * 0.60f)
-                    lineTo(w * 0.42f, h * 0.60f)
-                    lineTo(w * 0.42f, h * 0.88f)
-                    lineTo(w * 0.20f, h * 0.88f)
-                    lineTo(w * 0.20f, h * 0.46f)
-                    lineTo(w * 0.10f, h * 0.46f)
-                    close()
-                }
-                drawPath(house, color = color)
+        if (!insideEtched) {
+            val isLightInk = (color.red * 0.299f + color.green * 0.587f + color.blue * 0.114f) > 0.55f
+            val lipColor = if (isLightInk) {
+                Color(0xFF040C18).copy(alpha = 0.68f * color.alpha)
+            } else {
+                Color.White.copy(alpha = 0.92f * color.alpha)
             }
-
-            1 -> {
-                val r = CornerRadius(2.2.dp.toPx(), 2.2.dp.toPx())
-                val cell = w * 0.36f
-                drawRoundRect(color, Offset(w * 0.10f, h * 0.10f), Size(cell, cell), r)
-                drawRoundRect(color, Offset(w * 0.54f, h * 0.10f), Size(cell, cell), r)
-                drawRoundRect(color, Offset(w * 0.10f, h * 0.54f), Size(cell, cell), r)
-                drawRoundRect(color, Offset(w * 0.54f, h * 0.54f), Size(cell, cell), r)
+            val lipOffset = if (isLightInk) {
+                Offset(-0.35.dp.toPx(), -0.85.dp.toPx())
+            } else {
+                Offset(0.45.dp.toPx(), 1.15.dp.toPx())
             }
-
-            2 -> {
-                drawCircle(
-                    color = color,
-                    radius = w * 0.11f,
-                    center = Offset(w * 0.50f, h * 0.50f)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = -50f,
-                    sweepAngle = 100f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.24f, h * 0.24f),
-                    size = Size(w * 0.52f, h * 0.52f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = 130f,
-                    sweepAngle = 100f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.24f, h * 0.24f),
-                    size = Size(w * 0.52f, h * 0.52f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = -55f,
-                    sweepAngle = 110f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.06f, h * 0.06f),
-                    size = Size(w * 0.88f, h * 0.88f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-                drawArc(
-                    color = color,
-                    startAngle = 125f,
-                    sweepAngle = 110f,
-                    useCenter = false,
-                    topLeft = Offset(w * 0.06f, h * 0.06f),
-                    size = Size(w * 0.88f, h * 0.88f),
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
+            translate(lipOffset.x, lipOffset.y) {
+                drawNavBarTabVectorGeometry(index, w, h, strokeW, lipColor)
             }
+        }
+        drawNavBarTabVectorGeometry(index, w, h, strokeW, color)
+    }
+}
 
-            3 -> {
-                drawLine(
-                    color = color,
-                    start = Offset(w * 0.30f, h * 0.12f),
-                    end = Offset(w * 0.70f, h * 0.12f),
-                    strokeWidth = strokeW,
-                    cap = StrokeCap.Round
-                )
-                drawLine(
-                    color = color,
-                    start = Offset(w * 0.22f, h * 0.24f),
-                    end = Offset(w * 0.78f, h * 0.24f),
-                    strokeWidth = strokeW,
-                    cap = StrokeCap.Round
-                )
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(w * 0.14f, h * 0.34f),
-                    size = Size(w * 0.72f, h * 0.56f),
-                    cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx())
-                )
+private fun DrawScope.drawNavBarTabVectorGeometry(
+    index: Int,
+    w: Float,
+    h: Float,
+    strokeW: Float,
+    color: Color
+) {
+    when (index % 5) {
+        0 -> {
+            val house = Path().apply {
+                moveTo(w * 0.50f, h * 0.10f)
+                lineTo(w * 0.90f, h * 0.46f)
+                lineTo(w * 0.80f, h * 0.46f)
+                lineTo(w * 0.80f, h * 0.88f)
+                lineTo(w * 0.58f, h * 0.88f)
+                lineTo(w * 0.58f, h * 0.60f)
+                lineTo(w * 0.42f, h * 0.60f)
+                lineTo(w * 0.42f, h * 0.88f)
+                lineTo(w * 0.20f, h * 0.88f)
+                lineTo(w * 0.20f, h * 0.46f)
+                lineTo(w * 0.10f, h * 0.46f)
+                close()
             }
+            drawPath(house, color = color)
+        }
 
-            else -> {
-                drawCircle(
-                    color = color,
-                    radius = w * 0.28f,
-                    center = Offset(w * 0.42f, h * 0.42f),
-                    style = Stroke(width = strokeW * 1.1f)
-                )
-                drawLine(
-                    color = color,
-                    start = Offset(w * 0.63f, h * 0.63f),
-                    end = Offset(w * 0.88f, h * 0.88f),
-                    strokeWidth = strokeW * 1.2f,
-                    cap = StrokeCap.Round
-                )
-            }
+        1 -> {
+            val r = CornerRadius(2.2.dp.toPx(), 2.2.dp.toPx())
+            val cell = w * 0.36f
+            drawRoundRect(color, Offset(w * 0.10f, h * 0.10f), Size(cell, cell), r)
+            drawRoundRect(color, Offset(w * 0.54f, h * 0.10f), Size(cell, cell), r)
+            drawRoundRect(color, Offset(w * 0.10f, h * 0.54f), Size(cell, cell), r)
+            drawRoundRect(color, Offset(w * 0.54f, h * 0.54f), Size(cell, cell), r)
+        }
+
+        2 -> {
+            drawCircle(
+                color = color,
+                radius = w * 0.11f,
+                center = Offset(w * 0.50f, h * 0.50f)
+            )
+            drawArc(
+                color = color,
+                startAngle = -50f,
+                sweepAngle = 100f,
+                useCenter = false,
+                topLeft = Offset(w * 0.24f, h * 0.24f),
+                size = Size(w * 0.52f, h * 0.52f),
+                style = Stroke(width = strokeW, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = color,
+                startAngle = 130f,
+                sweepAngle = 100f,
+                useCenter = false,
+                topLeft = Offset(w * 0.24f, h * 0.24f),
+                size = Size(w * 0.52f, h * 0.52f),
+                style = Stroke(width = strokeW, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = color,
+                startAngle = -55f,
+                sweepAngle = 110f,
+                useCenter = false,
+                topLeft = Offset(w * 0.06f, h * 0.06f),
+                size = Size(w * 0.88f, h * 0.88f),
+                style = Stroke(width = strokeW, cap = StrokeCap.Round)
+            )
+            drawArc(
+                color = color,
+                startAngle = 125f,
+                sweepAngle = 110f,
+                useCenter = false,
+                topLeft = Offset(w * 0.06f, h * 0.06f),
+                size = Size(w * 0.88f, h * 0.88f),
+                style = Stroke(width = strokeW, cap = StrokeCap.Round)
+            )
+        }
+
+        3 -> {
+            drawLine(
+                color = color,
+                start = Offset(w * 0.30f, h * 0.12f),
+                end = Offset(w * 0.70f, h * 0.12f),
+                strokeWidth = strokeW,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = color,
+                start = Offset(w * 0.22f, h * 0.24f),
+                end = Offset(w * 0.78f, h * 0.24f),
+                strokeWidth = strokeW,
+                cap = StrokeCap.Round
+            )
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(w * 0.14f, h * 0.34f),
+                size = Size(w * 0.72f, h * 0.56f),
+                cornerRadius = CornerRadius(3.5.dp.toPx(), 3.5.dp.toPx())
+            )
+        }
+
+        else -> {
+            drawCircle(
+                color = color,
+                radius = w * 0.28f,
+                center = Offset(w * 0.42f, h * 0.42f),
+                style = Stroke(width = strokeW * 1.1f)
+            )
+            drawLine(
+                color = color,
+                start = Offset(w * 0.63f, h * 0.63f),
+                end = Offset(w * 0.88f, h * 0.88f),
+                strokeWidth = strokeW * 1.2f,
+                cap = StrokeCap.Round
+            )
         }
     }
 }
@@ -1247,45 +1337,52 @@ fun SeaGlassPillNavBar(
                     )
             )
 
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                items.forEachIndexed { idx, (glyph, title) ->
-                    val selected = idx == selectedIndex
-                    val itemTint = if (selected) contentColor else contentColor.copy(alpha = 0.86f)
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = { onSelect(idx) }
-                            )
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+            CompositionLocalProvider(LocalInsideSeaGlassEtched provides true) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .seaGlassEtched(
+                            tintColorArgb = material.tintColorArgb,
+                            coarseness = material.coarseness
+                        ),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items.forEachIndexed { idx, (glyph, title) ->
+                        val selected = idx == selectedIndex
+                        val itemTint = if (selected) contentColor else contentColor.copy(alpha = 0.94f)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { onSelect(idx) }
+                                )
                         ) {
-                            if (glyph != null && (selected || idx == 0)) {
-                                SeaGlassIcon(
-                                    glyph = glyph,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = itemTint
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                            ) {
+                                if (glyph != null && (selected || idx == 0)) {
+                                    SeaGlassIcon(
+                                        glyph = glyph,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = itemTint
+                                    )
+                                }
+                                Text(
+                                    text = title,
+                                    color = itemTint,
+                                    maxLines = 1,
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                        fontSize = 15.sp,
+                                        letterSpacing = (-0.1).sp
+                                    )
                                 )
                             }
-                            Text(
-                                text = title,
-                                color = itemTint,
-                                maxLines = 1,
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                                    fontSize = 15.sp,
-                                    letterSpacing = (-0.1).sp
-                                )
-                            )
                         }
                     }
                 }
@@ -1394,12 +1491,16 @@ fun SeaGlassPromptBar(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // Tonal prompt text ("Ask Gemini")
+            // Tonal prompt text ("Ask Gemini") etched into the glass
             Box(
                 contentAlignment = Alignment.CenterStart,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .seaGlassEtched(
+                        tintColorArgb = material.tintColorArgb,
+                        coarseness = material.coarseness
+                    )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,

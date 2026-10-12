@@ -201,10 +201,10 @@ public static class SeaGlassColorMath
         if (lab.L >= 0.48f || tintDensity < 0.35f)
         {
             float tonalChroma = chroma < 0.025f
-                ? 0.038f
-                : Math.Clamp(chroma * 0.96f, 0.072f, 0.132f);
+                ? 0.042f
+                : Math.Clamp(chroma * 0.98f, 0.076f, 0.136f);
             return OklabToArgb(new OklabColor(
-                L: 0.29f,
+                L: 0.235f,
                 A: tonalChroma * MathF.Cos(hue),
                 B: tonalChroma * MathF.Sin(hue),
                 Alpha: 1f
@@ -218,6 +218,18 @@ public static class SeaGlassColorMath
             B: subtleChroma * MathF.Sin(hue),
             Alpha: 1f
         ));
+    }
+
+    /// <summary>
+    /// Computes the luminous frosted catch-light color that gleams along the bottom-right lip
+    /// of text and iconography etched (intaglio-carved) into a sea-glass surface.
+    /// </summary>
+    public static int ComputeEtchedCatchLightColor(int tintArgb, float coarseness = 0.45f)
+    {
+        OklabColor lab = ArgbToOklab(tintArgb);
+        return lab.L >= 0.48f
+            ? LerpOklab(tintArgb, unchecked((int)0xFFFFFFFF), Math.Clamp(0.86f + 0.08f * coarseness, 0.82f, 0.96f))
+            : LerpOklab(tintArgb, unchecked((int)0xFF040C16), 0.78f);
     }
 
     /// <summary>

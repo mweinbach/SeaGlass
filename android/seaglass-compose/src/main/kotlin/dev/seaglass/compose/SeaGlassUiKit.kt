@@ -65,7 +65,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -145,7 +147,8 @@ enum class SeaGlassGlyph {
 }
 
 /**
- * Renders a crisp vector [SeaGlassGlyph] harmonized with [LocalContentColor].
+ * Renders a crisp vector [SeaGlassGlyph] with an **Intaglio Etched-Into-Glass** dual bevel
+ * (bottom-right frosted catch-light lip + top-left inner carved wall recess + deep tonal ink).
  */
 @Composable
 fun SeaGlassIcon(
@@ -153,14 +156,47 @@ fun SeaGlassIcon(
     modifier: Modifier = Modifier.size(20.dp),
     tint: Color = LocalContentColor.current
 ) {
+    val insideEtched = LocalInsideSeaGlassEtched.current
     Canvas(modifier = modifier) {
         val w = size.width
         val h = size.height
         val sw = (min(w, h) * 0.105f).coerceAtLeast(1.8.dp.toPx())
         val stroke = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        if (!insideEtched) {
+            val isLightInk = (tint.red * 0.299f + tint.green * 0.587f + tint.blue * 0.114f) > 0.55f
+            val lipColor = if (isLightInk) {
+                Color(0xFF040C18).copy(alpha = 0.56f * tint.alpha)
+            } else {
+                Color.White.copy(alpha = 0.68f * tint.alpha)
+            }
+            val lipOffset = if (isLightInk) {
+                Offset(-0.28.dp.toPx(), -0.65.dp.toPx())
+            } else {
+                Offset(0.32.dp.toPx(), 0.78.dp.toPx())
+            }
 
-        when (glyph) {
-            SeaGlassGlyph.Home -> {
+            // Pass 1: Bottom-right frosted etched lip catch-light
+            translate(lipOffset.x, lipOffset.y) {
+                drawSeaGlassGlyphGeometry(glyph, w, h, sw, stroke, lipColor)
+            }
+            // Pass 2: Primary engraved tonal ink
+            drawSeaGlassGlyphGeometry(glyph, w, h, sw, stroke, tint.copy(alpha = (tint.alpha * 0.96f).coerceIn(0f, 1f)))
+        } else {
+            drawSeaGlassGlyphGeometry(glyph, w, h, sw, stroke, tint)
+        }
+    }
+}
+
+private fun DrawScope.drawSeaGlassGlyphGeometry(
+    glyph: SeaGlassGlyph,
+    w: Float,
+    h: Float,
+    sw: Float,
+    stroke: Stroke,
+    tint: Color
+) {
+    when (glyph) {
+        SeaGlassGlyph.Home -> {
                 val path = Path().apply {
                     moveTo(w * 0.50f, h * 0.12f)
                     lineTo(w * 0.88f, h * 0.45f)
@@ -722,7 +758,6 @@ fun SeaGlassIcon(
                 drawCircle(tint, radius = r, center = Offset(w * 0.50f, h * 0.78f))
             }
         }
-    }
 }
 
 /**

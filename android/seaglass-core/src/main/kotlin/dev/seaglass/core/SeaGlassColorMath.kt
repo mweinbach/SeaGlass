@@ -227,13 +227,13 @@ object SeaGlassColorMath {
         val hue = kotlin.math.atan2(lab.b, lab.a)
         return if (lab.l >= 0.48f || tintDensity < 0.35f) {
             val tonalChroma = if (chroma < 0.025f) {
-                0.038f
+                0.046f
             } else {
-                (chroma * 0.96f).coerceIn(0.072f, 0.132f)
+                (chroma * 1.08f).coerceIn(0.084f, 0.142f)
             }
             oklabToArgb(
                 OklabColor(
-                    l = 0.29f,
+                    l = 0.255f,
                     a = tonalChroma * cos(hue),
                     b = tonalChroma * sin(hue),
                     alpha = 1f
@@ -249,6 +249,19 @@ object SeaGlassColorMath {
                     alpha = 1f
                 )
             )
+        }
+    }
+
+    /**
+     * Computes the luminous frosted catch-light color that gleams along the bottom-right lip
+     * of text and iconography etched (intaglio-carved) into a sea-glass surface.
+     */
+    fun computeEtchedCatchLightColor(tintArgb: Int, coarseness: Float = 0.45f): Int {
+        val lab = argbToOklab(tintArgb)
+        return if (lab.l >= 0.48f) {
+            lerpOklab(tintArgb, 0xFFFFFFFF.toInt(), (0.86f + 0.08f * coarseness).coerceIn(0.82f, 0.96f))
+        } else {
+            lerpOklab(tintArgb, 0xFF040C16.toInt(), 0.78f)
         }
     }
 

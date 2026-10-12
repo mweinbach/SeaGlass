@@ -99,6 +99,69 @@ private val MidCrestStopPositions = floatArrayOf(0.00f, 0.46f, 1.00f)
 
 private val OuterLipStopPositions = floatArrayOf(0.00f, 0.48f, 1.00f)
 
+private const val AGSL_ETCHED_CONTENT_SHADER_SOURCE = """
+    uniform shader content;
+    uniform float2 uStepPx;
+    uniform float4 uGlassTint;
+    uniform float4 uLipColor;
+
+    float sgInkMask(float2 coord, float isDark) {
+        half4 s = content.eval(coord);
+        float sa = float(s.a);
+        if (sa <= 0.34) return 0.0;
+        float3 sRgb = clamp(float3(s.rgb) / sa, 0.0, 1.0);
+        float lum = dot(sRgb, float3(0.299, 0.587, 0.114));
+        float inkGate = (isDark > 0.5)
+            ? smoothstep(0.62, 0.80, lum)
+            : (1.0 - smoothstep(0.30, 0.44, lum));
+        return smoothstep(0.34, 0.70, sa) * inkGate;
+    }
+
+    half4 main(float2 fragCoord) {
+        half4 c = content.eval(fragCoord);
+        float a0 = float(c.a);
+        float isDark = uGlassTint.a;
+
+        float ink0 = sgInkMask(fragCoord, isDark);
+        float inkTL = sgInkMask(fragCoord - uStepPx, isDark);
+        float inkBR = sgInkMask(fragCoord + uStepPx, isDark);
+
+        if (ink0 <= 0.004 && inkTL <= 0.004) {
+            return c;
+        }
+
+        float3 baseRgb = (a0 > 0.01) ? clamp(float3(c.rgb) / a0, 0.0, 1.0) : uGlassTint.rgb;
+
+        // 1. Inner top-left carved groove cliff (strictly inside the tonal stroke where top-left is outside)
+        float innerCliff = ink0 * clamp(1.0 - inkTL, 0.0, 1.0);
+
+        // 2. Inner bottom-right translucent glass bevel (strictly inside the tonal stroke where bottom-right is outside)
+        float innerBevel = ink0 * clamp(1.0 - inkBR, 0.0, 1.0);
+
+        // 3. Outer bottom-right frosted catch-light lip (just below/right of the tonal stroke)
+        float outerLip = clamp(inkTL - ink0, 0.0, 1.0);
+
+        // Groove floor blends tonal ink with frosted glass tint so strokes look carved into the glass
+        float3 glassFloorRgb = mix(baseRgb, mix(uGlassTint.rgb, uLipColor.rgb, 0.42), (isDark > 0.5) ? 0.10 : 0.18);
+        float3 cliffRgb = (isDark > 0.5) ? float3(0.01, 0.03, 0.06) : baseRgb * 0.36;
+        float3 innerHighlightRgb = mix(baseRgb, uLipColor.rgb, (isDark > 0.5) ? 0.32 : 0.44);
+
+        float3 etchedInkRgb = mix(glassFloorRgb, cliffRgb, clamp(innerCliff * 0.88, 0.0, 0.92));
+        etchedInkRgb = mix(etchedInkRgb, innerHighlightRgb, clamp(innerBevel * 0.56, 0.0, 0.65));
+
+        // Blend etched ink on ink pixels, preserving non-ink pixels (such as inlay pillows) untouched
+        float3 combinedRgb = mix(baseRgb, etchedInkRgb, clamp(ink0 * 1.15, 0.0, 1.0));
+
+        // Add crisp directional bottom-right frosted catch-light lip
+        float lipStrength = (isDark > 0.5) ? 0.50 : 0.88;
+        float lipAlpha = clamp(outerLip * lipStrength, 0.0, 0.92);
+
+        float outAlpha = clamp(a0 + lipAlpha * (1.0 - a0), 0.0, 1.0);
+        float3 outRgb = mix(combinedRgb, uLipColor.rgb, lipAlpha * (1.0 - ink0));
+        return half4(half3(outRgb * outAlpha), half(outAlpha));
+    }
+"""
+
 private val PureRedChannelFilter: ColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
         floatArrayOf(
@@ -140,6 +203,7 @@ private val PureBlueChannelFilter: ColorFilter = ColorFilter.colorMatrix(
 class SeaGlassStageState internal constructor(
     val backdropLayer: GraphicsLayer,
     val frostedBackdropLayer: GraphicsLayer,
+    val etchedReliefLayer: GraphicsLayer,
     val refractedRedLayer: GraphicsLayer,
     val refractedGreenLayer: GraphicsLayer,
     val refractedBlueLayer: GraphicsLayer
@@ -181,6 +245,16 @@ class SeaGlassStageState internal constructor(
                 frostedBackdropLayer.compositingStrategy = CompositingStrategy.Auto
                 frostedBackdropLayer.renderEffect = cachedMainBlur
                 frostedBackdropLayer.compositingStrategy = CompositingStrategy.Offscreen
+
+                val reliefBlurPx = (target * 0.24f).coerceIn(2.0f, 8.5f)
+                val cachedReliefBlur = SeaGlassShaderProgramCache
+                    .obtainBlurRenderEffect(reliefBlurPx, Shader.TileMode.CLAMP)
+                    .asComposeRenderEffect()
+                etchedReliefLayer.clip = true
+                etchedReliefLayer.compositingStrategy = CompositingStrategy.Auto
+                etchedReliefLayer.alpha = 0.24f
+                etchedReliefLayer.renderEffect = cachedReliefBlur
+                etchedReliefLayer.compositingStrategy = CompositingStrategy.Offscreen
             }
 
             if (needsDispersionLayers) {
@@ -231,13 +305,15 @@ val LocalSeaGlassStageState = staticCompositionLocalOf<SeaGlassStageState?> { nu
 fun rememberSeaGlassStageState(): SeaGlassStageState {
     val rawLayer = rememberGraphicsLayer()
     val frostedLayer = rememberGraphicsLayer()
+    val etchedLayer = rememberGraphicsLayer()
     val redLayer = rememberGraphicsLayer()
     val greenLayer = rememberGraphicsLayer()
     val blueLayer = rememberGraphicsLayer()
-    return remember(rawLayer, frostedLayer, redLayer, greenLayer, blueLayer) {
+    return remember(rawLayer, frostedLayer, etchedLayer, redLayer, greenLayer, blueLayer) {
         SeaGlassStageState(
             backdropLayer = rawLayer,
             frostedBackdropLayer = frostedLayer,
+            etchedReliefLayer = etchedLayer,
             refractedRedLayer = redLayer,
             refractedGreenLayer = greenLayer,
             refractedBlueLayer = blueLayer
@@ -295,6 +371,9 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
             }
             stageState.ensureStageBlurUpdated(stageState.requestedFrostPx)
             stageState.frostedBackdropLayer.record(size = stageIntSize) {
+                drawLayer(stageState.backdropLayer)
+            }
+            stageState.etchedReliefLayer.record(size = stageIntSize) {
                 drawLayer(stageState.backdropLayer)
             }
             if (stageState.needsDispersionLayers) {
@@ -360,6 +439,18 @@ fun Modifier.seaGlass(
 
     val uniformBlock = remember { SeaGlassUniformBlock() }
     val outerAndroidPath = remember { Path() }
+    val etchedContentLayer = rememberGraphicsLayer()
+    val etchedRuntimeShader = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                android.graphics.RuntimeShader(AGSL_ETCHED_CONTENT_SHADER_SOURCE)
+            } catch (_: Throwable) {
+                null
+            }
+        } else {
+            null
+        }
+    }
     val slopeColors = remember { IntArray(4) }
     val midCrestColors = remember { IntArray(3) }
     val lipColors = remember { IntArray(3) }
@@ -657,6 +748,25 @@ fun Modifier.seaGlass(
 
             rindStipplePaint.strokeWidth = min(minDimPx * 0.34f, 15.0f * density).coerceAtLeast(7.0f * density)
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && etchedRuntimeShader != null) {
+                val isDarkGlass = SeaGlassColorMath.argbToOklab(primaryTintArgb).l < 0.48f
+                val tR = ((primaryTintArgb ushr 16) and 0xFF) / 255f
+                val tG = ((primaryTintArgb ushr 8) and 0xFF) / 255f
+                val tB = (primaryTintArgb and 0xFF) / 255f
+                val lipArgb = SeaGlassColorMath.computeEtchedCatchLightColor(primaryTintArgb, material.coarseness)
+                val lR = ((lipArgb ushr 16) and 0xFF) / 255f
+                val lG = ((lipArgb ushr 8) and 0xFF) / 255f
+                val lB = (lipArgb and 0xFF) / 255f
+
+                etchedRuntimeShader.setFloatUniform("uStepPx", 0.52f * density, 1.15f * density)
+                etchedRuntimeShader.setFloatUniform("uGlassTint", tR, tG, tB, if (isDarkGlass) 1f else 0f)
+                etchedRuntimeShader.setFloatUniform("uLipColor", lR, lG, lB, material.coarseness)
+                etchedContentLayer.compositingStrategy = CompositingStrategy.Offscreen
+                etchedContentLayer.renderEffect = AndroidRenderEffect
+                    .createRuntimeShaderEffect(etchedRuntimeShader, "content")
+                    .asComposeRenderEffect()
+            }
+
             val dispPx = material.chromaticDispersion *
                 (1.8f * density) *
                 (1.0f - 0.82f * material.coarseness)
@@ -798,9 +908,18 @@ fun Modifier.seaGlass(
                     shaderLocalMatrix = shaderLocalMatrix
                 )
 
-                // Pass 3: Foreground UI content clipped to the exact glass contour
+                // Pass 3: Foreground UI content etched into the glass contour
                 clipPath(composeOuterPath) {
-                    this@onDrawWithContent.drawContent()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && etchedRuntimeShader != null) {
+                        val intW = widthPx.toInt().coerceAtLeast(1)
+                        val intH = heightPx.toInt().coerceAtLeast(1)
+                        etchedContentLayer.record(size = IntSize(intW, intH)) {
+                            this@onDrawWithContent.drawContent()
+                        }
+                        drawLayer(etchedContentLayer)
+                    } else {
+                        this@onDrawWithContent.drawContent()
+                    }
                 }
             }
         }
@@ -892,10 +1011,10 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
         )
     } else {
         // Light/pastel sea glass (Seafoam, Cobalt, Amber, Lavender, Rose, Kelp, Milk Glass):
-        // Step 1A: Beer-Lambert spectral absorption (`BlendMode.Modulate`) so light backgrounds
-        // are optically tinted by the glass volume rather than bleached white.
-        val absorbStrength = ((0.18f + material.tintDensity * 0.36f) * (0.30f + 0.70f * sandWear))
-            .coerceIn(0.02f, 0.56f)
+        // Step 1A: Beer-Lambert spectral absorption (`BlendMode.Modulate`) so background text
+        // and images seen through the glass are optically tinted into the glass volume.
+        val absorbStrength = ((0.26f + material.tintDensity * 0.42f) * (0.35f + 0.65f * sandWear))
+            .coerceIn(0.04f, 0.68f)
         if (absorbStrength > 0.01f) {
             val absorbStart = Color(
                 SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), primaryTintArgb, absorbStrength)
@@ -920,8 +1039,8 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
             SeaGlassContentRole.TEXT_AND_ICONS -> 1.02f
             SeaGlassContentRole.PURE_OPTICAL_LENS -> 0.86f
         }
-        val bodyAlpha = ((sandWear * 0.78f + material.tintDensity * (0.18f + 0.26f * sandWear)) * roleWeight)
-            .coerceIn(0.0f, 0.92f)
+        val bodyAlpha = ((sandWear * 0.76f + material.tintDensity * (0.18f + 0.25f * sandWear)) * roleWeight)
+            .coerceIn(0.0f, 0.90f)
 
         if (bodyAlpha > 0.01f) {
             val bodyPrimary = Color(
@@ -984,13 +1103,18 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
     sandGrainPaint.shader?.setLocalMatrix(shaderLocalMatrix)
     rindStipplePaint.shader?.setLocalMatrix(shaderLocalMatrix)
 
-    val velvetProgress = material.coarseness.coerceIn(0f, 1f).pow(0.72f)
-    val grainAlpha = (velvetProgress * (0.52f + 0.48f * sandWear) * 198f)
+    val velvetProgress = material.coarseness.coerceIn(0f, 1f).pow(0.76f)
+    val interiorGrainRoleScale = when (contentRole) {
+        SeaGlassContentRole.TEXT_AND_ICONS -> 0.44f
+        SeaGlassContentRole.NAVIGATION_CHROME -> 0.48f
+        SeaGlassContentRole.PURE_OPTICAL_LENS -> 0.92f
+    }
+    val grainAlpha = (velvetProgress * (0.48f + 0.52f * sandWear) * 180f * interiorGrainRoleScale)
         .toInt()
-        .coerceIn(0, 205)
-    val bevelStippleAlpha = (velvetProgress * (0.45f + 0.40f * sandWear) * 135f)
+        .coerceIn(0, 180)
+    val bevelStippleAlpha = (velvetProgress * (0.54f + 0.46f * sandWear) * 175f)
         .toInt()
-        .coerceIn(0, 145)
+        .coerceIn(0, 185)
 
     val nCanvas = drawContext.canvas.nativeCanvas
     nCanvas.save()
@@ -1180,3 +1304,18 @@ internal fun Modifier.seaGlassBeveledInlay(
         }
     }
 }
+
+val LocalInsideSeaGlassEtched = staticCompositionLocalOf { true }
+
+/**
+ * Hardware-accelerated **3D Intaglio Etched-Into-Glass** modifier ([Modifier.seaGlassEtched]).
+ *
+ * On Android 13+ (API 33+), [Modifier.seaGlass] automatically applies the per-pixel AGSL intaglio
+ * etching shader (`AGSL_ETCHED_CONTENT_SHADER_SOURCE`) in Pass 3, so [Modifier.seaGlassEtched]
+ * acts as a zero-overhead pass-through inside [Modifier.seaGlass] surfaces.
+ */
+@Composable
+fun Modifier.seaGlassEtched(
+    tintColorArgb: Int = LocalSeaGlassPalette.current.primaryGlass.tintColorArgb,
+    coarseness: Float = 0.45f
+): Modifier = this

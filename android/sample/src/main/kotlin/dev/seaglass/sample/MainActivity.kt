@@ -77,8 +77,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.seaglass.compose.LocalInsideSeaGlassEtched
 import dev.seaglass.compose.LocalSeaGlassMotionScheme
 import dev.seaglass.compose.LocalSeaGlassTiltState
+import dev.seaglass.compose.ProvideSeaGlassLegibleContent
 import dev.seaglass.compose.SeaGlassActionSheet
 import dev.seaglass.compose.SeaGlassAdaptiveCornerLabCard
 import dev.seaglass.compose.SeaGlassBadge
@@ -135,6 +137,7 @@ import dev.seaglass.compose.defaultIosContextMenuItems
 import dev.seaglass.compose.rememberSeaGlassStageState
 import dev.seaglass.compose.seaGlass
 import dev.seaglass.compose.seaGlassBackdrop
+import dev.seaglass.compose.seaGlassEtched
 import dev.seaglass.core.SeaGlassColorMath
 import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassDeviceTier
@@ -270,7 +273,8 @@ fun SeaGlassShowcaseApp() {
 
                 if (selectedTab == 2 && (showFloatingInspectorSheet || showIosContextMenu || showIosActionSheet)) {
                     SessionTranscriptBackdropOverlay(
-                        isDark = activePalette == SeaGlassPalette.ObsidianTide,
+                        isDark = activePalette == SeaGlassPalette.ObsidianTide && !porcelainDaylightBackdrop,
+                        porcelainDaylight = porcelainDaylightBackdrop,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(
@@ -593,7 +597,14 @@ private fun HeaderSpecimenBanner(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .seaGlassEtched(
+                            tintColorArgb = material.tintColorArgb,
+                            coarseness = material.coarseness
+                        )
+                ) {
                     Text(
                         text = "SEAGLASS OPTICAL STUDIO",
                         maxLines = 1,
@@ -602,7 +613,7 @@ private fun HeaderSpecimenBanner(
                             letterSpacing = 1.2.sp,
                             fontSize = 10.sp
                         ),
-                        color = LocalContentColor.current.copy(alpha = 0.76f)
+                        color = LocalContentColor.current.copy(alpha = 0.90f)
                     )
                     Text(
                         text = palette.displayName,
@@ -650,7 +661,7 @@ private fun HeaderSpecimenBanner(
                             repeat(3) {
                                 Box(
                                     modifier = Modifier
-                                        .size(4.dp)
+                                        .size(4.5.dp)
                                         .clip(CircleShape)
                                         .background(LocalContentColor.current)
                                 )
@@ -664,10 +675,14 @@ private fun HeaderSpecimenBanner(
                 text = palette.tagline,
                 maxLines = 1,
                 style = MaterialTheme.typography.bodySmall.copy(
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 12.sp
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.5.sp
                 ),
-                color = LocalContentColor.current.copy(alpha = 0.88f)
+                color = LocalContentColor.current.copy(alpha = 0.94f),
+                modifier = Modifier.seaGlassEtched(
+                    tintColorArgb = material.tintColorArgb,
+                    coarseness = material.coarseness
+                )
             )
         }
     }
@@ -1093,89 +1108,93 @@ private fun OpticsLabSection(
             )
         )
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier
-                .width(with(density) { capsuleWidthPx.toDp() })
-                .height(deckHeight)
-                .padding(horizontal = 20.dp)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when (heroFlowState) {
-                        0 -> "COALESCED SOUNDSCAPE · 432 HZ"
-                        1 -> "SURFACE TENSION NECK"
-                        else -> "DETACHED ORB MODE"
-                    },
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 9.sp,
-                        letterSpacing = 1.0.sp
-                    ),
-                    color = labelColor.copy(alpha = 0.78f)
-                )
-                Text(
-                    text = "Pacific Surf & Sea Glass",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-                    color = labelColor
-                )
-                Text(
-                    text = String.format(
-                        Locale.US,
-                        "%.0f%% Clear · %.2f IOR · Tap to flow ⇄",
-                        transparency * 100f,
-                        ior
-                    ),
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = labelColor.copy(alpha = 0.86f)
-                )
-            }
+        ProvideSeaGlassLegibleContent(contentColor = labelColor) {
+            androidx.compose.runtime.CompositionLocalProvider(LocalInsideSeaGlassEtched provides true) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .width(with(density) { capsuleWidthPx.toDp() })
+                        .height(deckHeight)
+                        .seaGlassEtched(
+                            tintColorArgb = primaryMaterial.tintColorArgb,
+                            coarseness = primaryMaterial.coarseness
+                        )
+                        .padding(horizontal = 20.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = when (heroFlowState) {
+                                0 -> "COALESCED SOUNDSCAPE · 432 HZ"
+                                1 -> "SURFACE TENSION NECK"
+                                else -> "DETACHED ORB MODE"
+                            },
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 9.sp,
+                                letterSpacing = 1.0.sp
+                            ),
+                            color = labelColor.copy(alpha = 0.90f)
+                        )
+                        Text(
+                            text = "Pacific Surf & Sea Glass",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
+                            color = labelColor
+                        )
+                        Text(
+                            text = String.format(
+                                Locale.US,
+                                "%.0f%% Clear · %.2f IOR · Tap to flow ⇄",
+                                transparency * 100f,
+                                ior
+                            ),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = labelColor.copy(alpha = 0.94f)
+                        )
+                    }
 
-            // Expressive 5-Bar Audio Waveform Pill
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                modifier = Modifier.padding(start = 8.dp)
-            ) {
-                val heights = listOf(12.dp, 24.dp, 18.dp, 28.dp, 15.dp)
-                heights.forEach { barH ->
-                    Box(
+                    // Etched 5-Bar Audio Waveform Icon
+                    SeaGlassIcon(
+                        glyph = SeaGlassGlyph.AudioWave,
                         modifier = Modifier
-                            .width(4.dp)
-                            .height(if (isPlaying) barH else 8.dp)
-                            .clip(CircleShape)
-                            .background(labelColor.copy(alpha = 0.82f))
+                            .padding(start = 8.dp)
+                            .size(28.dp),
+                        tint = labelColor
                     )
                 }
-            }
-        }
 
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        (orbCenterX - orbRadiusPx).roundToInt(),
-                        (centerAY - orbRadiusPx).roundToInt()
-                    )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (orbCenterX - orbRadiusPx).roundToInt(),
+                                (centerAY - orbRadiusPx).roundToInt()
+                            )
+                        }
+                        .size(with(density) { (orbRadiusPx * 2f).toDp() })
+                        .seaGlassEtched(
+                            tintColorArgb = tertiaryMaterial.tintColorArgb,
+                            coarseness = tertiaryMaterial.coarseness
+                        )
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        SeaGlassIcon(
+                            glyph = if (isPlaying) SeaGlassGlyph.Pause else SeaGlassGlyph.Play,
+                            modifier = Modifier.size(18.dp),
+                            tint = labelColor
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (heroFlowState == 2) "SPLIT" else "FLOW",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 8.sp
+                            ),
+                            color = labelColor.copy(alpha = 0.92f)
+                        )
+                    }
                 }
-                .size(with(density) { (orbRadiusPx * 2f).toDp() })
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = if (isPlaying) "❚❚" else "▶",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-                    color = labelColor
-                )
-                Text(
-                    text = if (heroFlowState == 2) "SPLIT" else "FLOW",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 8.sp
-                    ),
-                    color = labelColor.copy(alpha = 0.80f)
-                )
             }
         }
     }
@@ -1223,7 +1242,12 @@ private fun OpticsLabSection(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .seaGlassEtched(
+                        tintColorArgb = primaryMaterial.tintColorArgb,
+                        coarseness = primaryMaterial.coarseness
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1234,7 +1258,7 @@ private fun OpticsLabSection(
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 1.0.sp
                     ),
-                    color = LocalContentColor.current.copy(alpha = 0.85f)
+                    color = LocalContentColor.current.copy(alpha = 0.92f)
                 )
                 Box(
                     modifier = Modifier
@@ -1288,7 +1312,11 @@ private fun OpticsLabSection(
                     fontWeight = FontWeight.ExtraBold,
                     letterSpacing = 1.1.sp
                 ),
-                color = LocalContentColor.current.copy(alpha = 0.78f)
+                color = LocalContentColor.current.copy(alpha = 0.92f),
+                modifier = Modifier.seaGlassEtched(
+                    tintColorArgb = surfaceMaterial.tintColorArgb,
+                    coarseness = surfaceMaterial.coarseness
+                )
             )
 
             OpticalSliderRow(
@@ -2172,6 +2200,7 @@ private fun FloatingSheetShowcaseSection(
 @Composable
 private fun SessionTranscriptBackdropOverlay(
     isDark: Boolean,
+    porcelainDaylight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val lines = remember {
@@ -2194,7 +2223,11 @@ private fun SessionTranscriptBackdropOverlay(
             "VerifyPlanExecution"
         )
     }
-    val textColor = if (isDark) Color.White.copy(alpha = 0.88f) else Color.White.copy(alpha = 0.92f)
+    val textColor = when {
+        porcelainDaylight -> Color(0xFF1C2D42).copy(alpha = 0.88f)
+        isDark -> Color.White.copy(alpha = 0.88f)
+        else -> Color.White.copy(alpha = 0.92f)
+    }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
