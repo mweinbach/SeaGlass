@@ -550,7 +550,7 @@ public sealed class SeaGlassVisualControl : Border
                 _lastRenderedSignature = 0;
                 InvalidateVisual();
             }
-            else if (movedSignificantly && _isHovered)
+            else if (SeaGlassXamlRenderer.PointerTiltAndGlowEnabled && movedSignificantly && _isHovered)
             {
                 _lastRenderedSignature = 0;
                 InvalidateVisual();
@@ -612,11 +612,19 @@ public sealed class SeaGlassVisualControl : Border
 
     private int ComputeSignature(SeaGlassSurfaceFrameState frame)
     {
+        SeaGlassMaterial m = frame.EffectiveMaterial;
         HashCode hc = new();
-        hc.Add(frame.UniformBlock.ContentRevision);
-        hc.Add((int)MathF.Round(frame.ScaleX * 1000f));
-        hc.Add((int)MathF.Round(frame.ScaleY * 1000f));
-        hc.Add((int)MathF.Round(_hoverProgress * 250f));
+        hc.Add(m.TintColorArgb);
+        hc.Add((int)MathF.Round(m.TintDensity * 200f));
+        hc.Add((int)MathF.Round(m.Coarseness * 200f));
+        hc.Add((int)MathF.Round(m.Ior * 200f));
+        hc.Add((int)MathF.Round(m.ChromaticDispersion * 200f));
+        hc.Add((int)MathF.Round(m.RimChalkiness * 200f));
+        hc.Add((int)MathF.Round(m.Transparency * 200f));
+        hc.Add((int)MathF.Round(frame.SolvedCornerRadiiPx.TopLeftPx * 2f));
+        hc.Add((int)MathF.Round(frame.ScaleX * 500f));
+        hc.Add((int)MathF.Round(frame.ScaleY * 500f));
+        hc.Add(InteractiveHoverLift ? (int)MathF.Round(_hoverProgress * 100f) : 0);
         hc.Add((int)Math.Round(ActualWidth));
         hc.Add((int)Math.Round(ActualHeight));
         hc.Add((int)MathF.Round(SurfaceModel.OriginInRoot.X));
@@ -665,7 +673,7 @@ public sealed class SeaGlassVisualControl : Border
 
         EnsureOriginUpToDate();
 
-        LastFrameState = CustomStepEvaluator is not null
+        LastFrameState ??= CustomStepEvaluator is not null
             ? CustomStepEvaluator(1f / 60f)
             : SurfaceModel.EvaluateFrame(1f / 60f, SeaGlassTheme.Current);
 
@@ -1052,18 +1060,19 @@ public sealed class MainWindow : Window
             _fps = _fps * 0.94 + Math.Min(240.0, 1.0 / rawDt) * 0.06;
         }
 
-        // Throttle shoreline wave animation to ~20 Hz so the GPU blur cache stays hot across high-refresh frames
-        if (_sharpBackdropCanvas.CanvasMode == StudioCanvasMode.Artwork && now - _lastBackdropUpdateSeconds >= 1.0 / 20.0)
+        // Keep the GPU BlurEffect BitmapCache 100% resident in VRAM; only animate sharp shoreline waves when auto-animating
+        if (_autoAnimateStates && _sharpBackdropCanvas.CanvasMode == StudioCanvasMode.Artwork && now - _lastBackdropUpdateSeconds >= 1.0 / 15.0)
         {
             _lastBackdropUpdateSeconds = now;
             double phase = (now * (2.0 * Math.PI / 14.0)) % (2.0 * Math.PI);
             _sharpBackdropCanvas.Phase = phase;
-            _frostedBackdropCanvas.Phase = phase;
             _sharpBackdropCanvas.InvalidateVisual();
-            _frostedBackdropCanvas.InvalidateVisual();
         }
 
-        SeaGlassTheme.Current.TiltState.UpdateFrame(dt);
+        if (SeaGlassXamlRenderer.PointerTiltAndGlowEnabled)
+        {
+            SeaGlassTheme.Current.TiltState.UpdateFrame(dt);
+        }
 
         // Lead-lag sidebar selection indicator springs
         float targetSidebarSlot = ActiveSidebarSlot;
@@ -1892,8 +1901,14 @@ public sealed class MainWindow : Window
                     new Point(0, 0),
                     new Point(0, 1));
                 inlayBrush.Freeze();
-                Pen inlayRim = Stroke(unchecked((int)0xFFFFFFFF), rimA, 1.0);
-                dc.DrawRoundedRectangle(inlayBrush, inlayRim, new Rect(offsetX, offsetY, pillW, pillH), pillH * 0.5, pillH * 0.5);
+                Rect inlayRect = new(offsetX, offsetY, pillW, pillH);
+                dc.DrawRoundedRectangle(inlayBrush, null, inlayRect, pillH * 0.5, pillH * 0.5);
+                for (int s = 1; s <= 5; s++)
+                {
+                    double sw = 0.8 + s * 1.15;
+                    float sa = rimA * 0.11f * (6 - s) / 5.0f;
+                    dc.DrawRoundedRectangle(null, Stroke(topArgb, sa, sw), inlayRect, pillH * 0.5, pillH * 0.5);
+                }
 
                 for (int i = 0; i < count; i++)
                 {
@@ -1976,9 +1991,15 @@ public sealed class MainWindow : Window
                     new Point(0, 0),
                     new Point(0, 1));
                 medBrush.Freeze();
-                Pen medRim = Stroke(unchecked((int)0xFFFFFFFF), rimA, 1.0);
                 double medR = medallionSize * 0.5;
-                dc.DrawEllipse(medBrush, medRim, new Point(medallionCenterX, cy), medR, medR);
+                Point medCenter = new(medallionCenterX, cy);
+                dc.DrawEllipse(medBrush, null, medCenter, medR, medR);
+                for (int s = 1; s <= 5; s++)
+                {
+                    double sw = 0.8 + s * 1.15;
+                    float sa = rimA * 0.11f * (6 - s) / 5.0f;
+                    dc.DrawEllipse(null, Stroke(topArgb, sa, sw), medCenter, medR, medR);
+                }
                 SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.AudioWave, new Rect(medallionCenterX - 10.5, cy - 10.5, 21, 21), c);
             },
             customStateSignature: () => HashCode.Combine(

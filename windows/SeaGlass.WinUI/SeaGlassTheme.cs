@@ -41,6 +41,13 @@ public readonly record struct SeaGlassSpringSpec(float DampingRatio, float Stiff
     /// </summary>
     public void Step(ref float current, ref float velocity, float target, float dtSeconds)
     {
+        if (MathF.Abs(current - target) < 1e-4f && MathF.Abs(velocity) < 1e-4f)
+        {
+            current = target;
+            velocity = 0f;
+            return;
+        }
+
         float dt = Math.Clamp(dtSeconds, 0.0001f, 0.05f);
         const int subSteps = 4;
         float h = dt / subSteps;
@@ -62,7 +69,14 @@ public readonly record struct SeaGlassSpringSpec(float DampingRatio, float Stiff
             {
                 current = target;
                 velocity = 0f;
+                return;
             }
+        }
+
+        if (MathF.Abs(current - target) < 1e-4f && MathF.Abs(velocity) < 1e-3f)
+        {
+            current = target;
+            velocity = 0f;
         }
     }
 }
@@ -125,6 +139,7 @@ public sealed class SeaGlassMaterialAnimator
     private float _cornerSmoothing, _vCornerSmoothing;
     private float _transparency, _vTransparency;
     private float _ambientAdaptation;
+    private bool _isAtRest = true;
 
     public SeaGlassMaterial Current { get; private set; }
     public SeaGlassMaterial Target { get; private set; }
@@ -153,12 +168,18 @@ public sealed class SeaGlassMaterialAnimator
         _cornerSmoothing = material.CornerSmoothing; _vCornerSmoothing = 0f;
         _transparency = material.Transparency; _vTransparency = 0f;
         _ambientAdaptation = material.AmbientAdaptation;
+        _isAtRest = true;
         Current = material;
         Target = material;
     }
 
     public SeaGlassMaterial StepToward(SeaGlassMaterial target, SeaGlassMotionScheme motion, float dtSeconds)
     {
+        if (_isAtRest && Target.Equals(target))
+        {
+            return Current;
+        }
+
         Target = target;
         SeaGlassColorMath.OklabColor labTarget = SeaGlassColorMath.ArgbToOklab(target.TintColorArgb);
 
@@ -180,6 +201,20 @@ public sealed class SeaGlassMaterialAnimator
         motion.DefaultSpatial.Step(ref _cornerSmoothing, ref _vCornerSmoothing, target.CornerSmoothing, dtSeconds);
         _ambientAdaptation = target.AmbientAdaptation;
 
+        bool settled = _vL == 0f && _vA == 0f && _vB == 0f &&
+                       _vTintDensity == 0f && _vCoarseness == 0f && _vFrostRadiusDp == 0f &&
+                       _vIor == 0f && _vDispersion == 0f && _vRimChalkiness == 0f &&
+                       _vTransparency == 0f && _vThicknessDp == 0f &&
+                       _vCornerRadiusDp == 0f && _vCornerSmoothing == 0f;
+
+        if (settled)
+        {
+            _isAtRest = true;
+            Current = target;
+            return Current;
+        }
+
+        _isAtRest = false;
         int animatedArgb = SeaGlassColorMath.OklabToArgb(
             new SeaGlassColorMath.OklabColor(Math.Clamp(_l, 0.04f, 0.99f), _a, _b, 1f));
 
