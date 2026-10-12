@@ -23,6 +23,11 @@ public static class Program
         {
             string outPath = args[captureIdx + 1];
             MainWindow captureWin = new();
+            int pageIdx = Array.FindIndex(args, a => string.Equals(a, "--page", StringComparison.OrdinalIgnoreCase));
+            if (pageIdx >= 0 && pageIdx + 1 < args.Length && int.TryParse(args[pageIdx + 1], out int page))
+            {
+                captureWin.SelectTabForPreview(page);
+            }
             captureWin.CaptureGallerySnapshotToPng(outPath);
             Console.WriteLine($"Captured gallery preview to: {outPath}");
             return 0;

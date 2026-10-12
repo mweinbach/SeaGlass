@@ -440,6 +440,7 @@ public sealed class SeaGlassCheckbox : SeaGlassSurface
     public Action<bool> OnCheckedChange { get; }
     public SeaGlassMaterial CheckedMaterial { get; set; }
     public SeaGlassMaterial UncheckedMaterial { get; set; }
+    public bool UseDesktopSquareContour { get; set; }
     public float MorphProgress => _morphProgress;
 
     public SeaGlassCheckbox(
@@ -477,8 +478,14 @@ public sealed class SeaGlassCheckbox : SeaGlassSurface
         float energy = Math.Clamp(4f * tp * (1f - tp), 0f, 1f);
         Material = (SeaGlassMaterial.Lerp(UncheckedMaterial, CheckedMaterial, tp) with
         {
+            CornerRadiusDp = UseDesktopSquareContour ? 6f : CheckedMaterial.CornerRadiusDp,
             ThicknessDp = 12f + 4f * tp
         }).Deaged(energy);
+
+        if (UseDesktopSquareContour)
+        {
+            return EvaluateFrame(dtSeconds: dtSeconds, theme: activeTheme);
+        }
 
         float mp = _morphProgress;
         return EvaluateFrame(
@@ -622,6 +629,10 @@ public sealed class SeaGlassSegmentedButtonRow : SeaGlassSurface
     public SeaGlassSurfaceFrameState StepAndEvaluate(float dtSeconds = 1f / 60f, SeaGlassTheme? theme = null)
     {
         SeaGlassTheme activeTheme = theme ?? SeaGlassTheme.Current;
+        if (ContainerMaterial.CornerRadiusDp < 16f)
+        {
+            Material = ContainerMaterial;
+        }
         SeaGlassSpringSpec leadSpring = new(DampingRatio: 0.68f, Stiffness: 540f);
         SeaGlassSpringSpec trailSpring = new(DampingRatio: 0.72f, Stiffness: 310f);
         leadSpring.Step(ref _leadIndex, ref _leadVel, SelectedIndex, dtSeconds);
@@ -721,9 +732,10 @@ public sealed class SeaGlassExtendedFab : SeaGlassButton
     {
         Expanded = expanded;
         SeaGlassMaterial mat = baseMaterial ?? Material;
+        float defaultRadius = expanded ? 28f : 20f;
         Material = mat with
         {
-            CornerRadiusDp = expanded ? 28f : 20f,
+            CornerRadiusDp = mat.CornerRadiusDp < 16f ? mat.CornerRadiusDp : defaultRadius,
             ThicknessDp = 20f,
             RimChalkiness = 0.88f
         };

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Numerics;
 using System.Windows;
@@ -11,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using System.Windows.Shell;
 using SeaGlass.Core;
 using SeaGlass.Core.Backend;
 using SeaGlass.WinUI;
@@ -19,219 +19,461 @@ using SeaGlass.WinUI.Rendering;
 namespace SeaGlass.Sample;
 
 /// <summary>
-/// Exact 1:1 port of <c>ExpressiveTidalBackdrop</c> from <c>android/sample/.../MainActivity.kt</c> (lines 2191–2487):
-/// Luminous, palette-harmonized Material 3 Expressive coastal lightscape with rotated silk ribbons,
-/// sunlit coral/amber bokeh spheres, luminous pebbles &amp; rings, cubic Bezier caustic wave filaments,
-/// and editorial media cards behind the Mini-Player &amp; Bottom Fluid Bar.
+/// Fixed desktop window metrics shared by the WPF layout tree and the stage backdrop so that
+/// glass surfaces sample exactly the window layer that is visually beneath them.
 /// </summary>
-public sealed class ExpressiveTidalBackdropCanvas : FrameworkElement
+internal static class StudioLayout
 {
+    public const double TitleBarHeight = 48;
+    public const double SidebarWidth = 232;
+    public const double InspectorWidth = 316;
+    public const double StatusBarHeight = 28;
+    public const double ContentCornerRadius = 8;
+}
+
+public enum StudioCanvasMode
+{
+    Artwork,
+    CodeEditor
+}
+
+/// <summary>
+/// Desktop window backdrop for the SeaGlass Studio stage. Renders the real window layer stack —
+/// a Mica-style tinted window material, the edge-to-edge content layer (top-left 8px corner), and
+/// the document canvas (a sea-glass beach artwork or a code editor surface) — so every SeaGlass
+/// surface refracts the exact pixels that sit under it. Static layers are cached into a
+/// <see cref="DrawingGroup"/> and only the shoreline wave layer animates via a reused transform.
+/// </summary>
+public sealed class StudioWindowBackdrop : FrameworkElement
+{
+    private readonly TranslateTransform _waveShift = new();
+    private readonly TranslateTransform _foamShift = new();
+    private DrawingGroup? _staticScene;
+    private DrawingGroup? _waveLayer;
+    private DrawingGroup? _foamLayer;
+    private Geometry? _canvasClip;
+    private RectangleGeometry? _boundsClip;
+    private (int PaletteId, StudioCanvasMode Mode, int W, int H) _sceneKey;
+
     public double Phase { get; set; }
+    public StudioCanvasMode CanvasMode { get; set; } = StudioCanvasMode.Artwork;
+
+    public static Rect CanvasRectFor(double w, double h) => new(
+        StudioLayout.SidebarWidth,
+        StudioLayout.TitleBarHeight,
+        Math.Max(10, w - StudioLayout.SidebarWidth - StudioLayout.InspectorWidth - 1),
+        Math.Max(10, h - StudioLayout.TitleBarHeight - StudioLayout.StatusBarHeight));
 
     protected override void OnRender(DrawingContext dc)
     {
-        double w = ActualWidth > 1 ? ActualWidth : 1420;
-        double h = ActualHeight > 1 ? ActualHeight : 940;
-
-        // Strictly clip to (0, 0, w, h) so VisualBrush RelativeToBoundingBox maps [0..1] to the exact stage viewport!
-        dc.PushClip(new RectangleGeometry(new Rect(0, 0, w, h)));
-
+        double w = ActualWidth > 1 ? ActualWidth : 1440;
+        double h = ActualHeight > 1 ? ActualHeight : 920;
         SeaGlassPalette palette = SeaGlassTheme.Current.Palette;
-        bool isDark = palette.IsDark;
 
-        Color bgTop = isDark
-            ? Color.FromRgb(0x07, 0x12, 0x1E)
-            : SeaGlassXamlRenderer.ToMediaColor(SeaGlassColorMath.LerpOklab(palette.PrimaryGlass.TintColorArgb, unchecked((int)0xFF102A44), 0.52f));
-        Color bgMid = isDark
-            ? Color.FromRgb(0x0C, 0x1F, 0x34)
-            : SeaGlassXamlRenderer.ToMediaColor(SeaGlassColorMath.LerpOklab(palette.TertiaryGlass.TintColorArgb, unchecked((int)0xFF163858), 0.46f));
-        Color bgBottom = isDark
-            ? Color.FromRgb(0x11, 0x2A, 0x44)
-            : SeaGlassXamlRenderer.ToMediaColor(SeaGlassColorMath.LerpOklab(palette.SecondaryGlass.TintColorArgb, unchecked((int)0xFF0E2942), 0.50f));
-
-        LinearGradientBrush bgBrush = new(
-            new GradientStopCollection
-            {
-                new GradientStop(bgTop, 0.0),
-                new GradientStop(bgMid, 0.5),
-                new GradientStop(bgBottom, 1.0)
-            },
-            new Point(0, 0),
-            new Point(0, 1));
-        bgBrush.Freeze();
-        dc.DrawRectangle(bgBrush, null, new Rect(0, 0, w, h));
-
-        double dx = Math.Cos(Phase) * w * 0.08;
-        double dy = Math.Sin(Phase) * h * 0.04;
-
-        Color primaryGlow = SeaGlassXamlRenderer.ToMediaColor(palette.PrimaryGlass.TintColorArgb);
-        Color secondaryGlow = SeaGlassXamlRenderer.ToMediaColor(palette.SecondaryGlass.TintColorArgb);
-        Color tertiaryGlow = SeaGlassXamlRenderer.ToMediaColor(palette.TertiaryGlass.TintColorArgb);
-        Color sunlitPeach = Color.FromRgb(0xFF, 0x8E, 0x6E);
-        Color goldenSand = Color.FromRgb(0xFF, 0xCA, 0x58);
-        Color aquaCaustic = Color.FromRgb(0x68, 0xF4, 0xFF);
-
-        // 1. Soft glowing atmospheric bokeh spheres
-        DrawRadialSphere(dc, new Point(w * 0.20 + dx, h * 0.18 + dy), w * 0.45, primaryGlow, 0.78);
-        DrawRadialSphere(dc, new Point(w * 0.82 - dx * 0.7, h * 0.34 - dy), w * 0.42, sunlitPeach, 0.72);
-        DrawRadialSphere(dc, new Point(w * 0.24 - dy, h * 0.62 + dx * 0.5), w * 0.44, tertiaryGlow, 0.76);
-        DrawRadialSphere(dc, new Point(w * 0.78 + dy, h * 0.84 - dx * 0.4), w * 0.40, goldenSand, 0.70);
-
-        // 2. Flowing Material 3 Expressive Silk Ribbons (-14°, +12°, -10°)
-        DrawRotatedSilkRibbon(
-            dc,
-            angleDeg: -14.0,
-            pivot: new Point(w * 0.5, h * 0.22),
-            rect: new Rect(-w * 0.25 + dx * 0.35, h * 0.15, w * 1.50, 96),
-            c0: WithAlpha(primaryGlow, 0.88),
-            c1: WithAlpha(goldenSand, 0.86),
-            c2: WithAlpha(tertiaryGlow, 0.88));
-
-        DrawRotatedSilkRibbon(
-            dc,
-            angleDeg: 12.0,
-            pivot: new Point(w * 0.5, h * 0.44),
-            rect: new Rect(-w * 0.25 - dx * 0.30, h * 0.38, w * 1.50, 104),
-            c0: WithAlpha(tertiaryGlow, 0.86),
-            c1: WithAlpha(sunlitPeach, 0.84),
-            c2: WithAlpha(secondaryGlow, 0.88));
-
-        DrawRotatedSilkRibbon(
-            dc,
-            angleDeg: -10.0,
-            pivot: new Point(w * 0.5, h * 0.68),
-            rect: new Rect(-w * 0.25 + dx * 0.25, h * 0.62, w * 1.50, 98),
-            c0: WithAlpha(sunlitPeach, 0.82),
-            c1: WithAlpha(primaryGlow, 0.88),
-            c2: WithAlpha(aquaCaustic, 0.84));
-
-        // 3. Crisp Luminous Pebbles & Concentric Rings for Meniscus Refraction Calibration
-        Pen whiteRingPen = new(new SolidColorBrush(Color.FromArgb(115, 255, 255, 255)), 3.0);
-        whiteRingPen.Freeze();
-
-        Point p1 = new(w * 0.26 - dx * 0.4, h * 0.29 + dy);
-        dc.DrawEllipse(new SolidColorBrush(WithAlpha(goldenSand, 0.92)), null, p1, 48, 48);
-        dc.DrawEllipse(null, whiteRingPen, p1, 60, 60);
-
-        Point p2 = new(w * 0.74 + dx * 0.35, h * 0.48 - dy);
-        dc.DrawEllipse(new SolidColorBrush(WithAlpha(sunlitPeach, 0.90)), null, p2, 54, 54);
-        dc.DrawEllipse(null, whiteRingPen, p2, 68, 68);
-
-        Point p3 = new(w * 0.32 + dy, h * 0.74);
-        dc.DrawEllipse(new SolidColorBrush(WithAlpha(aquaCaustic, 0.88)), null, p3, 48, 48);
-
-        // 4. Luminous Caustic Wave Filaments
-        LinearGradientBrush waveBrush = new(
-            new GradientStopCollection
-            {
-                new GradientStop(Color.FromArgb(40, 255, 255, 255), 0.0),
-                new GradientStop(Color.FromArgb(160, 255, 255, 255), 0.35),
-                new GradientStop(WithAlpha(aquaCaustic, 0.58), 0.68),
-                new GradientStop(Color.FromArgb(40, 255, 255, 255), 1.0)
-            },
-            new Point(0, 0),
-            new Point(1, 0));
-        waveBrush.Freeze();
-        Pen wavePen = new(waveBrush, 3.0);
-        wavePen.Freeze();
-
-        for (int i = 0; i <= 3; i++)
+        var key = (palette.Id.GetHashCode(), CanvasMode, (int)w, (int)h);
+        if (_staticScene is null || key != _sceneKey)
         {
-            double yBase = h * (0.20 + i * 0.21);
-            StreamGeometry waveGeom = new();
-            using (StreamGeometryContext ctx = waveGeom.Open())
-            {
-                ctx.BeginFigure(new Point(0, yBase), false, false);
-                ctx.BezierTo(
-                    new Point(w * 0.33, yBase - 34.0 * Math.Sin(Phase + i * 0.9)),
-                    new Point(w * 0.66, yBase + 34.0 * Math.Cos(Phase + i * 0.9)),
-                    new Point(w, yBase),
-                    true,
-                    true);
-            }
-            waveGeom.Freeze();
-            dc.DrawGeometry(null, wavePen, waveGeom);
+            _sceneKey = key;
+            BuildScene(w, h, palette);
         }
 
-        // 5. High-Contrast Editorial Media Cards & Headlines directly behind the Mini-Player & Bottom Tab Bar
-        double driftX = Math.Sin(Phase * 0.7) * 18.0;
-        LinearGradientBrush card1 = new(Color.FromRgb(0xFF, 0x6B, 0x98), Color.FromRgb(0x5A, 0x98, 0xFF), new Point(0, 0), new Point(1, 1));
-        card1.Freeze();
-        dc.DrawRoundedRectangle(card1, null, new Rect(w * 0.05 + driftX, h * 0.77, w * 0.42, 62), 14, 14);
+        if (_boundsClip is null || _boundsClip.Rect.Width != w || _boundsClip.Rect.Height != h)
+        {
+            _boundsClip = new RectangleGeometry(new Rect(0, 0, w, h));
+            _boundsClip.Freeze();
+        }
 
-        LinearGradientBrush card2 = new(Color.FromRgb(0x7A, 0xF5, 0xC8), Color.FromRgb(0x14, 0xA8, 0x78), new Point(0, 0), new Point(1, 1));
-        card2.Freeze();
-        dc.DrawRoundedRectangle(card2, null, new Rect(w * 0.51 + driftX, h * 0.77, w * 0.44, 62), 14, 14);
+        // Content bounds must equal the stage rect exactly: glass samples this visual through a
+        // VisualBrush whose Viewbox is relative to the bounding box, so any overdraw would misregister refraction.
+        dc.PushClip(_boundsClip);
+        dc.DrawDrawing(_staticScene);
 
-        SeaGlassXamlRenderer.DrawLabel(dc, "Chill House Beats", new Point(w * 0.05 + driftX, h * 0.842), unchecked((int)0xEBFFFFFF), 17, bold: true, extraBold: true);
-        SeaGlassXamlRenderer.DrawLabel(dc, "Coastal Lounge", new Point(w * 0.05 + driftX, h * 0.868), unchecked((int)0xCCE0F4FF), 14, bold: false);
-
-        SeaGlassXamlRenderer.DrawLabel(dc, "Tropical House Essentials", new Point(w * 0.50 + driftX, h * 0.842), unchecked((int)0xEBFFFFFF), 17, bold: true, extraBold: true);
-        SeaGlassXamlRenderer.DrawLabel(dc, "SeaGlass Dance", new Point(w * 0.50 + driftX, h * 0.868), unchecked((int)0xCCE0F4FF), 14, bold: false);
-
-        LinearGradientBrush card3 = new(Color.FromRgb(0x3E, 0x8E, 0xFF), Color.FromRgb(0xA8, 0xDC, 0xFF), new Point(0, 0), new Point(1, 1));
-        card3.Freeze();
-        dc.DrawRoundedRectangle(card3, null, new Rect(w * 0.05 - driftX * 0.6, h * 0.905, w * 0.42, 84), 14, 14);
-
-        LinearGradientBrush card4 = new(Color.FromRgb(0xFF, 0xB2, 0x48), Color.FromRgb(0x32, 0xD8, 0xB4), new Point(0, 0), new Point(1, 1));
-        card4.Freeze();
-        dc.DrawRoundedRectangle(card4, null, new Rect(w * 0.51 - driftX * 0.6, h * 0.905, w * 0.44, 84), 14, 14);
-
-        dc.Pop(); // Pop stage viewport clip
+        if (CanvasMode == StudioCanvasMode.Artwork && _waveLayer is not null && _foamLayer is not null && _canvasClip is not null)
+        {
+            _waveShift.X = Math.Sin(Phase) * 14.0;
+            _foamShift.X = Math.Sin(Phase + 0.9) * 9.0;
+            _foamShift.Y = Math.Cos(Phase) * 2.0;
+            dc.PushClip(_canvasClip);
+            dc.PushTransform(_waveShift);
+            dc.DrawDrawing(_waveLayer);
+            dc.Pop();
+            dc.PushTransform(_foamShift);
+            dc.DrawDrawing(_foamLayer);
+            dc.Pop();
+            dc.Pop();
+        }
+        dc.Pop();
     }
 
-    private static Color WithAlpha(Color c, double alpha) =>
-        Color.FromArgb((byte)Math.Clamp((int)(alpha * 255), 0, 255), c.R, c.G, c.B);
-
-    private static void DrawRadialSphere(DrawingContext dc, Point center, double radius, Color color, double alpha)
+    private void BuildScene(double w, double h, SeaGlassPalette palette)
     {
-        RadialGradientBrush b = new(
-            WithAlpha(color, alpha),
-            Color.FromArgb(0, color.R, color.G, color.B));
+        bool isDark = palette.IsDark;
+        int primary = palette.PrimaryGlass.TintColorArgb;
+        int secondary = palette.SecondaryGlass.TintColorArgb;
+        int tertiary = palette.TertiaryGlass.TintColorArgb;
+
+        DrawingGroup scene = new();
+        using (DrawingContext dc = scene.Open())
+        {
+            // 1. Mica window material: neutral base with a faint, heavily-diffused wallpaper bleed.
+            int micaBase = isDark
+                ? SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFF1C1F24), 0.93f)
+                : SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFFEEF1F4), 0.90f);
+            dc.DrawRectangle(Frozen(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(micaBase))), null, new Rect(0, 0, w, h));
+            DrawSoftPool(dc, new Point(w * 0.10, h * 0.08), Math.Max(w, h) * 0.55, primary, isDark ? 0.07 : 0.10);
+            DrawSoftPool(dc, new Point(w * 0.95, h * 0.02), Math.Max(w, h) * 0.45, tertiary, isDark ? 0.05 : 0.07);
+
+            // 2. Content layer: edge-to-edge to the right/bottom window edges, rounded only at top-left.
+            Geometry layerGeom = TopLeftRoundedRect(new Rect(StudioLayout.SidebarWidth, StudioLayout.TitleBarHeight,
+                w - StudioLayout.SidebarWidth + 1, h - StudioLayout.TitleBarHeight + 1), StudioLayout.ContentCornerRadius);
+            Color layerFill = isDark ? Color.FromRgb(0x25, 0x28, 0x2E) : Color.FromRgb(0xFA, 0xFB, 0xFC);
+            Color layerStroke = isDark ? Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x16, 0x00, 0x00, 0x00);
+            dc.DrawGeometry(Frozen(new SolidColorBrush(layerFill)), Frozen(new Pen(Frozen(new SolidColorBrush(layerStroke)), 1.0)), layerGeom);
+
+            // 3. Document canvas (clipped to the content layer's rounded corner).
+            Rect canvas = CanvasRectFor(w, h);
+            Geometry canvasClip = TopLeftRoundedRect(canvas, StudioLayout.ContentCornerRadius);
+            canvasClip.Freeze();
+            _canvasClip = canvasClip;
+            dc.PushClip(canvasClip);
+            if (CanvasMode == StudioCanvasMode.Artwork)
+            {
+                DrawBeachArtwork(dc, canvas, isDark, primary, secondary, tertiary);
+            }
+            else
+            {
+                Color editorBg = isDark ? Color.FromRgb(0x1A, 0x1C, 0x21) : Color.FromRgb(0x1E, 0x22, 0x2A);
+                dc.DrawRectangle(Frozen(new SolidColorBrush(editorBg)), null, canvas);
+                dc.DrawRectangle(Frozen(new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF))), null,
+                    new Rect(canvas.X, canvas.Y, canvas.Width, 38));
+            }
+            dc.Pop();
+
+            // 4. Pane separators (inspector divider + status bar divider).
+            SolidColorBrush divider = Frozen(new SolidColorBrush(isDark ? Color.FromArgb(0x2A, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1C, 0x00, 0x00, 0x00)));
+            dc.DrawRectangle(divider, null, new Rect(canvas.Right, StudioLayout.TitleBarHeight, 1, h - StudioLayout.TitleBarHeight));
+            dc.DrawRectangle(divider, null, new Rect(StudioLayout.SidebarWidth, h - StudioLayout.StatusBarHeight, w - StudioLayout.SidebarWidth, 1));
+        }
+        scene.Freeze();
+        _staticScene = scene;
+
+        Rect c = CanvasRectFor(w, h);
+        _waveLayer = BuildWaveLayer(c, isDark);
+        _foamLayer = BuildFoamLayer(c, isDark);
+    }
+
+    private static void DrawBeachArtwork(DrawingContext dc, Rect c, bool isDark, int primary, int secondary, int tertiary)
+    {
+        double horizon = c.Y + c.Height * 0.44;
+        double shore = c.Y + c.Height * 0.72;
+
+        // Sky
+        int skyTop = isDark ? SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFF0A1220), 0.82f) : SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFFFFFFFF), 0.38f);
+        int skyLow = isDark ? SeaGlassColorMath.LerpOklab(tertiary, unchecked((int)0xFF14203A), 0.62f) : SeaGlassColorMath.LerpOklab(tertiary, unchecked((int)0xFFFFF3E4), 0.62f);
+        dc.DrawRectangle(Frozen(new LinearGradientBrush(SeaGlassXamlRenderer.ToMediaColor(skyTop), SeaGlassXamlRenderer.ToMediaColor(skyLow), 90)), null,
+            new Rect(c.X, c.Y, c.Width, horizon - c.Y + 1));
+
+        // Sun / moon with halo
+        Point sun = new(c.X + c.Width * 0.72, c.Y + c.Height * 0.20);
+        double sunR = Math.Min(c.Width, c.Height) * 0.075;
+        Color sunCol = isDark ? Color.FromRgb(0xE6, 0xEE, 0xFF) : Color.FromRgb(0xFF, 0xE4, 0xAE);
+        dc.DrawEllipse(Frozen(new RadialGradientBrush(Color.FromArgb(isDark ? (byte)0x40 : (byte)0x70, sunCol.R, sunCol.G, sunCol.B), Color.FromArgb(0, sunCol.R, sunCol.G, sunCol.B))), null, sun, sunR * 3.4, sunR * 3.4);
+        dc.DrawEllipse(Frozen(new SolidColorBrush(sunCol)), null, sun, sunR, sunR);
+
+        // Distant headland silhouettes
+        int landCol = isDark ? SeaGlassColorMath.LerpOklab(secondary, unchecked((int)0xFF0B1424), 0.70f) : SeaGlassColorMath.LerpOklab(secondary, unchecked((int)0xFF6E8FA0), 0.55f);
+        StreamGeometry land = new();
+        using (StreamGeometryContext g = land.Open())
+        {
+            g.BeginFigure(new Point(c.X, horizon), true, true);
+            g.BezierTo(new Point(c.X + c.Width * 0.10, horizon - c.Height * 0.09), new Point(c.X + c.Width * 0.22, horizon - c.Height * 0.06), new Point(c.X + c.Width * 0.34, horizon), true, true);
+        }
+        land.Freeze();
+        dc.DrawGeometry(Frozen(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(landCol, 0.85f))), null, land);
+
+        // Sea
+        int seaTop = isDark ? SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFF06223A), 0.55f) : SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFF1C6E8C), 0.42f);
+        int seaLow = isDark ? SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFF0C3550), 0.40f) : SeaGlassColorMath.LerpOklab(primary, unchecked((int)0xFF3AA6B4), 0.22f);
+        dc.DrawRectangle(Frozen(new LinearGradientBrush(SeaGlassXamlRenderer.ToMediaColor(seaTop), SeaGlassXamlRenderer.ToMediaColor(seaLow), 90)), null,
+            new Rect(c.X, horizon, c.Width, shore - horizon + 2));
+
+        // Sun glitter path on the water
+        SolidColorBrush glitter = Frozen(new SolidColorBrush(Color.FromArgb(isDark ? (byte)0x55 : (byte)0x8C, sunCol.R, sunCol.G, sunCol.B)));
+        for (int i = 0; i < 14; i++)
+        {
+            double t = i / 13.0;
+            double y = horizon + 6 + t * (shore - horizon - 30);
+            double half = 8 + t * 46;
+            double jitter = Math.Sin(i * 2.7) * half * 0.35;
+            dc.DrawRoundedRectangle(glitter, null, new Rect(sun.X - half + jitter, y, half * 2 * (0.4 + 0.3 * Math.Abs(Math.Sin(i * 1.3))), 2.2), 1.1, 1.1);
+        }
+
+        // Sand
+        int sandTop = isDark ? unchecked((int)0xFF4B4136) : SeaGlassColorMath.LerpOklab(unchecked((int)0xFFF1DFBE), secondary, 0.08f);
+        int sandLow = isDark ? unchecked((int)0xFF362E26) : SeaGlassColorMath.LerpOklab(unchecked((int)0xFFE2C79C), secondary, 0.06f);
+        dc.DrawRectangle(Frozen(new LinearGradientBrush(SeaGlassXamlRenderer.ToMediaColor(sandTop), SeaGlassXamlRenderer.ToMediaColor(sandLow), 90)), null,
+            new Rect(c.X, shore, c.Width, c.Bottom - shore));
+
+        // Wet-sand band
+        dc.DrawRectangle(Frozen(new LinearGradientBrush(Color.FromArgb(0x38, 0x5A, 0x48, 0x30), Color.FromArgb(0, 0x5A, 0x48, 0x30), 90)), null,
+            new Rect(c.X, shore, c.Width, 34));
+
+        // Scattered tumbled sea-glass pebbles (deterministic layout)
+        int[] gems = [primary, secondary, tertiary, unchecked((int)0xFFFFFFFF)];
+        Pen pebbleRim = Frozen(new Pen(Frozen(new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF))), 1.0));
+        SolidColorBrush pebbleShadow = Frozen(new SolidColorBrush(Color.FromArgb(0x26, 0x3A, 0x2A, 0x18)));
+        uint seed = 0x9E3779B9;
+        for (int i = 0; i < 26; i++)
+        {
+            seed = seed * 1664525u + 1013904223u;
+            double fx = (seed >> 8) / (double)(1 << 24);
+            seed = seed * 1664525u + 1013904223u;
+            double fy = (seed >> 8) / (double)(1 << 24);
+            seed = seed * 1664525u + 1013904223u;
+            double fs = (seed >> 8) / (double)(1 << 24);
+
+            double px = c.X + 18 + fx * (c.Width - 36);
+            double py = shore + 42 + fy * Math.Max(10, c.Bottom - shore - 60);
+            double pw = 9 + fs * 16;
+            double ph = pw * (0.55 + 0.3 * fy);
+            Color gc = SeaGlassXamlRenderer.ToMediaColor(gems[i % gems.Length], isDark ? 0.55f : 0.72f);
+            dc.DrawEllipse(pebbleShadow, null, new Point(px + 1.5, py + 2.5), pw * 0.5, ph * 0.5);
+            dc.DrawEllipse(Frozen(new SolidColorBrush(gc)), pebbleRim, new Point(px, py), pw * 0.5, ph * 0.5);
+        }
+    }
+
+    private static DrawingGroup BuildWaveLayer(Rect c, bool isDark)
+    {
+        DrawingGroup g = new();
+        using (DrawingContext dc = g.Open())
+        {
+            double horizon = c.Y + c.Height * 0.44;
+            double shore = c.Y + c.Height * 0.72;
+            for (int i = 0; i < 7; i++)
+            {
+                double t = (i + 1) / 8.0;
+                double y = horizon + t * (shore - horizon - 10);
+                double amp = 2 + t * 5;
+                double period = 90 + t * 120;
+                byte a = (byte)((isDark ? 0x20 : 0x3A) + t * 0x30);
+                Pen wavePen = Frozen(new Pen(Frozen(new SolidColorBrush(Color.FromArgb(a, 0xFF, 0xFF, 0xFF))), 1.0 + t * 1.2)
+                {
+                    StartLineCap = PenLineCap.Round,
+                    EndLineCap = PenLineCap.Round
+                });
+                StreamGeometry wave = new();
+                using (StreamGeometryContext s = wave.Open())
+                {
+                    double x0 = c.X - 40;
+                    s.BeginFigure(new Point(x0, y), false, false);
+                    for (double x = x0; x < c.Right + 40; x += period)
+                    {
+                        s.BezierTo(new Point(x + period * 0.25, y - amp), new Point(x + period * 0.75, y + amp), new Point(x + period, y), true, true);
+                    }
+                }
+                wave.Freeze();
+                dc.DrawGeometry(null, wavePen, wave);
+            }
+        }
+        g.Freeze();
+        return g;
+    }
+
+    private static DrawingGroup BuildFoamLayer(Rect c, bool isDark)
+    {
+        DrawingGroup g = new();
+        using (DrawingContext dc = g.Open())
+        {
+            double shore = c.Y + c.Height * 0.72;
+            StreamGeometry foam = new();
+            using (StreamGeometryContext s = foam.Open())
+            {
+                double x0 = c.X - 40;
+                s.BeginFigure(new Point(x0, shore - 6), true, true);
+                for (double x = x0; x < c.Right + 40; x += 140)
+                {
+                    s.BezierTo(new Point(x + 35, shore - 14), new Point(x + 95, shore + 8), new Point(x + 140, shore - 4), true, true);
+                }
+                s.LineTo(new Point(c.Right + 40, shore + 10), true, true);
+                for (double x = c.Right + 40; x > x0; x -= 140)
+                {
+                    s.BezierTo(new Point(x - 40, shore + 18), new Point(x - 100, shore + 4), new Point(x - 140, shore + 12), true, true);
+                }
+            }
+            foam.Freeze();
+            dc.DrawGeometry(Frozen(new SolidColorBrush(Color.FromArgb(isDark ? (byte)0x50 : (byte)0xB0, 0xFF, 0xFF, 0xFF))), null, foam);
+        }
+        g.Freeze();
+        return g;
+    }
+
+    private static void DrawSoftPool(DrawingContext dc, Point center, double radius, int argb, double alpha)
+    {
+        Color col = SeaGlassXamlRenderer.ToMediaColor(argb);
+        RadialGradientBrush b = new(Color.FromArgb((byte)Math.Clamp(alpha * 255, 0, 255), col.R, col.G, col.B), Color.FromArgb(0, col.R, col.G, col.B));
         b.Freeze();
         dc.DrawEllipse(b, null, center, radius, radius);
     }
 
-    private static void DrawRotatedSilkRibbon(
-        DrawingContext dc,
-        double angleDeg,
-        Point pivot,
-        Rect rect,
-        Color c0,
-        Color c1,
-        Color c2)
+    internal static Geometry TopLeftRoundedRect(Rect r, double radius)
     {
-        dc.PushTransform(new RotateTransform(angleDeg, pivot.X, pivot.Y));
-        LinearGradientBrush b = new(
-            new GradientStopCollection
-            {
-                new GradientStop(c0, 0.0),
-                new GradientStop(c1, 0.5),
-                new GradientStop(c2, 1.0)
-            },
-            new Point(0, 0),
-            new Point(1, 0));
-        b.Freeze();
-        double r = rect.Height * 0.5;
-        dc.DrawRoundedRectangle(b, null, rect, r, r);
-        dc.Pop();
+        StreamGeometry g = new();
+        using (StreamGeometryContext s = g.Open())
+        {
+            s.BeginFigure(new Point(r.X, r.Y + radius), true, true);
+            s.ArcTo(new Point(r.X + radius, r.Y), new System.Windows.Size(radius, radius), 0, false, SweepDirection.Clockwise, true, true);
+            s.LineTo(new Point(r.Right, r.Y), true, true);
+            s.LineTo(new Point(r.Right, r.Bottom), true, true);
+            s.LineTo(new Point(r.X, r.Bottom), true, true);
+        }
+        g.Freeze();
+        return g;
+    }
+
+    private static T Frozen<T>(T f) where T : Freezable
+    {
+        f.Freeze();
+        return f;
     }
 }
 
 /// <summary>
-/// Hardware-accelerated SeaGlass visual control that samples the live blurred &amp; sharp
-/// <see cref="SeaGlassStageBackdropVisuals"/> and renders authentic Water-Drop + Sanded SeaGlass optics.
+/// Lightweight retained-mode painter for flat desktop chrome (sidebar, inspector rows, status bar,
+/// caption buttons). Re-renders only when its <see cref="Signature"/> changes.
+/// </summary>
+public sealed class StudioPaintHost : FrameworkElement
+{
+    private int _lastSignature = int.MinValue;
+
+    public Action<DrawingContext, double, double>? Painter { get; set; }
+    public Func<int>? Signature { get; set; }
+    public bool IsHovered { get; private set; }
+    public Point? PointerPos { get; private set; }
+
+    public StudioPaintHost()
+    {
+        MouseEnter += (_, e) => { IsHovered = true; PointerPos = e.GetPosition(this); InvalidateVisual(); };
+        MouseMove += (_, e) => { PointerPos = e.GetPosition(this); InvalidateVisual(); };
+        MouseLeave += (_, _) => { IsHovered = false; PointerPos = null; InvalidateVisual(); };
+    }
+
+    public void Tick()
+    {
+        if (Signature is null) return;
+        int sig = Signature();
+        if (sig != _lastSignature)
+        {
+            InvalidateVisual();
+        }
+    }
+
+    protected override void OnRender(DrawingContext dc)
+    {
+        _lastSignature = Signature?.Invoke() ?? 0;
+        dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
+        Painter?.Invoke(dc, ActualWidth, ActualHeight);
+    }
+}
+
+/// <summary>
+/// Cached desktop typography (Segoe UI Variable / Cascadia Mono) with left, center, and right alignment.
+/// </summary>
+internal static class StudioText
+{
+    private static readonly Typeface Regular = new(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+    private static readonly Typeface Semibold = new(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private static readonly Typeface Display = new(new FontFamily("Segoe UI Variable Display, Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private static readonly Typeface Mono = new(new FontFamily("Cascadia Mono, Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+    private static readonly Dictionary<(string, double, int, int), FormattedText> Cache = new();
+
+    public enum Style { Regular, Semibold, Display, Mono }
+
+    public static FormattedText Get(string text, double size, int argb, Style style = Style.Regular, float alpha = 1f)
+    {
+        int colorKey = (argb & 0x00FFFFFF) | ((int)(Math.Clamp(alpha, 0f, 1f) * ((argb >>> 24) & 0xFF)) << 24);
+        var key = (text, size, colorKey, (int)style);
+        if (Cache.TryGetValue(key, out FormattedText? ft)) return ft;
+        if (Cache.Count > 4000) Cache.Clear();
+
+        SolidColorBrush brush = new(Color.FromArgb((byte)((colorKey >>> 24) & 0xFF), (byte)((argb >> 16) & 0xFF), (byte)((argb >> 8) & 0xFF), (byte)(argb & 0xFF)));
+        brush.Freeze();
+        Typeface tf = style switch
+        {
+            Style.Semibold => Semibold,
+            Style.Display => Display,
+            Style.Mono => Mono,
+            _ => Regular
+        };
+        ft = new FormattedText(text, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, tf, size, brush, 1.25);
+        Cache[key] = ft;
+        return ft;
+    }
+
+    public static double Draw(DrawingContext dc, string text, double x, double y, double size, int argb, Style style = Style.Regular, float alpha = 1f)
+    {
+        FormattedText ft = Get(text, size, argb, style, alpha);
+        dc.DrawText(ft, new Point(x, y));
+        return ft.Width;
+    }
+
+    public static void DrawRight(DrawingContext dc, string text, double right, double y, double size, int argb, Style style = Style.Regular, float alpha = 1f)
+    {
+        FormattedText ft = Get(text, size, argb, style, alpha);
+        dc.DrawText(ft, new Point(right - ft.Width, y));
+    }
+
+    public static void DrawCentered(DrawingContext dc, string text, Point center, double size, int argb, Style style = Style.Regular, float alpha = 1f)
+    {
+        FormattedText ft = Get(text, size, argb, style, alpha);
+        dc.DrawText(ft, new Point(center.X - ft.Width * 0.5, center.Y - ft.Height * 0.5));
+    }
+
+    /// <summary>Vertically centers single-line text inside a row of the given height (cap-height centered, baseline aligned across fonts).</summary>
+    public static void DrawInRow(DrawingContext dc, string text, double x, double rowY, double rowH, double size, int argb, Style style = Style.Regular, float alpha = 1f)
+    {
+        FormattedText ft = Get(text, size, argb, style, alpha);
+        dc.DrawText(ft, new Point(x, RowBaseline(rowY, rowH, size) - ft.Baseline));
+    }
+
+    public static void DrawRightInRow(DrawingContext dc, string text, double right, double rowY, double rowH, double size, int argb, Style style = Style.Regular, float alpha = 1f)
+    {
+        FormattedText ft = Get(text, size, argb, style, alpha);
+        dc.DrawText(ft, new Point(right - ft.Width, RowBaseline(rowY, rowH, size) - ft.Baseline));
+    }
+
+    /// <summary>Draws text so its baseline sits exactly at <paramref name="baselineY"/>.</summary>
+    public static void DrawAtBaseline(DrawingContext dc, string text, double x, double baselineY, double size, int argb, Style style = Style.Regular, float alpha = 1f, bool rightAligned = false)
+    {
+        FormattedText ft = Get(text, size, argb, style, alpha);
+        dc.DrawText(ft, new Point(rightAligned ? x - ft.Width : x, baselineY - ft.Baseline));
+    }
+
+    private static double RowBaseline(double rowY, double rowH, double size) => Math.Round(rowY + rowH * 0.5 + size * 0.36);
+}
+
+/// <summary>
+/// Hardware-accelerated SeaGlass visual control with spring-animated desktop hover &amp; press physics,
+/// cursor-tracked rim illumination, and smart dirty-state invalidation.
 /// </summary>
 public sealed class SeaGlassVisualControl : Border
 {
     private Point? _localPointerPos;
+    private bool _isHovered;
+    private float _hoverProgress;
+    private float _hoverVel;
+    private int _lastRenderedSignature;
+    private bool _originDirty = true;
 
     public SeaGlassSurface SurfaceModel { get; set; }
     public SeaGlassStageBackdropVisuals? StageBackdrop { get; set; }
     public UIElement? StageCoordinateRoot { get; set; }
     public Func<float, SeaGlassSurfaceFrameState>? CustomStepEvaluator { get; set; }
     public Func<IReadOnlyList<SeaGlassSdfEngine.SdfNode>?>? ActiveNodesProvider { get; set; }
+    public Func<int>? CustomStateSignature { get; set; }
     public float SmoothRadiusDp { get; set; } = 28f;
+    public bool InteractiveHoverLift { get; set; }
+    public float HoverProgress => _hoverProgress;
+    public Point? LocalPointerPos => _localPointerPos;
     public Action<DrawingContext, SeaGlassSurfaceFrameState, double, double>? CustomOverlayPainter { get; set; }
     public SeaGlassSurfaceFrameState? LastFrameState { get; private set; }
 
@@ -242,7 +484,9 @@ public sealed class SeaGlassVisualControl : Border
         Func<float, SeaGlassSurfaceFrameState>? customStepEvaluator = null,
         Action<DrawingContext, SeaGlassSurfaceFrameState, double, double>? customOverlayPainter = null,
         Func<IReadOnlyList<SeaGlassSdfEngine.SdfNode>?>? activeNodesProvider = null,
-        float smoothRadiusDp = 28f)
+        float smoothRadiusDp = 28f,
+        Func<int>? customStateSignature = null,
+        bool interactiveHoverLift = false)
     {
         SurfaceModel = surfaceModel;
         StageBackdrop = stageBackdrop;
@@ -251,42 +495,114 @@ public sealed class SeaGlassVisualControl : Border
         CustomOverlayPainter = customOverlayPainter;
         ActiveNodesProvider = activeNodesProvider;
         SmoothRadiusDp = smoothRadiusDp;
+        CustomStateSignature = customStateSignature;
+        InteractiveHoverLift = interactiveHoverLift;
         Background = Brushes.Transparent;
-        Cursor = Cursors.Hand;
+        Cursor = surfaceModel.OnClick is not null || interactiveHoverLift ? Cursors.Hand : Cursors.Arrow;
 
+        MouseEnter += (_, e) =>
+        {
+            _isHovered = true;
+            _localPointerPos = e.GetPosition(this);
+        };
         MouseDown += (_, e) =>
         {
             Point pt = e.GetPosition(this);
             _localPointerPos = pt;
             SurfaceModel.OnPointerStateChanged(new Vector2((float)pt.X, (float)pt.Y), true);
+            _lastRenderedSignature = 0;
             InvalidateVisual();
         };
         MouseMove += (_, e) =>
         {
             Point pt = e.GetPosition(this);
+            bool movedSignificantly = _localPointerPos is null ||
+                                      Math.Abs(pt.X - _localPointerPos.Value.X) + Math.Abs(pt.Y - _localPointerPos.Value.Y) >= 4.0;
             _localPointerPos = pt;
             if (e.LeftButton == MouseButtonState.Pressed)
             {
                 SurfaceModel.OnPointerStateChanged(new Vector2((float)pt.X, (float)pt.Y), true);
+                _lastRenderedSignature = 0;
+                InvalidateVisual();
             }
-            InvalidateVisual();
+            else if (movedSignificantly && _isHovered)
+            {
+                _lastRenderedSignature = 0;
+                InvalidateVisual();
+            }
         };
         MouseUp += (_, e) =>
         {
             Point pt = e.GetPosition(this);
             _localPointerPos = pt;
             SurfaceModel.OnPointerStateChanged(new Vector2((float)pt.X, (float)pt.Y), false);
+            _lastRenderedSignature = 0;
             InvalidateVisual();
         };
         MouseLeave += (_, _) =>
         {
+            _isHovered = false;
             _localPointerPos = null;
             if (SurfaceModel.IsPointerDown)
             {
                 SurfaceModel.OnPointerStateChanged(null, false);
             }
+            _lastRenderedSignature = 0;
             InvalidateVisual();
         };
+    }
+
+    public void MarkOriginDirty() => _originDirty = true;
+
+    protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
+    {
+        base.OnRenderSizeChanged(sizeInfo);
+        _originDirty = true;
+        _lastRenderedSignature = 0;
+    }
+
+    private void EnsureOriginUpToDate()
+    {
+        if (!_originDirty || StageCoordinateRoot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (StageBackdrop is not null && StageCoordinateRoot.RenderSize.Width > 1)
+            {
+                StageBackdrop.StageWidth = StageCoordinateRoot.RenderSize.Width;
+                StageBackdrop.StageHeight = StageCoordinateRoot.RenderSize.Height;
+            }
+            Point ptInStage = TransformToVisual(StageCoordinateRoot).Transform(new Point(0, 0));
+            SurfaceModel.OriginInRoot = new Vector2((float)ptInStage.X, (float)ptInStage.Y);
+            _originDirty = false;
+        }
+        catch
+        {
+            // Ignore if visual tree is mid-rebuild
+        }
+    }
+
+    private int ComputeSignature(SeaGlassSurfaceFrameState frame)
+    {
+        HashCode hc = new();
+        hc.Add(frame.UniformBlock.ContentRevision);
+        hc.Add((int)MathF.Round(frame.ScaleX * 1000f));
+        hc.Add((int)MathF.Round(frame.ScaleY * 1000f));
+        hc.Add((int)MathF.Round(_hoverProgress * 250f));
+        hc.Add((int)Math.Round(ActualWidth));
+        hc.Add((int)Math.Round(ActualHeight));
+        hc.Add((int)MathF.Round(SurfaceModel.OriginInRoot.X));
+        hc.Add((int)MathF.Round(SurfaceModel.OriginInRoot.Y));
+        hc.Add(SurfaceModel.IsPointerDown);
+        hc.Add(MainWindow.GlobalOpticsRevision);
+        if (CustomStateSignature is not null)
+        {
+            hc.Add(CustomStateSignature());
+        }
+        return hc.ToHashCode();
     }
 
     public void StepPhysics(float dtSeconds)
@@ -296,29 +612,20 @@ public sealed class SeaGlassVisualControl : Border
             SurfaceModel.SizePx = new Vector2((float)ActualWidth, (float)ActualHeight);
         }
 
-        if (StageCoordinateRoot is not null)
-        {
-            try
-            {
-                if (StageBackdrop is not null && StageCoordinateRoot.RenderSize.Width > 1)
-                {
-                    StageBackdrop.StageWidth = StageCoordinateRoot.RenderSize.Width;
-                    StageBackdrop.StageHeight = StageCoordinateRoot.RenderSize.Height;
-                }
-                Point ptInStage = TransformToVisual(StageCoordinateRoot).Transform(new Point(0, 0));
-                SurfaceModel.OriginInRoot = new Vector2((float)ptInStage.X, (float)ptInStage.Y);
-            }
-            catch
-            {
-                // Ignore if visual tree is mid-rebuild
-            }
-        }
+        EnsureOriginUpToDate();
+
+        SeaGlassSpringSpec hoverSpring = new(DampingRatio: 0.85f, Stiffness: 460f);
+        hoverSpring.Step(ref _hoverProgress, ref _hoverVel, _isHovered ? 1f : 0f, dtSeconds);
 
         LastFrameState = CustomStepEvaluator is not null
             ? CustomStepEvaluator(dtSeconds)
             : SurfaceModel.EvaluateFrame(dtSeconds, SeaGlassTheme.Current);
 
-        InvalidateVisual();
+        int sig = ComputeSignature(LastFrameState);
+        if (sig != _lastRenderedSignature)
+        {
+            InvalidateVisual();
+        }
     }
 
     protected override void OnRender(DrawingContext dc)
@@ -326,70 +633,97 @@ public sealed class SeaGlassVisualControl : Border
         double w = ActualWidth > 1 ? ActualWidth : SurfaceModel.SizePx.X;
         double h = ActualHeight > 1 ? ActualHeight : SurfaceModel.SizePx.Y;
 
-        LastFrameState ??= CustomStepEvaluator is not null
+        if (w > 1 && h > 1)
+        {
+            SurfaceModel.SizePx = new Vector2((float)w, (float)h);
+        }
+
+        EnsureOriginUpToDate();
+
+        LastFrameState = CustomStepEvaluator is not null
             ? CustomStepEvaluator(1f / 60f)
             : SurfaceModel.EvaluateFrame(1f / 60f, SeaGlassTheme.Current);
 
-        Point originInStage = new(SurfaceModel.OriginInRoot.X, SurfaceModel.OriginInRoot.Y);
-        if (StageCoordinateRoot is not null)
+        _lastRenderedSignature = ComputeSignature(LastFrameState);
+
+        bool pushHoverLift = InteractiveHoverLift && (_hoverProgress > 0.005f || SurfaceModel.IsPointerDown);
+        if (pushHoverLift)
         {
-            try
-            {
-                if (StageBackdrop is not null && StageCoordinateRoot.RenderSize.Width > 1)
-                {
-                    StageBackdrop.StageWidth = StageCoordinateRoot.RenderSize.Width;
-                    StageBackdrop.StageHeight = StageCoordinateRoot.RenderSize.Height;
-                }
-                originInStage = TransformToVisual(StageCoordinateRoot).Transform(new Point(0, 0));
-            }
-            catch
-            {
-                // Use cached OriginInRoot
-            }
+            double liftScale = SurfaceModel.IsPointerDown
+                ? 0.976
+                : 1.0 + _hoverProgress * 0.012;
+            dc.PushTransform(new ScaleTransform(liftScale, liftScale, w * 0.5, h * 0.5));
         }
 
+        Point originInStage = new(SurfaceModel.OriginInRoot.X, SurfaceModel.OriginInRoot.Y);
         IReadOnlyList<SeaGlassSdfEngine.SdfNode>? nodes = ActiveNodesProvider?.Invoke();
+        int sampleBackdrop = SeaGlassTheme.Current.Palette.IsDark
+            ? unchecked((int)0xFF0C1522)
+            : unchecked((int)0xFFEEF4F8);
 
         SeaGlassXamlRenderer.DrawSeaGlassSurface(
             dc: dc,
             frameState: LastFrameState,
             width: w,
             height: h,
-            backdropSampleArgb: unchecked((int)0xFF143854),
+            backdropSampleArgb: sampleBackdrop,
             localPointerPos: _localPointerPos,
             isPointerDown: SurfaceModel.IsPointerDown,
             stageBackdrop: StageBackdrop,
             elementOriginInStage: originInStage,
             activeNodes: nodes,
             smoothRadiusDp: SmoothRadiusDp,
-            contentRole: SurfaceModel.ContentRole);
+            contentRole: SurfaceModel.ContentRole,
+            hoverProgress: _hoverProgress);
 
         CustomOverlayPainter?.Invoke(dc, LastFrameState, w, h);
+
+        if (pushHoverLift)
+        {
+            dc.Pop();
+        }
     }
 }
 
 /// <summary>
-/// Interactive SeaGlass Optical Lab, Expressive Showcase &amp; Multi-Column Gallery Window.
-/// Exact 1:1 visual and functional parity with <c>android/sample/.../MainActivity.kt</c>.
+/// SeaGlass Studio — a real desktop application window for the SeaGlass material.
+/// Mica title bar and sidebar, an edge-to-edge content layer holding a document canvas and a flat
+/// inspector, and a status bar. Sea glass is reserved for surfaces that float above content
+/// (toolbars, flyouts, HUDs, droplets, and controls) instead of wrapping every section in a card.
 /// </summary>
 public sealed class MainWindow : Window
 {
+    public static int GlobalOpticsRevision { get; private set; } = 1;
+
     private readonly SeaGlassStageState _stageState = new();
     private readonly SeaGlassStageBackdropVisuals _stageBackdropVisuals = new();
-    private readonly ExpressiveTidalBackdropCanvas _sharpBackdropCanvas = new();
-    private readonly ExpressiveTidalBackdropCanvas _frostedBackdropCanvas = new();
+    private readonly StudioWindowBackdrop _sharpBackdropCanvas = new();
+    private readonly StudioWindowBackdrop _frostedBackdropCanvas = new();
     private readonly Border _frostedBackdropHost;
     private readonly Grid _stageRootGrid = new();
     private readonly List<SeaGlassVisualControl> _activeControls = new();
+    private readonly List<StudioPaintHost> _paintHosts = new();
+    private readonly List<Action> _materialSyncCallbacks = new();
     private readonly ContentControl _mainContentHost = new();
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private double _lastTimeSeconds;
+    private double _lastBackdropUpdateSeconds;
     private double _autoCycleTimer;
+    private double _fps = 60;
 
-    // Showcase state matching MainActivity.kt 1:1
-    private int _selectedTab; // 0=Home(Optics), 1=Morph(Fluid), 2=Palettes, 3=Library(UI Kit), 4=Search(Backends), 5=All-in-One Gallery
-    private bool _widescreenGalleryMode = true; // Shows all sections side-by-side in a rich gallery view by default!
-    private bool _autoAnimateStates = true;
+    // Navigation state: 0 = Material, 1 = Liquid SDF, 2 = Controls, 3 = Shader Code
+    private int _page;
+    private int _codeScrollLine;
+    private bool _autoAnimateStates;
+
+    // Lead-lag vertical springs for the sidebar selection indicator
+    private float _sidebarLeadSlot;
+    private float _sidebarLeadVel;
+    private float _sidebarTrailSlot;
+    private float _sidebarTrailVel;
+    private float _presetSlot;
+    private float _presetSlotVel;
+    private int ActivePresetIndex => _transparency > 0.75f ? 1 : _transparency < 0.55f ? 2 : 0;
 
     private float _transparency = 0.64f;
     private float _coarseness = 0.42f;
@@ -405,11 +739,25 @@ public sealed class MainWindow : Window
     private float _playOrbGapDp = -2f;
     private float _playOrbGapVel;
     private bool _coalescedPreset = true;
-    private float _dropletSepDp = 100f;
+    private const float MergedDropletSepDp = 50f;
+    private const float SplitDropletSepDp = 150f;
+    private static readonly SeaGlassSpringSpec DropletSpring = new(DampingRatio: 0.68f, Stiffness: 420f);
+    private float _dropletSepDp = MergedDropletSepDp;
     private float _dropletSepVel;
-    private float _smoothBridgeDp = 56f;
+    private float _smoothBridgeDp = 48f;
     private Vector2 _dragOffsetPx = Vector2.Zero;
 
+    private readonly (string Title, string Artist)[] _miniTracks =
+    [
+        ("A Good Song Never Dies", "Saint Motel"),
+        ("Midnight City", "M83"),
+        ("Tidal Glass", "Tycho"),
+        ("Oceanic Bloom", "Bonobo")
+    ];
+    private int _miniTrackIndex;
+    private ShaderDialect _selectedDialect = ShaderDialect.HlslSm50;
+
+    // Persistent component instances
     private readonly SeaGlassChoreographedShapeOrb _shapeOrb;
     private readonly SeaGlassBuddingCluster _buddingCluster;
     private readonly SeaGlassMorphingButton _morphBtn0;
@@ -419,7 +767,6 @@ public sealed class MainWindow : Window
     private readonly SeaGlassMorphingContextMenu _contextMenuMorph;
     private readonly SeaGlassCascadedModelMorph _cascadedModelMorph;
     private readonly SeaGlassContextRingMorph _contextRingMorph;
-
     private readonly SeaGlassSegmentedButtonRow _segmentedRow;
     private readonly SeaGlassFloatingToolbar _floatingToolbar;
     private readonly SeaGlassExtendedFab _extendedFab;
@@ -431,43 +778,60 @@ public sealed class MainWindow : Window
     private readonly SeaGlassRadioButton _radioB;
     private readonly SeaGlassCircularProgressIndicator _circularProgress;
     private readonly SeaGlassLinearProgressIndicator _linearProgress;
-    private readonly SeaGlassAdaptiveCornerLabCard _cornerLabCard;
     private readonly SeaGlassMiniPlayerBar _miniPlayerBar;
-    private readonly SeaGlassFluidBar _bottomFluidBar;
-
-    private int _miniTrackIndex;
-    private readonly (string Title, string Artist)[] _miniTracks =
-    [
-        ("A Good Song Never Dies", "Saint Motel"),
-        ("Pacific Surf & Driftwood", "SeaGlass Spatial"),
-        ("Tropical House Essentials", "Coastal Tide Mix")
-    ];
-    private ShaderDialect _selectedDialect = ShaderDialect.HlslSm50;
 
     public MainWindow()
     {
-        Title = "SeaGlass Optical Lab & Material 3 Expressive Gallery (WinUI / Windows)";
-        Width = 1420;
-        Height = 940;
-        MinWidth = 920;
-        MinHeight = 720;
+        Title = "SeaGlass Studio";
+        Width = 1440;
+        Height = 920;
+        MinWidth = 1120;
+        MinHeight = 760;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        Background = new SolidColorBrush(Color.FromRgb(0xEE, 0xF1, 0xF4));
 
+        // Integrated title bar: the app draws its own Mica caption row + Windows 11 caption buttons.
+        WindowChrome.SetWindowChrome(this, new WindowChrome
+        {
+            CaptionHeight = StudioLayout.TitleBarHeight,
+            ResizeBorderThickness = new Thickness(6),
+            GlassFrameThickness = new Thickness(0, 0, 0, 1),
+            CornerRadius = new CornerRadius(0),
+            UseAeroCaptionButtons = false
+        });
+        StateChanged += (_, _) =>
+        {
+            double inset = WindowState == WindowState.Maximized
+                ? SystemParameters.WindowResizeBorderThickness.Left + 4
+                : 0;
+            _stageRootGrid.Margin = new Thickness(inset);
+            MarkAllControlsOriginDirty();
+        };
+
+        // Hardware GPU BitmapCache Pyramid: blur once at 0.5x resolution
+        _sharpBackdropCanvas.CacheMode = new BitmapCache(1.0);
+        _frostedBackdropCanvas.Effect = new BlurEffect
+        {
+            Radius = 38.0,
+            KernelType = KernelType.Gaussian,
+            RenderingBias = RenderingBias.Performance
+        };
         _frostedBackdropHost = new Border
         {
             Child = _frostedBackdropCanvas,
-            Effect = new BlurEffect
-            {
-                Radius = 38.0,
-                KernelType = KernelType.Gaussian,
-                RenderingBias = RenderingBias.Quality
-            },
+            CacheMode = new BitmapCache(0.5),
+            // Clip the blur's padded bounds so the frosted VisualBrush registers 1:1 with the sharp backdrop
+            ClipToBounds = true,
             IsHitTestVisible = false
         };
+        _sharpBackdropCanvas.IsHitTestVisible = false;
 
         _stageBackdropVisuals.SharpBackdropVisual = _sharpBackdropCanvas;
         _stageBackdropVisuals.FrostedBackdropVisual = _frostedBackdropHost;
-        _stageState.BindBackdropTarget("ExpressiveTidalBackdrop", Vector2.Zero, new Vector2(1420f, 940f));
+        SeaGlassTheme.Current.DpiScale = 1.0f;
+        _stageState.BindBackdropTarget("StudioWindowBackdrop", Vector2.Zero, new Vector2(1440f, 920f));
+
+        SizeChanged += (_, _) => MarkAllControlsOriginDirty();
 
         // Initialize stateful components
         _shapeOrb = new SeaGlassChoreographedShapeOrb(_stageState);
@@ -481,19 +845,19 @@ public sealed class MainWindow : Window
             active: false,
             onClick: () => _morphBtn0!.ToggleActive(),
             stageState: _stageState,
-            restingShape: SeaGlassShapeKind.Cookie9,
-            activeShape: SeaGlassShapeKind.Squircle);
+            restingShape: SeaGlassShapeKind.Squircle,
+            activeShape: SeaGlassShapeKind.Circle);
         _morphBtn1 = new SeaGlassMorphingButton(
             active: true,
             onClick: () => _morphBtn1!.ToggleActive(),
             stageState: _stageState,
-            restingShape: SeaGlassShapeKind.SoftBurst,
-            activeShape: SeaGlassShapeKind.Circle);
+            restingShape: SeaGlassShapeKind.Squircle,
+            activeShape: SeaGlassShapeKind.Cookie6);
         _morphBtn2 = new SeaGlassMorphingButton(
             active: false,
             onClick: () => _morphBtn2!.ToggleActive(),
             stageState: _stageState,
-            restingShape: SeaGlassShapeKind.Cookie4,
+            restingShape: SeaGlassShapeKind.Squircle,
             activeShape: SeaGlassShapeKind.Gem);
 
         _twoElementMorph = new SeaGlassTwoElementMorph(
@@ -561,7 +925,6 @@ public sealed class MainWindow : Window
         _radioB = new SeaGlassRadioButton(false, () => { _radioA!.SetSelected(false); _radioB!.SetSelected(true); }, _stageState);
         _circularProgress = new SeaGlassCircularProgressIndicator(0.74f, _stageState, sizeDp: 52f);
         _linearProgress = new SeaGlassLinearProgressIndicator(0.74f, _stageState);
-        _cornerLabCard = new SeaGlassAdaptiveCornerLabCard(SeaGlassDeviceHardwareProfile.Pixel9Pro, _stageState);
 
         _miniPlayerBar = new SeaGlassMiniPlayerBar(
             title: _miniTracks[0].Title,
@@ -573,19 +936,6 @@ public sealed class MainWindow : Window
                 _miniTrackIndex = (_miniTrackIndex + 1) % _miniTracks.Length;
                 _miniPlayerBar!.Title = _miniTracks[_miniTrackIndex].Title;
                 _miniPlayerBar.Subtitle = _miniTracks[_miniTrackIndex].Artist;
-                int nextPal = (IndexOfPalette(SeaGlassTheme.Current.Palette) + 1) % SeaGlassPalette.Entries.Count;
-                SelectPalette(SeaGlassPalette.Entries[nextPal]);
-            },
-            stageState: _stageState);
-
-        _bottomFluidBar = new SeaGlassFluidBar(
-            items: ["Home", "Morph", "Palettes", "Library", "Search"],
-            selectedIndex: 0,
-            onSelect: idx =>
-            {
-                _selectedTab = Math.Clamp(idx, 0, 4);
-                _widescreenGalleryMode = false;
-                RebuildUI();
             },
             stageState: _stageState);
 
@@ -596,33 +946,71 @@ public sealed class MainWindow : Window
         CompositionTarget.Rendering += OnFrameTick;
     }
 
-    public void SelectTabForPreview(int tabIndex, bool widescreenGallery)
+    private int ActiveSidebarSlot => _page;
+
+    private void SelectSidebarSlot(int slot)
     {
-        _selectedTab = Math.Clamp(tabIndex, 0, 4);
-        _bottomFluidBar.SelectTab(_selectedTab);
-        _widescreenGalleryMode = widescreenGallery;
+        int next = Math.Clamp(slot, 0, PageTitles.Length - 1);
+        if (next == _page) return;
+        _page = next;
+        RebuildUI();
+    }
+
+    private void MarkAllControlsOriginDirty()
+    {
+        foreach (SeaGlassVisualControl ctrl in _activeControls)
+        {
+            ctrl.MarkOriginDirty();
+        }
+    }
+
+    public void SelectTabForPreview(int pageIndex)
+    {
+        _page = Math.Clamp(pageIndex, 0, PageTitles.Length - 1);
+        _sidebarLeadSlot = _sidebarTrailSlot = _page;
         RebuildUI();
     }
 
     private void OnFrameTick(object? sender, EventArgs e)
     {
         double now = _clock.Elapsed.TotalSeconds;
-        float dt = (float)Math.Clamp(now - _lastTimeSeconds, 0.004, 0.05);
+        double rawDt = now - _lastTimeSeconds;
+        float dt = (float)Math.Clamp(rawDt, 0.004, 0.05);
         _lastTimeSeconds = now;
+        if (rawDt > 0.0005)
+        {
+            _fps = _fps * 0.94 + Math.Min(240.0, 1.0 / rawDt) * 0.06;
+        }
 
-        double phase = (now * (2.0 * Math.PI / 16.0)) % (2.0 * Math.PI);
-        _sharpBackdropCanvas.Phase = phase;
-        _frostedBackdropCanvas.Phase = phase;
-        _sharpBackdropCanvas.InvalidateVisual();
-        _frostedBackdropCanvas.InvalidateVisual();
+        // Throttle shoreline wave animation to ~20 Hz so the GPU blur cache stays hot across high-refresh frames
+        if (_sharpBackdropCanvas.CanvasMode == StudioCanvasMode.Artwork && now - _lastBackdropUpdateSeconds >= 1.0 / 20.0)
+        {
+            _lastBackdropUpdateSeconds = now;
+            double phase = (now * (2.0 * Math.PI / 14.0)) % (2.0 * Math.PI);
+            _sharpBackdropCanvas.Phase = phase;
+            _frostedBackdropCanvas.Phase = phase;
+            _sharpBackdropCanvas.InvalidateVisual();
+            _frostedBackdropCanvas.InvalidateVisual();
+        }
 
         SeaGlassTheme.Current.TiltState.UpdateFrame(dt);
 
-        // Step spring-animated gap & droplet separation
-        SeaGlassSpringSpec spring54 = new(DampingRatio: 0.54f, Stiffness: 300f);
+        // Lead-lag sidebar selection indicator springs
+        float targetSidebarSlot = ActiveSidebarSlot;
+        SeaGlassSpringSpec leadSpring = new(DampingRatio: 0.68f, Stiffness: 540f);
+        SeaGlassSpringSpec trailSpring = new(DampingRatio: 0.72f, Stiffness: 310f);
+        leadSpring.Step(ref _sidebarLeadSlot, ref _sidebarLeadVel, targetSidebarSlot, dt);
+        trailSpring.Step(ref _sidebarTrailSlot, ref _sidebarTrailVel, targetSidebarSlot, dt);
+        new SeaGlassSpringSpec(DampingRatio: 0.74f, Stiffness: 480f).Step(ref _presetSlot, ref _presetSlotVel, ActivePresetIndex, dt);
+
+        // Step spring-animated gap, droplet separation & linear progress
+        SeaGlassSpringSpec spring54 = new(DampingRatio: 0.58f, Stiffness: 320f);
         float targetGap = _heroFlowState switch { 0 => -2f, 1 => 9f, _ => 22f };
         spring54.Step(ref _playOrbGapDp, ref _playOrbGapVel, targetGap, dt);
-        spring54.Step(ref _dropletSepDp, ref _dropletSepVel, _coalescedPreset ? 100f : 168f, dt);
+        // Merged: centers 50dp apart (radii 44 + 40dp) so the smin union is a full liquid lens, never a pinched bowtie.
+        // Split: 150dp leaves a 66dp gap (> 48dp bridge k) so droplets fully separate. Spatial spring per AGENTS.md rule 5.
+        DropletSpring.Step(ref _dropletSepDp, ref _dropletSepVel, _coalescedPreset ? MergedDropletSepDp : SplitDropletSepDp, dt);
+        _linearProgress.StepAndEvaluate(dt, SeaGlassTheme.Current);
 
         if (_autoAnimateStates)
         {
@@ -650,6 +1038,10 @@ public sealed class MainWindow : Window
         {
             ctrl.StepPhysics(dt);
         }
+        foreach (StudioPaintHost host in _paintHosts)
+        {
+            host.Tick();
+        }
     }
 
     private static int IndexOfPalette(SeaGlassPalette palette)
@@ -674,17 +1066,22 @@ public sealed class MainWindow : Window
             RimChalkiness = _rimChalkiness
         };
 
-    private SeaGlassMaterial CustomSurfaceMaterial =>
+    /// <summary>
+    /// Architectural Desktop Card Material: uses a clean 12px desktop corner radius
+    /// and neutral-weighted frosted acrylic/glass so interactive controls pop against the card.
+    /// </summary>
+    private SeaGlassMaterial DesktopCardMaterial =>
         SeaGlassTheme.Current.Palette.SurfaceGlass with
         {
+            CornerRadiusDp = 12f,
             Transparency = Math.Clamp(_transparency + 0.04f, 0f, 0.95f),
-            Coarseness = Math.Clamp(_coarseness + 0.05f, 0f, 1f),
-            FrostRadiusDp = MathF.Min(56f, _frostRadiusDp + 3f),
-            TintDensity = Math.Clamp(_tintDensity * 0.84f, 0.24f, 0.92f),
-            ThicknessDp = _thicknessDp,
+            Coarseness = Math.Clamp(_coarseness * 0.65f, 0f, 1f),
+            FrostRadiusDp = MathF.Min(56f, _frostRadiusDp + 4f),
+            TintDensity = Math.Clamp(_tintDensity * 0.72f, 0.20f, 0.85f),
+            ThicknessDp = 12f,
             Ior = _ior,
-            ChromaticDispersion = _chromaticDispersion,
-            RimChalkiness = Math.Clamp(_rimChalkiness + 0.06f, 0f, 1f)
+            ChromaticDispersion = _chromaticDispersion * 0.5f,
+            RimChalkiness = 0.72f
         };
 
     private SeaGlassMaterial CustomTertiaryMaterial =>
@@ -710,12 +1107,13 @@ public sealed class MainWindow : Window
         _chromaticDispersion = 0.58f;
         _rimChalkiness = palette.PrimaryGlass.RimChalkiness;
 
-        _frostedBackdropHost.Effect = new BlurEffect
+        if (_frostedBackdropCanvas.Effect is BlurEffect blur)
         {
-            Radius = Math.Max(28.0, _frostRadiusDp * 1.65),
-            KernelType = KernelType.Gaussian,
-            RenderingBias = RenderingBias.Quality
-        };
+            blur.Radius = Math.Clamp(_frostRadiusDp * 1.65, 28.0, 44.0);
+        }
+
+        _sharpBackdropCanvas.InvalidateVisual();
+        _frostedBackdropCanvas.InvalidateVisual();
 
         SyncComponentMaterials();
         RebuildUI();
@@ -723,19 +1121,23 @@ public sealed class MainWindow : Window
 
     private void SyncComponentMaterials()
     {
+        GlobalOpticsRevision++;
         SeaGlassMaterial prim = CustomPrimaryMaterial;
-        SeaGlassMaterial surf = CustomSurfaceMaterial;
+        SeaGlassMaterial surf = DesktopCardMaterial;
         SeaGlassMaterial tert = CustomTertiaryMaterial;
 
         _shapeOrb.PrimaryMaterial = prim;
         _shapeOrb.SecondaryMaterial = tert;
         _buddingCluster.AnchorMaterial = prim;
         _buddingCluster.SatelliteMaterial = tert;
-        _morphBtn0.RestingMaterial = prim; _morphBtn0.ActiveMaterial = tert;
-        _morphBtn1.RestingMaterial = tert; _morphBtn1.ActiveMaterial = prim;
-        _morphBtn2.RestingMaterial = prim; _morphBtn2.ActiveMaterial = tert;
-        _twoElementMorph.CollapsedMaterial = prim with { CornerRadiusDp = 28f };
-        _twoElementMorph.ExpandedMaterial = surf with { CornerRadiusDp = 32f };
+        _morphBtn0.RestingMaterial = prim with { CornerRadiusDp = 10f };
+        _morphBtn0.ActiveMaterial = tert with { CornerRadiusDp = 16f };
+        _morphBtn1.RestingMaterial = tert with { CornerRadiusDp = 10f };
+        _morphBtn1.ActiveMaterial = prim with { CornerRadiusDp = 18f };
+        _morphBtn2.RestingMaterial = prim with { CornerRadiusDp = 10f };
+        _morphBtn2.ActiveMaterial = tert with { CornerRadiusDp = 16f };
+        _twoElementMorph.CollapsedMaterial = prim with { CornerRadiusDp = 24f };
+        _twoElementMorph.ExpandedMaterial = surf with { CornerRadiusDp = 16f };
         _contextMenuMorph.CollapsedMaterial = prim;
         _contextMenuMorph.ExpandedMaterial = surf;
         _cascadedModelMorph.PillMaterial = surf;
@@ -743,930 +1145,549 @@ public sealed class MainWindow : Window
         _contextRingMorph.CollapsedMaterial = surf;
         _contextRingMorph.ExpandedMaterial = surf;
 
-        _segmentedRow.ContainerMaterial = surf;
-        _segmentedRow.IndicatorMaterial = prim;
-        _floatingToolbar.BarMaterial = surf;
-        _floatingToolbar.FabMaterial = prim;
-        _extendedFab.SetExpanded(_extendedFab.Expanded, prim);
+        _segmentedRow.ContainerMaterial = surf with { CornerRadiusDp = 9f };
+        _segmentedRow.IndicatorMaterial = prim with { CornerRadiusDp = 7f };
+        _floatingToolbar.BarMaterial = surf with { CornerRadiusDp = 24f };
+        _floatingToolbar.FabMaterial = prim with { CornerRadiusDp = 24f };
+        _extendedFab.SetExpanded(_extendedFab.Expanded, prim with { CornerRadiusDp = 10f });
         _switchA.CheckedMaterial = prim; _switchA.UncheckedMaterial = surf;
         _switchB.CheckedMaterial = tert; _switchB.UncheckedMaterial = surf;
-        _checkA.CheckedMaterial = prim; _checkA.UncheckedMaterial = surf;
-        _checkB.CheckedMaterial = tert; _checkB.UncheckedMaterial = surf;
+        _checkA.CheckedMaterial = prim with { CornerRadiusDp = 7f }; _checkA.UncheckedMaterial = surf with { CornerRadiusDp = 7f };
+        _checkB.CheckedMaterial = tert with { CornerRadiusDp = 7f }; _checkB.UncheckedMaterial = surf with { CornerRadiusDp = 7f };
         _radioA.SelectedMaterial = prim; _radioA.UnselectedMaterial = surf;
         _radioB.SelectedMaterial = prim; _radioB.UnselectedMaterial = surf;
-        _circularProgress.Material = surf with { CornerRadiusDp = 26f, ThicknessDp = 15f };
+        _circularProgress.Material = surf with { CornerRadiusDp = 22f, ThicknessDp = 12f };
         _linearProgress.TrackMaterial = surf;
         _linearProgress.FillMaterial = prim;
-        _miniPlayerBar.Material = surf with { CornerRadiusDp = 28f, ThicknessDp = 18f, RimChalkiness = 0.88f };
-        _bottomFluidBar.BarMaterial = surf;
-        _bottomFluidBar.IndicatorMaterial = prim;
+        _miniPlayerBar.Material = surf with { CornerRadiusDp = 12f, ThicknessDp = 14f };
+
+        foreach (Action sync in _materialSyncCallbacks)
+        {
+            sync();
+        }
     }
 
     private void BuildStageRoot()
     {
         _stageRootGrid.Children.Clear();
-        // 1. Frosted offscreen backdrop layer (sampled via VisualBrush by foreground glass interiors)
         _stageRootGrid.Children.Add(_frostedBackdropHost);
-        // 2. Sharp visible backdrop layer (drawn directly to screen and sampled by meniscus rims)
         _stageRootGrid.Children.Add(_sharpBackdropCanvas);
-        // 3. Foreground SeaGlass UI hierarchy
         _stageRootGrid.Children.Add(_mainContentHost);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Desktop window composition
+    //
+    //  ┌ Title bar (Mica) ─ app identity · breadcrumb · finish presets · caption buttons ┐
+    //  ├ Sidebar (Mica) ┬ Content layer (edge-to-edge, 8px top-left corner) ──────────────┤
+    //  │ navigation     │ Canvas (document: beach artwork / code)  │ Inspector (flat rows) │
+    //  │ palettes       │ glass components float over content      │                       │
+    //  │ motion toggle  ├──────────────────────── Status bar ─────────────────────────────┤
+    //  └────────────────┴──────────────────────────────────────────────────────────────────┘
+    //
+    //  Glass is reserved for things that float above content (toolbars, flyouts, HUDs,
+    //  droplets, controls). Window chrome and panes are flat layers — never cards.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    private static readonly string[] PageTitles = ["Material", "Liquid SDF", "Controls", "Shader Code"];
+    private static readonly SeaGlassGlyph[] PageGlyphs = [SeaGlassGlyph.Tune, SeaGlassGlyph.Sparkles, SeaGlassGlyph.Layers, SeaGlassGlyph.Menu];
+
+    private const double NavTop = 10;
+    private const double NavItemH = 36;
+    private const double PaletteRowH = 32;
+    private static double PaletteHeaderTop => NavTop + PageTitles.Length * NavItemH + 18;
+    private static double PaletteTop => PaletteHeaderTop + 30;
+
+    private static bool IsDarkTheme => SeaGlassTheme.Current.Palette.IsDark;
+    private static int Ink => IsDarkTheme ? unchecked((int)0xFFF1F4F8) : unchecked((int)0xFF171B21);
+
+    private int AccentInk => IsDarkTheme
+        ? SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.25f)
+        : SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFF0B2530), 0.48f);
+
+    private int AccentFill => IsDarkTheme
+        ? CustomPrimaryMaterial.TintColorArgb
+        : SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFF0B2530), 0.18f);
+
+    private static readonly Dictionary<int, SolidColorBrush> BrushCache = new();
+    private static readonly Dictionary<(int, int), Pen> PenCache = new();
+
+    private static int PremulKey(int argb, float alpha)
+    {
+        int a = (int)MathF.Round(Math.Clamp(alpha, 0f, 1f) * ((argb >>> 24) & 0xFF));
+        return (argb & 0x00FFFFFF) | (a << 24);
+    }
+
+    private static SolidColorBrush Fill(int argb, float alpha = 1f)
+    {
+        int key = PremulKey(argb, alpha);
+        if (BrushCache.TryGetValue(key, out SolidColorBrush? cached)) return cached;
+        if (BrushCache.Count > 2048) BrushCache.Clear();
+        SolidColorBrush b = new(SeaGlassXamlRenderer.ToMediaColor(argb, alpha));
+        b.Freeze();
+        BrushCache[key] = b;
+        return b;
+    }
+
+    private static Pen Stroke(int argb, float alpha, double thickness)
+    {
+        var key = (PremulKey(argb, alpha), (int)Math.Round(thickness * 100));
+        if (PenCache.TryGetValue(key, out Pen? cached)) return cached;
+        if (PenCache.Count > 1024) PenCache.Clear();
+        Pen p = new(Fill(argb, alpha), thickness)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round
+        };
+        p.Freeze();
+        PenCache[key] = p;
+        return p;
+    }
+
+    private StudioPaintHost NewPaintHost(Action<DrawingContext, double, double> painter, Func<int>? signature = null)
+    {
+        StudioPaintHost host = new() { Painter = painter, Signature = signature };
+        _paintHosts.Add(host);
+        return host;
     }
 
     public void RebuildUI()
     {
         _activeControls.Clear();
+        _paintHosts.Clear();
+        _materialSyncCallbacks.Clear();
         SyncComponentMaterials();
 
-        Grid rootOverlay = new();
-        rootOverlay.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        rootOverlay.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        ScrollViewer scroll = new()
+        StudioCanvasMode mode = _page == 3 ? StudioCanvasMode.CodeEditor : StudioCanvasMode.Artwork;
+        if (_sharpBackdropCanvas.CanvasMode != mode)
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(18, 12, 18, 12)
-        };
-
-        if (_widescreenGalleryMode)
-        {
-            // Multi-Column Widescreen Gallery View showing Optics Lab, Fluid Morphs, and UI Kit Library side-by-side!
-            StackPanel galleryRoot = new();
-            galleryRoot.Children.Add(BuildTopGalleryModeBar());
-            galleryRoot.Children.Add( Spacer(10) );
-
-            Grid columns = new();
-            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
-            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
-            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            // Column 0: Header Banner + Palette Strip + Optics Lab & Corner Bezel Lab
-            StackPanel col0 = new();
-            col0.Children.Add(BuildHeaderSpecimenBanner());
-            col0.Children.Add(Spacer(10));
-            col0.Children.Add(BuildPaletteQuickStrip());
-            col0.Children.Add(Spacer(10));
-            col0.Children.Add(BuildOpticsLabSection());
-            Grid.SetColumn(col0, 0);
-            columns.Children.Add(col0);
-
-            // Column 1: Fluid SDF Coalescing + 20-ShapeChoreographed Orb + Budding Cluster + Popover Morphs
-            StackPanel col1 = new();
-            col1.Children.Add(BuildFluidCoalescingSection());
-            Grid.SetColumn(col1, 2);
-            columns.Children.Add(col1);
-
-            // Column 2: Full UI Kit Component Library + Palettes & HLSL Telemetry
-            StackPanel col2 = new();
-            col2.Children.Add(BuildUiComponentLibrarySection());
-            Grid.SetColumn(col2, 4);
-            columns.Children.Add(col2);
-
-            galleryRoot.Children.Add(columns);
-            scroll.Content = galleryRoot;
-        }
-        else
-        {
-            // Single-Column Mobile/Tablet Flagship View matching Android MainActivity.kt 1:1
-            StackPanel singleCol = new()
-            {
-                MaxWidth = 540,
-                HorizontalAlignment = HorizontalAlignment.Center
-            };
-            singleCol.Children.Add(BuildTopGalleryModeBar());
-            singleCol.Children.Add(Spacer(10));
-            singleCol.Children.Add(BuildHeaderSpecimenBanner());
-            singleCol.Children.Add(Spacer(10));
-            singleCol.Children.Add(BuildPaletteQuickStrip());
-            singleCol.Children.Add(Spacer(10));
-
-            UIElement activeSection = _selectedTab switch
-            {
-                0 => BuildOpticsLabSection(),
-                1 => BuildFluidCoalescingSection(),
-                2 => BuildPaletteGallerySection(),
-                3 => BuildUiComponentLibrarySection(),
-                _ => BuildBackendArchitectureSection()
-            };
-            singleCol.Children.Add(activeSection);
-            scroll.Content = singleCol;
+            _sharpBackdropCanvas.CanvasMode = mode;
+            _frostedBackdropCanvas.CanvasMode = mode;
+            _sharpBackdropCanvas.InvalidateVisual();
+            _frostedBackdropCanvas.InvalidateVisual();
         }
 
-        Grid.SetRow(scroll, 0);
-        rootOverlay.Children.Add(scroll);
+        Grid shell = new();
+        shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(StudioLayout.TitleBarHeight) });
+        shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        // Bottom Stacked iOS 26 Apple Music Style Liquid SeaGlass Mini-Player + 5-Tab Fluid Bar
-        StackPanel bottomChrome = new()
-        {
-            MaxWidth = _widescreenGalleryMode ? 760 : 540,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Margin = new Thickness(18, 4, 18, 12)
-        };
-        bottomChrome.Children.Add(BuildMiniPlayerBarControl());
-        bottomChrome.Children.Add(Spacer(9));
-        bottomChrome.Children.Add(BuildBottomFluidBarControl());
+        UIElement titleBar = BuildTitleBar();
+        Grid.SetRow(titleBar, 0);
+        shell.Children.Add(titleBar);
 
-        Grid.SetRow(bottomChrome, 1);
-        rootOverlay.Children.Add(bottomChrome);
+        Grid body = new();
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(StudioLayout.SidebarWidth) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(body, 1);
+        shell.Children.Add(body);
 
-        _mainContentHost.Content = rootOverlay;
+        UIElement sidebar = BuildSidebar();
+        Grid.SetColumn(sidebar, 0);
+        body.Children.Add(sidebar);
+
+        Grid layer = new();
+        layer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        layer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(StudioLayout.StatusBarHeight) });
+        Grid.SetColumn(layer, 1);
+        body.Children.Add(layer);
+
+        Grid panes = new();
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1) });
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(StudioLayout.InspectorWidth) });
+        Grid.SetRow(panes, 0);
+        layer.Children.Add(panes);
+
+        UIElement canvas = BuildCanvas();
+        Grid.SetColumn(canvas, 0);
+        panes.Children.Add(canvas);
+
+        UIElement inspector = BuildInspector();
+        Grid.SetColumn(inspector, 2);
+        panes.Children.Add(inspector);
+
+        UIElement status = BuildStatusBar();
+        Grid.SetRow(status, 1);
+        layer.Children.Add(status);
+
+        _mainContentHost.Content = shell;
+        MarkAllControlsOriginDirty();
     }
 
-    private UIElement BuildTopGalleryModeBar()
+    // ── Title bar ───────────────────────────────────────────────────────────────
+
+    private void ApplyOpticalPreset(float tr, float c, float f, float d, float t, float ior, float disp)
     {
+        _transparency = tr; _coarseness = c; _frostRadiusDp = f;
+        _tintDensity = d; _thicknessDp = t; _ior = ior; _chromaticDispersion = disp;
+        if (_frostedBackdropCanvas.Effect is BlurEffect blur)
+        {
+            blur.Radius = Math.Clamp(_frostRadiusDp * 1.65, 28.0, 44.0);
+        }
+        SyncComponentMaterials();
+        RebuildUI();
+    }
+
+    private UIElement BuildTitleBar()
+    {
+        SeaGlassPalette palette = SeaGlassTheme.Current.Palette;
         Grid bar = new();
-        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        SeaGlassPill modePill = new(
-            label: _widescreenGalleryMode ? "❖ 3-Column Gallery Mode" : "📱 Mobile Flagship Mode",
-            selected: _widescreenGalleryMode,
-            onClick: () =>
+        StudioPaintHost identity = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            LinearGradientBrush gem = new(
+                SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb),
+                SeaGlassXamlRenderer.ToMediaColor(CustomTertiaryMaterial.TintColorArgb),
+                new Point(0, 0), new Point(1, 1));
+            gem.Freeze();
+            dc.DrawRoundedRectangle(gem, Stroke(unchecked((int)0xFFFFFFFF), 0.6f, 1.0), new Rect(16, 14, 20, 20), 5.5, 5.5);
+            SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Sparkles, new Rect(20, 18, 12, 12), unchecked((int)0xFFFFFFFF));
+            StudioText.DrawInRow(dc, "SeaGlass Studio", 46, 0, h, 12.5, ink, StudioText.Style.Semibold);
+
+            double x = StudioLayout.SidebarWidth + 16;
+            FormattedText page = StudioText.Get(PageTitles[_page], 14, ink, StudioText.Style.Display);
+            dc.DrawText(page, new Point(x, (h - page.Height) * 0.5));
+            x += page.Width + 10;
+            FormattedText chevron = StudioText.Get("›", 14, ink, StudioText.Style.Regular, 0.4f);
+            dc.DrawText(chevron, new Point(x, (h - chevron.Height) * 0.5 - 1));
+            x += chevron.Width + 10;
+            StudioText.DrawInRow(dc, palette.DisplayName, x, 0, h, 13, ink, StudioText.Style.Regular, 0.62f);
+        }, () => HashCode.Combine(_page, palette.Id));
+        identity.IsHitTestVisible = false;
+        bar.Children.Add(identity);
+
+        StackPanel right = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Stretch
+        };
+
+        StackPanel presets = new()
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 14, 0)
+        };
+
+        string[] presetLabels = ["Sanded", "Liquid", "Frosted"];
+        Action[] presetApply =
+        [
+            () => ApplyOpticalPreset(0.64f, 0.44f, 22f, 0.68f, 16f, 1.54f, 0.80f),
+            () => ApplyOpticalPreset(0.86f, 0.16f, 12f, 0.62f, 22f, 1.72f, 0.88f),
+            () => ApplyOpticalPreset(0.36f, 0.78f, 34f, 0.74f, 16f, 1.48f, 0.92f)
+        ];
+        StudioPaintHost seg = null!;
+        seg = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            double slotW = (w - 4) / presetLabels.Length;
+            int hoverIdx = seg.PointerPos is { } p ? Math.Clamp((int)((p.X - 2) / slotW), 0, presetLabels.Length - 1) : -1;
+            dc.DrawRoundedRectangle(Fill(ink, IsDarkTheme ? 0.07f : 0.05f), Stroke(ink, IsDarkTheme ? 0.07f : 0.05f, 1.0), new Rect(0.5, 0.5, w - 1, h - 1), 6, 6);
+            if (hoverIdx >= 0 && hoverIdx != ActivePresetIndex)
             {
-                _widescreenGalleryMode = !_widescreenGalleryMode;
-                RebuildUI();
-            },
-            stageState: _stageState,
-            selectedMaterial: CustomPrimaryMaterial,
-            unselectedMaterial: CustomSurfaceMaterial);
-        UIElement modeCtrl = CreatePillControl(modePill, height: 38, width: 210);
-        Grid.SetColumn(modeCtrl, 1);
-        bar.Children.Add(modeCtrl);
+                dc.DrawRoundedRectangle(Fill(ink, 0.04f), null, new Rect(2 + hoverIdx * slotW, 2, slotW, h - 4), 4.5, 4.5);
+            }
 
-        SeaGlassPill autoPill = new(
-            label: _autoAnimateStates ? "⏸ Auto-Play States: ON" : "▶ Auto-Play States: OFF",
-            selected: _autoAnimateStates,
-            onClick: () =>
+            Rect chip = new(2 + _presetSlot * slotW, 2, slotW, h - 4);
+            dc.DrawRoundedRectangle(Fill(unchecked((int)0xFF000000), IsDarkTheme ? 0.22f : 0.07f), null, new Rect(chip.X, chip.Y + 1, chip.Width, chip.Height), 4.5, 4.5);
+            dc.DrawRoundedRectangle(Fill(IsDarkTheme ? unchecked((int)0xFF3B3F47) : unchecked((int)0xFFFFFFFF)), Stroke(ink, IsDarkTheme ? 0.10f : 0.07f, 1.0), chip, 4.5, 4.5);
+
+            for (int i = 0; i < presetLabels.Length; i++)
             {
-                _autoAnimateStates = !_autoAnimateStates;
-                RebuildUI();
-            },
-            stageState: _stageState,
-            selectedMaterial: CustomTertiaryMaterial,
-            unselectedMaterial: CustomSurfaceMaterial);
-        UIElement autoCtrl = CreatePillControl(autoPill, height: 38, width: 200);
-        Grid.SetColumn(autoCtrl, 3);
-        bar.Children.Add(autoCtrl);
+                bool sel = i == ActivePresetIndex;
+                StudioText.DrawCentered(dc, presetLabels[i], new Point(2 + (i + 0.5) * slotW, h * 0.5), 12, ink,
+                    sel ? StudioText.Style.Semibold : StudioText.Style.Regular, sel ? 1f : 0.7f);
+            }
+        }, () => HashCode.Combine((int)(_presetSlot * 400f), ActivePresetIndex, IsDarkTheme, seg.PointerPos.HasValue ? (int)(seg.PointerPos.Value.X / 8) : -1));
+        seg.Width = 222;
+        seg.Height = 30;
+        seg.MouseLeftButtonUp += (_, e) =>
+        {
+            double slotW = (seg.ActualWidth - 4) / presetLabels.Length;
+            int idx = Math.Clamp((int)((e.GetPosition(seg).X - 2) / slotW), 0, presetLabels.Length - 1);
+            if (idx != ActivePresetIndex) presetApply[idx]();
+        };
+        WindowChrome.SetIsHitTestVisibleInChrome(seg, true);
+        presets.Children.Add(seg);
 
+        SeaGlassPalette nextPalette = SeaGlassPalette.Entries[(IndexOfPalette(palette) + 1) % SeaGlassPalette.Entries.Count];
+        StudioPaintHost nextBtn = null!;
+        nextBtn = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            if (nextBtn.IsHovered)
+            {
+                dc.DrawRoundedRectangle(Fill(ink, nextBtn.IsMouseCaptured ? 0.08f : 0.05f), null, new Rect(0, 0, w, h), 6, 6);
+            }
+            LinearGradientBrush swatch = new(
+                SeaGlassXamlRenderer.ToMediaColor(nextPalette.PrimaryGlass.TintColorArgb),
+                SeaGlassXamlRenderer.ToMediaColor(nextPalette.TertiaryGlass.TintColorArgb),
+                new Point(0, 0), new Point(1, 1));
+            swatch.Freeze();
+            dc.DrawRoundedRectangle(swatch, Stroke(ink, 0.16f, 1.0), new Rect(10, (h - 14) * 0.5, 14, 14), 4, 4);
+            StudioText.DrawInRow(dc, "Next palette", 32, 0, h, 12, ink, StudioText.Style.Regular, 0.86f);
+        }, () => HashCode.Combine(nextBtn.IsHovered, nextBtn.IsMouseCaptured, nextPalette.Id, IsDarkTheme));
+        nextBtn.Width = 112;
+        nextBtn.Height = 30;
+        nextBtn.Margin = new Thickness(8, 0, 0, 0);
+        nextBtn.MouseLeftButtonDown += (_, _) => nextBtn.CaptureMouse();
+        nextBtn.MouseLeftButtonUp += (_, e) =>
+        {
+            Point pos = e.GetPosition(nextBtn);
+            bool inside = pos.X >= 0 && pos.Y >= 0 && pos.X <= nextBtn.ActualWidth && pos.Y <= nextBtn.ActualHeight;
+            nextBtn.ReleaseMouseCapture();
+            if (inside) SelectPalette(nextPalette);
+        };
+        WindowChrome.SetIsHitTestVisibleInChrome(nextBtn, true);
+        presets.Children.Add(nextBtn);
+        right.Children.Add(presets);
+
+        right.Children.Add(BuildCaptionButton(0));
+        right.Children.Add(BuildCaptionButton(1));
+        right.Children.Add(BuildCaptionButton(2));
+        bar.Children.Add(right);
         return bar;
     }
 
-    /// <summary>
-    /// Exact 1:1 port of <c>HeaderSpecimenBanner</c> in <c>MainActivity.kt</c>.
-    /// </summary>
-    private UIElement BuildHeaderSpecimenBanner()
+    /// <summary>Windows 11 caption buttons (minimize / maximize-restore / close), 46 × title-bar height.</summary>
+    private UIElement BuildCaptionButton(int kind)
+    {
+        StudioPaintHost host = null!;
+        host = NewPaintHost((dc, w, h) =>
+        {
+            bool hover = host.IsHovered;
+            int ink = Ink;
+            if (hover)
+            {
+                dc.DrawRectangle(kind == 2 ? Fill(unchecked((int)0xFFC42B1C)) : Fill(ink, 0.07f), null, new Rect(0, 0, w, h));
+            }
+            int glyphInk = hover && kind == 2 ? unchecked((int)0xFFFFFFFF) : ink;
+            Pen pen = new(Fill(glyphInk, 0.92f), 1.0);
+            pen.Freeze();
+            double cx = Math.Round(w * 0.5) + 0.5;
+            double cy = Math.Round(h * 0.5) + 0.5;
+            switch (kind)
+            {
+                case 0:
+                    dc.DrawLine(pen, new Point(cx - 5, cy), new Point(cx + 5, cy));
+                    break;
+                case 1 when WindowState == WindowState.Maximized:
+                    dc.DrawRectangle(null, pen, new Rect(cx - 5, cy - 3, 8, 8));
+                    dc.DrawLine(pen, new Point(cx - 3, cy - 5), new Point(cx + 5, cy - 5));
+                    dc.DrawLine(pen, new Point(cx + 5, cy - 5), new Point(cx + 5, cy + 3));
+                    break;
+                case 1:
+                    dc.DrawRoundedRectangle(null, pen, new Rect(cx - 5, cy - 5, 10, 10), 1.5, 1.5);
+                    break;
+                default:
+                    dc.DrawLine(pen, new Point(cx - 5, cy - 5), new Point(cx + 5, cy + 5));
+                    dc.DrawLine(pen, new Point(cx + 5, cy - 5), new Point(cx - 5, cy + 5));
+                    break;
+            }
+        }, () => HashCode.Combine(IsDarkTheme, WindowState));
+        host.Width = 46;
+        host.MouseLeftButtonUp += (_, _) =>
+        {
+            switch (kind)
+            {
+                case 0: WindowState = WindowState.Minimized; break;
+                case 1: WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized; break;
+                default: Close(); break;
+            }
+        };
+        WindowChrome.SetIsHitTestVisibleInChrome(host, true);
+        return host;
+    }
+
+    // ── Sidebar ─────────────────────────────────────────────────────────────────
+
+    private (int Kind, int Index) SidebarRowAt(double y)
+    {
+        if (y >= NavTop && y < NavTop + PageTitles.Length * NavItemH)
+        {
+            return (0, (int)((y - NavTop) / NavItemH));
+        }
+        if (y >= PaletteTop && y < PaletteTop + SeaGlassPalette.Entries.Count * PaletteRowH)
+        {
+            return (1, (int)((y - PaletteTop) / PaletteRowH));
+        }
+        return (-1, -1);
+    }
+
+    private UIElement BuildSidebar()
     {
         SeaGlassPalette palette = SeaGlassTheme.Current.Palette;
-        SeaGlassSurface bannerSurface = new(
-            stageState: _stageState,
-            material: CustomPrimaryMaterial with { CornerRadiusDp = 30f },
-            onClick: () =>
-            {
-                int next = (IndexOfPalette(palette) + 1) % SeaGlassPalette.Entries.Count;
-                SelectPalette(SeaGlassPalette.Entries[next]);
-            });
+        Grid side = new();
 
-        SeaGlassVisualControl bannerCtrl = CreateGlassControl(
-            bannerSurface,
-            height: 98,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, "HDR 1.65× · TILT & TAP REFRACTION", new Point(18, 14), c, 10.5, bold: true, extraBold: true, alpha: 0.78f);
-                SeaGlassXamlRenderer.DrawLabel(dc, palette.DisplayName, new Point(18, 30), c, 22.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, palette.Tagline, new Point(18, 64), c, 12.0, bold: false, alpha: 0.90f, maxWidth: Math.Max(120, w - 150));
-            });
+        StudioPaintHost nav = null!;
+        nav = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            float selAlpha = IsDarkTheme ? 0.09f : 0.065f;
+            float hoverAlpha = IsDarkTheme ? 0.05f : 0.035f;
+            (int hoverKind, int hoverIdx) = nav.PointerPos is { } p ? SidebarRowAt(p.Y) : (-1, -1);
 
-        // Trailing "Next Tide ↻" SeaGlassButton
-        SeaGlassButton nextBtnModel = new(
-            label: "Next Tide ↻",
-            onClick: () =>
+            // Navigation items
+            for (int i = 0; i < PageTitles.Length; i++)
             {
-                int next = (IndexOfPalette(palette) + 1) % SeaGlassPalette.Entries.Count;
-                SelectPalette(SeaGlassPalette.Entries[next]);
-            },
-            stageState: _stageState,
-            material: CustomTertiaryMaterial with { CornerRadiusDp = 22f, ThicknessDp = 18f, RimChalkiness = 0.90f });
+                double y = NavTop + i * NavItemH;
+                Rect row = new(6, y + 2, w - 12, NavItemH - 4);
+                bool sel = i == _page;
+                if (sel) dc.DrawRoundedRectangle(Fill(ink, selAlpha), null, row, 5, 5);
+                else if (hoverKind == 0 && hoverIdx == i) dc.DrawRoundedRectangle(Fill(ink, hoverAlpha), null, row, 5, 5);
 
-        SeaGlassVisualControl nextBtnCtrl = CreateGlassControl(
-            nextBtnModel,
-            width: 118,
-            height: 40,
-            overlay: (dc, frame, w, h) =>
+                SeaGlassXamlRenderer.DrawGlyph(dc, PageGlyphs[i], new Rect(19, y + 10, 16, 16), sel ? AccentInk : ink, sel ? 1f : 0.82f);
+                StudioText.DrawInRow(dc, PageTitles[i], 46, y, NavItemH, 13, ink, sel ? StudioText.Style.Semibold : StudioText.Style.Regular, sel ? 1f : 0.88f);
+            }
+
+            // Lead-lag spring selection indicator (WinUI pill that stretches between items)
+            float topSlot = MathF.Min(_sidebarLeadSlot, _sidebarTrailSlot);
+            float botSlot = MathF.Max(_sidebarLeadSlot, _sidebarTrailSlot);
+            double barTop = NavTop + topSlot * NavItemH + 11;
+            double barH = (botSlot - topSlot) * NavItemH + NavItemH - 22;
+            dc.DrawRoundedRectangle(Fill(AccentFill), null, new Rect(6, barTop, 3, Math.Max(6, barH)), 1.5, 1.5);
+
+            // Palettes
+            StudioText.DrawInRow(dc, "Palettes", 18, PaletteHeaderTop, 30, 12, ink, StudioText.Style.Semibold, 0.6f);
+            for (int i = 0; i < SeaGlassPalette.Entries.Count; i++)
             {
-                SeaGlassXamlRenderer.DrawLabel(dc, "Next Tide ↻", new Point(18, 10), frame.OptimalContentColorArgb, 13.0, bold: true, extraBold: true);
-            });
-        nextBtnCtrl.HorizontalAlignment = HorizontalAlignment.Right;
-        nextBtnCtrl.VerticalAlignment = VerticalAlignment.Top;
-        nextBtnCtrl.Margin = new Thickness(0, 16, 16, 0);
-        bannerCtrl.Child = nextBtnCtrl;
+                SeaGlassPalette pal = SeaGlassPalette.Entries[i];
+                double y = PaletteTop + i * PaletteRowH;
+                Rect row = new(6, y + 1, w - 12, PaletteRowH - 2);
+                bool sel = pal.Id == palette.Id;
+                if (sel) dc.DrawRoundedRectangle(Fill(ink, selAlpha), null, row, 5, 5);
+                else if (hoverKind == 1 && hoverIdx == i) dc.DrawRoundedRectangle(Fill(ink, hoverAlpha), null, row, 5, 5);
 
-        return bannerCtrl;
+                LinearGradientBrush chip = new(
+                    SeaGlassXamlRenderer.ToMediaColor(pal.PrimaryGlass.TintColorArgb),
+                    SeaGlassXamlRenderer.ToMediaColor(pal.TertiaryGlass.TintColorArgb),
+                    new Point(0, 0), new Point(1, 1));
+                chip.Freeze();
+                dc.DrawRoundedRectangle(chip, Stroke(ink, 0.16f, 1.0), new Rect(19, y + 8, 16, 16), 4.5, 4.5);
+                StudioText.DrawInRow(dc, pal.DisplayName, 46, y, PaletteRowH, 13, ink, StudioText.Style.Regular, sel ? 1f : 0.82f);
+                if (sel)
+                {
+                    SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Check, new Rect(w - 34, y + 9, 14, 14), AccentInk);
+                }
+            }
+        }, () =>
+        {
+            int hover = nav.PointerPos is { } p ? SidebarRowAt(p.Y).GetHashCode() : -1;
+            return HashCode.Combine((int)(_sidebarLeadSlot * 400f), (int)(_sidebarTrailSlot * 400f), _page, palette.Id, hover);
+        });
+        nav.Cursor = Cursors.Arrow;
+        nav.MouseLeftButtonUp += (_, e) =>
+        {
+            var (kind, idx) = SidebarRowAt(e.GetPosition(nav).Y);
+            if (kind == 0) SelectSidebarSlot(idx);
+            else if (kind == 1) SelectPalette(SeaGlassPalette.Entries[idx]);
+        };
+        side.Children.Add(nav);
+
+        // Footer: motion preference
+        Grid footer = new() { Height = 52, VerticalAlignment = VerticalAlignment.Bottom };
+        footer.Children.Add(NewPaintHost((dc, w, h) =>
+        {
+            dc.DrawRectangle(Fill(Ink, IsDarkTheme ? 0.10f : 0.08f), null, new Rect(14, 0, w - 28, 1));
+            StudioText.DrawInRow(dc, "Auto-play motion", 18, 0, h, 13, Ink, StudioText.Style.Regular, 0.88f);
+        }, () => HashCode.Combine(IsDarkTheme)));
+
+        SeaGlassSwitch autoSwitch = new(_autoAnimateStates, v => _autoAnimateStates = v, _stageState, CustomPrimaryMaterial, DesktopCardMaterial);
+        _materialSyncCallbacks.Add(() => { autoSwitch.CheckedMaterial = CustomPrimaryMaterial; autoSwitch.UncheckedMaterial = DesktopCardMaterial; });
+        UIElement autoCtrl = BuildInteractiveSwitchControl(autoSwitch);
+        if (autoCtrl is FrameworkElement fe)
+        {
+            fe.HorizontalAlignment = HorizontalAlignment.Right;
+            fe.VerticalAlignment = VerticalAlignment.Center;
+            fe.Margin = new Thickness(0, 0, 16, 0);
+        }
+        footer.Children.Add(autoCtrl);
+        side.Children.Add(footer);
+        return side;
     }
 
-    /// <summary>
-    /// Exact 1:1 port of <c>PaletteQuickStrip</c> in <c>MainActivity.kt</c>.
-    /// </summary>
-    private UIElement BuildPaletteQuickStrip()
+    // ── Canvas (document) ───────────────────────────────────────────────────────
+
+    private UIElement BuildCanvas()
     {
-        (SeaGlassPalette Palette, string ShortLabel)[] featured =
-        [
-            (SeaGlassPalette.SeafoamMint, "Mint"),
-            (SeaGlassPalette.CobaltTide, "Cobalt"),
-            (SeaGlassPalette.BeachAmber, "Amber"),
-            (SeaGlassPalette.SeaLavender, "Lavender")
-        ];
-
-        UniformGrid row = new() { Rows = 1, Columns = 4 };
-        foreach (var (pal, shortLabel) in featured)
+        Grid canvas = new() { ClipToBounds = true };
+        switch (_page)
         {
-            bool selected = pal.Id == SeaGlassTheme.Current.Palette.Id;
-            SeaGlassMaterial targetMat = selected
-                ? pal.PrimaryGlass with { CornerRadiusDp = 22f, ThicknessDp = 18f }
-                : pal.SurfaceGlass with { CornerRadiusDp = 18f, ThicknessDp = 11f };
-
-            SeaGlassButton btnModel = new(shortLabel, () => SelectPalette(pal), _stageState, targetMat);
-            SeaGlassVisualControl btnCtrl = CreateGlassControl(
-                btnModel,
-                height: 38,
-                overlay: (dc, frame, w, h) =>
-                {
-                    SolidColorBrush gem = new(SeaGlassXamlRenderer.ToMediaColor(pal.PrimaryGlass.TintColorArgb));
-                    gem.Freeze();
-                    Pen gemPen = new(Brushes.White, 1.2);
-                    gemPen.Freeze();
-                    dc.DrawEllipse(gem, gemPen, new Point(22, h * 0.5), 5.5, 5.5);
-                    SeaGlassXamlRenderer.DrawLabel(dc, shortLabel, new Point(34, h * 0.24), frame.OptimalContentColorArgb, 12.5, bold: true, extraBold: selected);
-                });
-            btnCtrl.Margin = new Thickness(3, 0, 3, 0);
-            row.Children.Add(btnCtrl);
-        }
-        return row;
-    }
-
-    /// <summary>
-    /// Exact 1:1 port of <c>OpticsLabSection</c> in <c>MainActivity.kt</c>.
-    /// </summary>
-    private UIElement BuildOpticsLabSection()
-    {
-        StackPanel stack = new();
-
-        // 0. Adaptive Device & Page Corner Optics Lab Card
-        stack.Children.Add(BuildAdaptiveCornerLabCard());
-        stack.Children.Add(Spacer(10));
-
-        // 1. Flagship Coalescing Media & Soundscape Capsule + Play Droplet (sminCubic)
-        SeaGlassSurface heroDeckSurface = new(
-            stageState: _stageState,
-            material: CustomPrimaryMaterial,
-            onClick: () => _heroFlowState = (_heroFlowState + 1) % 3);
-
-        IReadOnlyList<SeaGlassSdfEngine.SdfNode> ComputeHeroNodes(double w, double h)
-        {
-            float deckW = (float)Math.Max(260.0, w);
-            float deckH = (float)Math.Max(80.0, h);
-            float orbR = 44f;
-            float gap = _playOrbGapDp;
-            float capW = MathF.Max(orbR * 3f, deckW - orbR * 2f - MathF.Max(0f, gap) - 8f);
-            float capHalfW = capW * 0.5f;
-            float capHalfH = deckH * 0.46f;
-            float cy = deckH * 0.50f;
-            float orbCX = MathF.Min(deckW - orbR - 4f, capW + gap + orbR);
-
-            return
-            [
-                new SeaGlassSdfEngine.SdfNode(
-                    centerX: capHalfW,
-                    centerY: cy,
-                    halfWidth: capHalfW,
-                    halfHeight: capHalfH,
-                    uniformCornerRadius: capHalfH,
-                    cornerSmoothing: 2.2f,
-                    tintColorArgb: CustomPrimaryMaterial.TintColorArgb,
-                    thicknessPx: CustomPrimaryMaterial.ThicknessDp * 2.8f),
-                new SeaGlassSdfEngine.SdfNode(
-                    centerX: orbCX,
-                    centerY: cy,
-                    halfWidth: orbR,
-                    halfHeight: orbR,
-                    uniformCornerRadius: orbR,
-                    cornerSmoothing: 2.2f,
-                    tintColorArgb: CustomTertiaryMaterial.TintColorArgb,
-                    thicknessPx: CustomTertiaryMaterial.ThicknessDp * 2.8f)
-            ];
-        }
-
-        SeaGlassVisualControl heroDeckCtrl = new(
-            surfaceModel: heroDeckSurface,
-            stageBackdrop: _stageBackdropVisuals,
-            stageCoordinateRoot: _stageRootGrid,
-            customStepEvaluator: dt =>
+            case 0:
             {
-                double w = heroDeckSurface.SizePx.X > 10 ? heroDeckSurface.SizePx.X : 440;
-                double h = heroDeckSurface.SizePx.Y > 10 ? heroDeckSurface.SizePx.Y : 108;
-                return heroDeckSurface.EvaluateFrame(dt, SeaGlassTheme.Current, ComputeHeroNodes(w, h), smoothRadiusDp: 44f);
-            },
-            customOverlayPainter: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                string stateTag = _heroFlowState switch
+                UIElement toolbar = BuildFloatingToolbarControl();
+                canvas.Children.Add(toolbar);
+
+                // Material-preview specimen locked to the artwork horizon (44% / 38%) so refraction is legible.
+                Canvas specimenHost = new();
+                FrameworkElement specimen = BuildSpecimenLens(300, 196);
+                specimenHost.Children.Add(specimen);
+                specimenHost.SizeChanged += (_, e) =>
                 {
-                    0 => "COALESCED SOUNDSCAPE · 432 HZ",
-                    1 => "SURFACE TENSION NECK",
-                    _ => "DETACHED ORB MODE"
+                    Canvas.SetLeft(specimen, Math.Round(e.NewSize.Width * 0.38 - 150));
+                    Canvas.SetTop(specimen, Math.Round(e.NewSize.Height * 0.44 - 98));
+                    MarkAllControlsOriginDirty();
                 };
-                SeaGlassXamlRenderer.DrawLabel(dc, stateTag, new Point(22, 18), c, 9.5, bold: true, extraBold: true, alpha: 0.78f);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Pacific Surf & Sea Glass", new Point(22, 34), c, 17.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, $"{_transparency * 100f:F0}% Clear · {_ior:F2} IOR · Tap to flow ⇄", new Point(22, 62), c, 11.5, bold: false, alpha: 0.86f);
+                canvas.Children.Add(specimenHost);
 
-                float orbR = 44f;
-                float capW = MathF.Max(orbR * 3f, (float)w - orbR * 2f - MathF.Max(0f, _playOrbGapDp) - 8f);
-                float orbCX = MathF.Min((float)w - orbR - 4f, capW + _playOrbGapDp + orbR);
-
-                // 5-bar waveform inside right of capsule
-                double waveBaseX = capW - 44;
-                double[] barHeights = [12, 24, 18, 28, 15];
-                SolidColorBrush waveBrush = new(SeaGlassXamlRenderer.ToMediaColor(c, 0.82f));
-                waveBrush.Freeze();
-                for (int i = 0; i < barHeights.Length; i++)
-                {
-                    double bh = _heroFlowState != 2 ? barHeights[i] : 8;
-                    dc.DrawRoundedRectangle(waveBrush, null, new Rect(waveBaseX + i * 7, (h - bh) * 0.5, 4, bh), 2, 2);
-                }
-
-                // Play/Pause + FLOW/SPLIT inside coalescing right orb
-                SeaGlassXamlRenderer.DrawGlyph(
-                    dc,
-                    _heroFlowState != 2 ? SeaGlassGlyph.Pause : SeaGlassGlyph.Play,
-                    new Rect(orbCX - 10, h * 0.5 - 16, 20, 20),
-                    c);
-                SeaGlassXamlRenderer.DrawLabel(
-                    dc,
-                    _heroFlowState == 2 ? "SPLIT" : "FLOW",
-                    new Point(orbCX - 15, h * 0.5 + 8),
-                    c,
-                    9.0,
-                    bold: true,
-                    extraBold: true,
-                    alpha: 0.82f);
-            },
-            activeNodesProvider: () => ComputeHeroNodes(heroDeckSurface.SizePx.X, heroDeckSurface.SizePx.Y),
-            smoothRadiusDp: 44f)
-        {
-            Height = 108
-        };
-        _activeControls.Add(heroDeckCtrl);
-        stack.Children.Add(heroDeckCtrl);
-        stack.Children.Add(Spacer(10));
-
-        // 2. 1-Tap Optical Finish Presets (Sanded Beach / Liquid Lens / Heavy Frost)
-        UniformGrid presetsRow = new() { Rows = 1, Columns = 3 };
-        void ApplyOpticalPreset(float tr, float c, float f, float d, float t, float ior, float disp)
-        {
-            _transparency = tr; _coarseness = c; _frostRadiusDp = f;
-            _tintDensity = d; _thicknessDp = t; _ior = ior; _chromaticDispersion = disp;
-            SyncComponentMaterials();
-            RebuildUI();
-        }
-        presetsRow.Children.Add(CreatePillControl(new SeaGlassPill(
-            "Sanded Beach",
-            _transparency is >= 0.55f and <= 0.75f,
-            () => ApplyOpticalPreset(0.64f, 0.44f, 22f, 0.68f, 16f, 1.54f, 0.80f),
-            _stageState, CustomPrimaryMaterial, CustomSurfaceMaterial), 38, new Thickness(0, 0, 4, 0)));
-        presetsRow.Children.Add(CreatePillControl(new SeaGlassPill(
-            "Liquid Lens",
-            _transparency > 0.75f,
-            () => ApplyOpticalPreset(0.86f, 0.16f, 12f, 0.62f, 22f, 1.72f, 0.88f),
-            _stageState, CustomPrimaryMaterial, CustomSurfaceMaterial), 38, new Thickness(2, 0, 2, 0)));
-        presetsRow.Children.Add(CreatePillControl(new SeaGlassPill(
-            "Heavy Frost",
-            _transparency < 0.55f,
-            () => ApplyOpticalPreset(0.36f, 0.78f, 34f, 0.74f, 16f, 1.48f, 0.92f),
-            _stageState, CustomPrimaryMaterial, CustomSurfaceMaterial), 38, new Thickness(4, 0, 0, 0)));
-        stack.Children.Add(presetsRow);
-        stack.Children.Add(Spacer(10));
-
-        // 3. Hero "FROSTED GLASS TRANSPARENCY BAR" Card + "SEA GLASS & LIQUID MENISCUS OPTICS" Sliders Card
-        SeaGlassSurface opticsCardModel = new(_stageState, CustomSurfaceMaterial with { CornerRadiusDp = 28f });
-        SeaGlassVisualControl opticsCard = CreateGlassControl(
-            opticsCardModel,
-            height: 248,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, "SEA GLASS & LIQUID MENISCUS OPTICS (DRAG ANY BAR TO TUNE)", new Point(18, 12), c, 10.5, bold: true, extraBold: true, alpha: 0.78f);
-
-                DrawCustomOpticalBar(dc, "Frosted Glass Transparency", $"{_transparency * 100f:F0}%", (_transparency - 0.08f) / 0.87f, 18, 34, w - 36, c, CustomPrimaryMaterial.TintColorArgb);
-                DrawCustomOpticalBar(dc, "Beer-Lambert Color Tint Strength", $"{_tintDensity * 100f:F0}%", (_tintDensity - 0.18f) / 0.77f, 18, 76, w - 36, c, CustomPrimaryMaterial.TintColorArgb);
-                DrawCustomOpticalBar(dc, "Sand Coarseness (Micro-Grit)", $"{_coarseness * 100f:F0}%", _coarseness, 18, 118, w - 36, c, CustomPrimaryMaterial.TintColorArgb);
-                DrawCustomOpticalBar(dc, "Edge Lens Refraction (IOR)", $"{_ior:F2}", (_ior - 1.08f) / 0.72f, 18, 160, w - 36, c, CustomPrimaryMaterial.TintColorArgb);
-                DrawCustomOpticalBar(dc, "Chromatic Aberration (Prismatic)", $"{_chromaticDispersion * 100f:F0}%", _chromaticDispersion, 18, 202, w - 36, c, CustomPrimaryMaterial.TintColorArgb);
-            });
-
-        void HandleOpticsBarPointer(Point pt, double w)
-        {
-            float frac = (float)Math.Clamp((pt.X - 18.0) / Math.Max(1.0, w - 36.0), 0.0, 1.0);
-            if (pt.Y is >= 28 and < 70) _transparency = 0.08f + frac * 0.87f;
-            else if (pt.Y is >= 70 and < 112) _tintDensity = 0.18f + frac * 0.77f;
-            else if (pt.Y is >= 112 and < 154) _coarseness = frac;
-            else if (pt.Y is >= 154 and < 196) _ior = 1.08f + frac * 0.72f;
-            else if (pt.Y >= 196) _chromaticDispersion = frac;
-            SyncComponentMaterials();
-        }
-
-        opticsCard.MouseDown += (_, e) => HandleOpticsBarPointer(e.GetPosition(opticsCard), opticsCard.ActualWidth);
-        opticsCard.MouseMove += (_, e) =>
-        {
-            if (e.LeftButton == MouseButtonState.Pressed)
-            {
-                HandleOpticsBarPointer(e.GetPosition(opticsCard), opticsCard.ActualWidth);
+                FrameworkElement deck = BuildMediaDeckControl();
+                deck.VerticalAlignment = VerticalAlignment.Bottom;
+                deck.Margin = new Thickness(0, 0, 0, 32);
+                canvas.Children.Add(deck);
+                break;
             }
-        };
-
-        stack.Children.Add(opticsCard);
-        return stack;
-    }
-
-    private UIElement BuildAdaptiveCornerLabCard()
-    {
-        SeaGlassSurface cardSurface = new(_stageState, CustomSurfaceMaterial with { CornerRadiusDp = 30f });
-        SeaGlassVisualControl cardCtrl = CreateGlassControl(
-            cardSurface,
-            height: 274,
-            overlay: (dc, frame, w, h) =>
+            case 1:
             {
-                int c = frame.OptimalContentColorArgb;
-                var (layout, tlPod, trPod, dock) = _cornerLabCard.SolveBezelFrame((float)Math.Max(280, w - 32), 146f, 1.0f);
-                var (tlDp, trDp, brDp, blDp) = _cornerLabCard.ActiveProfile.RadiiDp();
+                FrameworkElement arena = BuildDropletArena(720, 400, 1.55f, morph: 0f);
+                arena.VerticalAlignment = VerticalAlignment.Center;
+                arena.Margin = new Thickness(0, 160, 0, 0); // sit in the sea so waves refract through the lens
+                canvas.Children.Add(arena);
 
-                SeaGlassXamlRenderer.DrawLabel(dc, "ADAPTIVE DEVICE & PAGE CORNER OPTICS", new Point(18, 12), c, 10.0, bold: true, extraBold: true, alpha: 0.76f);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Concentric Bezel & Page Corner Matching", new Point(18, 26), c, 15.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(
-                    dc,
-                    $"Profile: {_cornerLabCard.ActiveProfile.ShortLabel()} · Bezel TL {tlDp:F0}dp · TR {trDp:F0}dp · BR {brDp:F0}dp · BL {blDp:F0}dp",
-                    new Point(18, 50), c, 10.5, bold: false, alpha: 0.84f);
-
-                // Simulated Bezel Frame with 3 Concentric Corner-Embedded Glass Pods
-                Rect bezelRect = new(16, 74, Math.Max(200, w - 32), 184);
-                SolidColorBrush bezelBg = new(Color.FromArgb(42, 0, 0, 0));
-                bezelBg.Freeze();
-                Pen bezelPen = new(new SolidColorBrush(Color.FromArgb(185, 255, 255, 255)), 2.0);
-                bezelPen.Freeze();
-                dc.DrawRoundedRectangle(bezelBg, bezelPen, bezelRect, tlDp * 0.75, trDp * 0.75);
-
-                double inset = Math.Clamp(layout.EffectiveInsetPx, 6, 18);
-                double podW = Math.Min(148, (bezelRect.Width - inset * 2 - 14) * 0.5);
-                double podH = 66;
-
-                // TL Pod
-                Rect tlRect = new(bezelRect.X + inset, bezelRect.Y + inset, podW, podH);
-                DrawMiniGlassPod(dc, tlRect, tlPod.TopLeftPx * 0.65, CustomPrimaryMaterial.TintColorArgb, "↖ TL Corner Pod", $"Outer {tlPod.TopLeftPx:F0}dp · Inner {tlPod.BottomRightPx:F0}dp", c);
-
-                // TR Pod
-                Rect trRect = new(bezelRect.Right - inset - podW, bezelRect.Y + inset, podW, podH);
-                DrawMiniGlassPod(dc, trRect, trPod.TopRightPx * 0.65, CustomTertiaryMaterial.TintColorArgb, "TR Corner Pod ↗", $"Outer {trPod.TopRightPx:F0}dp · Inner {trPod.BottomLeftPx:F0}dp", c);
-
-                // Bottom Concentric Dock
-                Rect dockRect = new(bezelRect.X + inset, bezelRect.Bottom - inset - 54, bezelRect.Width - inset * 2, 54);
-                DrawMiniGlassPod(dc, dockRect, dock.BottomLeftPx * 0.55, CustomSurfaceMaterial.TintColorArgb, "↙ Bottom Concentric Page Dock ↘", $"BL {dock.BottomLeftPx:F0}dp · BR {dock.BottomRightPx:F0}dp · Zero Bezel Protrusion", c);
-            });
-
-        cardCtrl.MouseUp += (_, _) =>
-        {
-            SeaGlassDeviceHardwareProfile[] profiles =
-            [
-                SeaGlassDeviceHardwareProfile.Pixel9Pro,
-                SeaGlassDeviceHardwareProfile.IPhone16Pro,
-                SeaGlassDeviceHardwareProfile.GalaxyS25Ultra,
-                SeaGlassDeviceHardwareProfile.FoldAsymmetric,
-                SeaGlassDeviceHardwareProfile.Windows11Rounded
-            ];
-            int idx = Array.IndexOf(profiles, _cornerLabCard.ActiveProfile);
-            _cornerLabCard.SelectProfile(profiles[(idx + 1) % profiles.Length]);
-        };
-
-        return cardCtrl;
-    }
-
-    /// <summary>
-    /// Exact 1:1 port of <c>FluidCoalescingSection</c> in <c>MainActivity.kt</c>.
-    /// </summary>
-    private UIElement BuildFluidCoalescingSection()
-    {
-        StackPanel stack = new();
-
-        // 1. Top Row: 3-State Cascaded Model Morph + Teardrop (•••) Context Menu Morph
-        Grid topMorphRow = new() { Height = 104 };
-        topMorphRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.15, GridUnitType.Star) });
-        topMorphRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
-        topMorphRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.0, GridUnitType.Star) });
-
-        SeaGlassVisualControl cascadedCtrl = new(
-            _cascadedModelMorph,
-            _stageBackdropVisuals,
-            _stageRootGrid,
-            dt => _cascadedModelMorph.StepAndEvaluate(dt, SeaGlassTheme.Current),
-            (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Layers, new Rect(14, 14, 16, 16), c);
-                SeaGlassXamlRenderer.DrawLabel(dc, $"{_cascadedModelMorph.SelectedModel} ›", new Point(36, 12), c, 12.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, $"Stage {_cascadedModelMorph.Stage} · {_cascadedModelMorph.EffortLabel}", new Point(14, 36), unchecked((int)0xFFC41238), 11.5, bold: true, extraBold: true);
-
-                // Indigo-violet-to-coral gradient slider bar
-                LinearGradientBrush effortGrad = new(
-                    new GradientStopCollection
-                    {
-                        new GradientStop(Color.FromRgb(0x4B, 0x44, 0xF6), 0.0),
-                        new GradientStop(Color.FromRgb(0x9C, 0x3C, 0xF8), 0.5),
-                        new GradientStop(Color.FromRgb(0xF2, 0x5C, 0x78), 1.0)
-                    },
-                    new Point(0, 0), new Point(1, 0));
-                effortGrad.Freeze();
-                dc.DrawRoundedRectangle(effortGrad, null, new Rect(14, 62, Math.Max(40, w - 28), 22), 11, 11);
-                double thumbX = 16 + Math.Max(10, (w - 60) * _cascadedModelMorph.EffortFraction);
-                dc.DrawRoundedRectangle(Brushes.White, null, new Rect(thumbX, 65, 28, 16), 8, 8);
-            });
-        _activeControls.Add(cascadedCtrl);
-        Grid.SetColumn(cascadedCtrl, 0);
-        topMorphRow.Children.Add(cascadedCtrl);
-
-        SeaGlassVisualControl menuMorphCtrl = new(
-            _contextMenuMorph,
-            _stageBackdropVisuals,
-            _stageRootGrid,
-            dt => _contextMenuMorph.StepAndEvaluate(dt, SeaGlassTheme.Current),
-            (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, "••• Teardrop Menu", new Point(14, 12), c, 12.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, "⚑ Pin · ✓ Settle · ✦ Rename", new Point(14, 34), c, 10.5, bold: true, alpha: 0.88f);
-                SeaGlassXamlRenderer.DrawLabel(dc, "❖ Files · ⊶ Terminal · ⤴ Git", new Point(14, 54), c, 10.5, bold: false, alpha: 0.82f);
-                SeaGlassXamlRenderer.DrawLabel(dc, "✕ Delete… (Tap to Morph)", new Point(14, 74), unchecked((int)0xFFD92644), 10.5, bold: true);
-            });
-        _activeControls.Add(menuMorphCtrl);
-        Grid.SetColumn(menuMorphCtrl, 2);
-        topMorphRow.Children.Add(menuMorphCtrl);
-
-        stack.Children.Add(topMorphRow);
-        stack.Children.Add(Spacer(10));
-
-        // 2. M3 Expressive Choreographed Shape Shifter Orb + 5 Stage Pills
-        Grid orbSection = new() { Height = 132 };
-        SeaGlassVisualControl orbCtrl = new(
-            _shapeOrb,
-            _stageBackdropVisuals,
-            _stageRootGrid,
-            dt => _shapeOrb.StepAndEvaluate(dt, SeaGlassTheme.Current),
-            (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassShapeStage st = _shapeOrb.CurrentTargetStage;
-                SeaGlassXamlRenderer.DrawCenteredLabel(dc, st.EffectiveLabel.ToUpperInvariant(), new Point(w * 0.5, h * 0.44), c, 11.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawCenteredLabel(dc, $"{st.Scale:F2}× · Tap ↻", new Point(w * 0.5, h * 0.60), c, 9.5, bold: true, alpha: 0.82f);
-            })
-        {
-            Width = 122,
-            Height = 122,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        _activeControls.Add(orbCtrl);
-        orbSection.Children.Add(orbCtrl);
-        stack.Children.Add(orbSection);
-
-        UniformGrid stagePills = new() { Rows = 1, Columns = 5, Margin = new Thickness(0, 4, 0, 10) };
-        for (int i = 0; i < 5; i++)
-        {
-            int idx = i;
-            SeaGlassShapeStage st = _shapeOrb.Stages[idx];
-            string shortLbl = st.EffectiveLabel.Split(' ')[0];
-            stagePills.Children.Add(CreatePillControl(new SeaGlassPill(
-                shortLbl,
-                _shapeOrb.TargetStageIndex == idx,
-                () => _shapeOrb.AdvanceTo(idx),
-                _stageState, CustomPrimaryMaterial, CustomSurfaceMaterial), 34, new Thickness(2, 0, 2, 0)));
-        }
-        stack.Children.Add(stagePills);
-
-        // 3. Budding Action Cluster (SeaGlassBuddingCluster)
-        SeaGlassVisualControl budCtrl = new(
-            _buddingCluster,
-            _stageBackdropVisuals,
-            _stageRootGrid,
-            dt => _buddingCluster.StepAndEvaluate(dt, SeaGlassTheme.Current),
-            (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, _buddingCluster.Expanded ? "✕" : "✦", new Point(38, 26), c, 16, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, _buddingCluster.Expanded ? "FOLD" : "BUD", new Point(32, 48), c, 8.5, bold: true, extraBold: true, alpha: 0.80f);
-
-                if (_buddingCluster.ExpandProgress > 0.15f)
-                {
-                    double anchorX = 48.0;
-                    double step = Math.Max(78.0, (w - anchorX - 48.0) / 3.0);
-                    for (int i = 0; i < _buddingCluster.Items.Count; i++)
-                    {
-                        var (sym, lbl) = _buddingCluster.Items[i];
-                        double cx = anchorX + step * (i + 1) * _buddingCluster.ExpandProgress;
-                        SeaGlassXamlRenderer.DrawLabel(dc, sym, new Point(cx - 8, 24), c, 14, bold: true, extraBold: true);
-                        SeaGlassXamlRenderer.DrawLabel(dc, lbl, new Point(cx - 16, 46), c, 9.5, bold: true, alpha: 0.85f);
-                    }
-                }
-            },
-            smoothRadiusDp: 46f)
-        {
-            Height = 88
-        };
-        _activeControls.Add(budCtrl);
-        stack.Children.Add(budCtrl);
-        stack.Children.Add(Spacer(10));
-
-        // 4. 3 M3 Expressive Polygon Shape-Morphing Buttons (Cookie9/Squircle, Burst12/Droplet, Clover4/Gem8)
-        UniformGrid morphBtnRow = new() { Rows = 1, Columns = 3, Margin = new Thickness(0, 0, 0, 10) };
-        morphBtnRow.Children.Add(BuildMorphingShapeButtonControl(_morphBtn0, "Squircle", "Cookie9"));
-        morphBtnRow.Children.Add(BuildMorphingShapeButtonControl(_morphBtn1, "Droplet", "Burst12"));
-        morphBtnRow.Children.Add(BuildMorphingShapeButtonControl(_morphBtn2, "Gem8", "Clover4"));
-        stack.Children.Add(morphBtnRow);
-
-        // 5. Hero Interactive Multi-Node SDF Arena (Cookie 9 + Clover 4 Coalescing)
-        SeaGlassSurface arenaSurface = new(_stageState, CustomPrimaryMaterial);
-        IReadOnlyList<SeaGlassSdfEngine.SdfNode> ComputeArenaNodes(double w, double h)
-        {
-            float aw = (float)Math.Max(280, w);
-            float ah = (float)Math.Max(140, h);
-            float cAX = aw * 0.32f;
-            float cAY = ah * 0.50f;
-            float cBX = Math.Clamp(cAX + _dropletSepDp + _dragOffsetPx.X, 75f, aw - 75f);
-            float cBY = Math.Clamp(cAY + _dragOffsetPx.Y, 55f, ah - 55f);
-
-            return
-            [
-                new SeaGlassSdfEngine.SdfNode(
-                    centerX: cAX, centerY: cAY, halfWidth: 52f, halfHeight: 52f, uniformCornerRadius: 52f,
-                    cornerSmoothing: 2.2f, tintColorArgb: CustomPrimaryMaterial.TintColorArgb, thicknessPx: 34f,
-                    startShapeKind: SeaGlassShapeKind.Cookie9, endShapeKind: SeaGlassShapeKind.Clover4, shapeMorphProgress: 0.25f),
-                new SeaGlassSdfEngine.SdfNode(
-                    centerX: cBX, centerY: cBY, halfWidth: 46f, halfHeight: 46f, uniformCornerRadius: 46f,
-                    cornerSmoothing: 2.2f, tintColorArgb: CustomTertiaryMaterial.TintColorArgb, thicknessPx: 32f,
-                    startShapeKind: SeaGlassShapeKind.Flower, endShapeKind: SeaGlassShapeKind.Heart, shapeMorphProgress: 0.25f)
-            ];
-        }
-
-        SeaGlassVisualControl arenaCtrl = new(
-            surfaceModel: arenaSurface,
-            stageBackdrop: _stageBackdropVisuals,
-            stageCoordinateRoot: _stageRootGrid,
-            customStepEvaluator: dt =>
-            {
-                double w = arenaSurface.SizePx.X > 10 ? arenaSurface.SizePx.X : 440;
-                double h = arenaSurface.SizePx.Y > 10 ? arenaSurface.SizePx.Y : 168;
-                return arenaSurface.EvaluateFrame(dt, SeaGlassTheme.Current, ComputeArenaNodes(w, h), smoothRadiusDp: _smoothBridgeDp);
-            },
-            customOverlayPainter: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                double cAX = w * 0.32;
-                double cAY = h * 0.50;
-                double cBX = Math.Clamp(cAX + _dropletSepDp + _dragOffsetPx.X, 75, w - 75);
-                double cBY = Math.Clamp(cAY + _dragOffsetPx.Y, 55, h - 55);
-
-                SeaGlassXamlRenderer.DrawCenteredLabel(dc, "COOKIE 9", new Point(cAX, cAY - 8), c, 12.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawCenteredLabel(dc, "Tap / Merge", new Point(cAX, cAY + 10), c, 10.0, bold: false, alpha: 0.82f);
-
-                SeaGlassXamlRenderer.DrawCenteredLabel(dc, "FLOWER", new Point(cBX, cBY - 8), c, 12.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawCenteredLabel(dc, "Drag Droplet", new Point(cBX, cBY + 10), c, 10.0, bold: false, alpha: 0.82f);
-            },
-            activeNodesProvider: () => ComputeArenaNodes(arenaSurface.SizePx.X, arenaSurface.SizePx.Y),
-            smoothRadiusDp: _smoothBridgeDp)
-        {
-            Height = 168
-        };
-
-        Point? lastDragPt = null;
-        arenaCtrl.MouseDown += (_, e) => lastDragPt = e.GetPosition(arenaCtrl);
-        arenaCtrl.MouseMove += (_, e) =>
-        {
-            if (e.LeftButton == MouseButtonState.Pressed && lastDragPt is { } prev)
-            {
-                Point cur = e.GetPosition(arenaCtrl);
-                _dragOffsetPx += new Vector2((float)(cur.X - prev.X), (float)(cur.Y - prev.Y));
-                lastDragPt = cur;
+                FrameworkElement hud = BuildHudPill("Drag the right droplet to coalesce  ·  click to split", 360);
+                hud.VerticalAlignment = VerticalAlignment.Bottom;
+                hud.Margin = new Thickness(0, 0, 0, 28);
+                canvas.Children.Add(hud);
+                break;
             }
-        };
-        arenaCtrl.MouseUp += (_, _) =>
-        {
-            if (_dragOffsetPx.Length() < 4f) _coalescedPreset = !_coalescedPreset;
-            lastDragPt = null;
-        };
-
-        _activeControls.Add(arenaCtrl);
-        stack.Children.Add(arenaCtrl);
-        stack.Children.Add(Spacer(10));
-
-        // 6. Controls & Bridge Smoothness Card below the interactive arena (Matches MainActivity.kt lines 1446-1546)
-        SeaGlassSurface bridgeCardModel = new(_stageState, CustomSurfaceMaterial with { CornerRadiusDp = 28f });
-        SeaGlassVisualControl bridgeCard = CreateGlassControl(
-            bridgeCardModel,
-            height: 184,
-            overlay: (dc, frame, w, h) =>
+            case 2:
             {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, "LIQUID SDF COALESCING (SMIN)", new Point(18, 14), c, 10.5, bold: true, extraBold: true, alpha: 0.78f);
-                SeaGlassXamlRenderer.DrawLabel(
-                    dc,
-                    "Drag the right sea-glass droplet or tap Merge/Split. Both droplets evaluate a shared 256-byte UBO and blend Oklab tints across the bridge.",
-                    new Point(18, 32), c, 11.5, bold: false, alpha: 0.88f, maxWidth: Math.Max(140, w - 36));
+                canvas.Children.Add(BuildFloatingToolbarControl());
+                canvas.Children.Add(BuildQuickSettingsFlyout());
 
-                DrawCustomOpticalBar(dc, "Smooth-Min Bridge Radius (k)", $"{_smoothBridgeDp:F0} dp", (_smoothBridgeDp - 8f) / 52f, 18, 128, w - 36, c, CustomPrimaryMaterial.TintColorArgb);
-            });
-
-        UniformGrid mergeSplitRow = new()
-        {
-            Rows = 1,
-            Columns = 2,
-            Height = 40,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(18, 76, 18, 0)
-        };
-        mergeSplitRow.Children.Add(CreatePillControl(new SeaGlassPill(
-            "Merge Bridge",
-            _coalescedPreset,
-            () => { _coalescedPreset = true; _dragOffsetPx = Vector2.Zero; RebuildUI(); },
-            _stageState, CustomPrimaryMaterial, CustomSurfaceMaterial), 40, new Thickness(0, 0, 5, 0)));
-        mergeSplitRow.Children.Add(CreatePillControl(new SeaGlassPill(
-            "Split Teardrops",
-            !_coalescedPreset,
-            () => { _coalescedPreset = false; _dragOffsetPx = Vector2.Zero; RebuildUI(); },
-            _stageState, CustomTertiaryMaterial, CustomSurfaceMaterial), 40, new Thickness(5, 0, 0, 0)));
-        bridgeCard.Child = mergeSplitRow;
-
-        stack.Children.Add(bridgeCard);
-        return stack;
-    }
-
-    private UIElement BuildMorphingShapeButtonControl(SeaGlassMorphingButton btn, string activeText, string restingText)
-    {
-        SeaGlassVisualControl ctrl = new(
-            btn,
-            _stageBackdropVisuals,
-            _stageRootGrid,
-            dt => btn.StepAndEvaluate(dt, SeaGlassTheme.Current),
-            (dc, frame, w, h) =>
-            {
-                string label = btn.Active ? activeText : restingText;
-                SeaGlassXamlRenderer.DrawCenteredLabel(dc, label, new Point(w * 0.5, h * 0.5), frame.OptimalContentColorArgb, 12.5, bold: true, extraBold: true);
-            })
-        {
-            Height = 62,
-            Margin = new Thickness(3, 0, 3, 0)
-        };
-        _activeControls.Add(ctrl);
-        return ctrl;
-    }
-
-    /// <summary>
-    /// Exact 1:1 port of <c>PaletteGallerySection</c> in <c>MainActivity.kt</c>.
-    /// </summary>
-    private UIElement BuildPaletteGallerySection()
-    {
-        UniformGrid grid = new() { Columns = 2 };
-        foreach (SeaGlassPalette pal in SeaGlassPalette.Entries)
-        {
-            bool isSelected = pal.Id == SeaGlassTheme.Current.Palette.Id;
-            SeaGlassSurface cardModel = new(
-                stageState: _stageState,
-                material: pal.PrimaryGlass with
+                UIElement fab = BuildInteractiveExtendedFabControl();
+                if (fab is FrameworkElement feFab)
                 {
-                    CornerRadiusDp = isSelected ? 34f : 26f,
-                    ThicknessDp = isSelected ? 20f : 15f,
-                    RimChalkiness = isSelected ? 0.94f : pal.PrimaryGlass.RimChalkiness
-                },
-                onClick: () => SelectPalette(pal));
-
-            SeaGlassVisualControl cardCtrl = CreateGlassControl(
-                cardModel,
-                height: 132,
-                overlay: (dc, frame, w, h) =>
-                {
-                    int c = frame.OptimalContentColorArgb;
-                    int[] gems = [pal.PrimaryGlass.TintColorArgb, pal.SecondaryGlass.TintColorArgb, pal.TertiaryGlass.TintColorArgb];
-                    Pen gemBorder = new(Brushes.White, 1.3);
-                    gemBorder.Freeze();
-                    for (int i = 0; i < gems.Length; i++)
-                    {
-                        SolidColorBrush b = new(SeaGlassXamlRenderer.ToMediaColor(gems[i]));
-                        b.Freeze();
-                        dc.DrawEllipse(b, gemBorder, new Point(26 + i * 14, 24), 9, 9);
-                    }
-
-                    if (isSelected)
-                    {
-                        SolidColorBrush badgeBg = new(SeaGlassXamlRenderer.ToMediaColor(c, 0.16f));
-                        badgeBg.Freeze();
-                        dc.DrawRoundedRectangle(badgeBg, null, new Rect(w - 68, 14, 52, 20), 8, 8);
-                        SeaGlassXamlRenderer.DrawLabel(dc, "ACTIVE", new Point(w - 60, 17), c, 9.5, bold: true, extraBold: true);
-                    }
-
-                    SeaGlassXamlRenderer.DrawLabel(dc, pal.DisplayName, new Point(18, h - 50), c, 16.0, bold: true, extraBold: true);
-                    SeaGlassXamlRenderer.DrawLabel(
-                        dc,
-                        $"{pal.PrimaryGlass.Transparency * 100f:F0}% Clear · {pal.PrimaryGlass.Coarseness * 100f:F0}% Grit · {pal.PrimaryGlass.Ior:F2} IOR",
-                        new Point(18, h - 26), c, 10.5, bold: false, alpha: 0.85f);
-                });
-            cardCtrl.Margin = new Thickness(5);
-            grid.Children.Add(cardCtrl);
-        }
-        return grid;
-    }
-
-    /// <summary>
-    /// Exact 1:1 port of <c>UiComponentLibrarySection</c> in <c>MainActivity.kt</c>.
-    /// </summary>
-    private UIElement BuildUiComponentLibrarySection()
-    {
-        StackPanel stack = new();
-
-        // 1. Floating SeaGlassTopAppBar
-        SeaGlassSurface topBarSurface = new(
-            stageState: _stageState,
-            material: CustomSurfaceMaterial with { CornerRadiusDp = 30f, ThicknessDp = 18f, RimChalkiness = 0.86f },
-            contentRole: SeaGlassContentRole.NavigationChrome,
-            onClick: () => _extendedFab.SetExpanded(!_extendedFab.Expanded));
-        SeaGlassVisualControl topBarCtrl = CreateGlassControl(
-            topBarSurface,
-            height: 60,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Menu, new Rect(16, 20, 20, 20), c);
-                SeaGlassXamlRenderer.DrawLabel(dc, "SeaGlass App UI Kit", new Point(48, 12), c, 15.5, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Full Material 3 Expressive × Liquid Glass Parity", new Point(48, 32), c, 11.0, bold: false, alpha: 0.78f);
-
-                // Trailing "26 UI" badge + Bell + Settings icons
-                SolidColorBrush badgeBg = new(SeaGlassXamlRenderer.ToMediaColor(CustomTertiaryMaterial.TintColorArgb, 0.82f));
-                badgeBg.Freeze();
-                dc.DrawRoundedRectangle(badgeBg, null, new Rect(w - 138, 18, 46, 24), 12, 12);
-                int bc = SeaGlassColorMath.OptimalContentColorFor(CustomTertiaryMaterial.TintColorArgb, CustomTertiaryMaterial.TintDensity);
-                SeaGlassXamlRenderer.DrawLabel(dc, "26 UI", new Point(w - 130, 22), bc, 10.5, bold: true, extraBold: true);
-
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Bell, new Rect(w - 80, 20, 20, 20), c);
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Settings, new Rect(w - 42, 20, 20, 20), c);
-            });
-        stack.Children.Add(topBarCtrl);
-        stack.Children.Add(Spacer(10));
-
-        // 2. Segmented Button Row (Controls / Surfaces / Overlays)
-        SeaGlassVisualControl segCtrl = new(
-            _segmentedRow,
-            _stageBackdropVisuals,
-            _stageRootGrid,
-            dt => _segmentedRow.StepAndEvaluate(dt, SeaGlassTheme.Current),
-            (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                double slotW = (w - 8.0) / 3.0;
-                double x = 4.0 + _segmentedRow.LeftEdgeSlot * slotW;
-                double pillW = Math.Max(slotW * 0.85, _segmentedRow.LozengeSlotSpan * slotW);
-                double yInset = 4.0 + _segmentedRow.MotionEnergy * 2.5;
-                double pillH = Math.Max(20.0, h - yInset * 2.0);
-
-                SolidColorBrush pillBrush = new(SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb, 0.62f));
-                pillBrush.Freeze();
-                Pen pillPen = new(new SolidColorBrush(Color.FromArgb(160, 255, 255, 255)), 1.0);
-                pillPen.Freeze();
-                dc.DrawRoundedRectangle(pillBrush, pillPen, new Rect(x, yInset, pillW, pillH), pillH * 0.5, pillH * 0.5);
-
-                for (int i = 0; i < 3; i++)
-                {
-                    bool sel = i == _segmentedRow.SelectedIndex;
-                    SeaGlassXamlRenderer.DrawCenteredLabel(dc, _segmentedRow.Options[i], new Point(4 + (i + 0.5) * slotW, h * 0.5), c, 13.0, bold: true, extraBold: sel, alpha: sel ? 1f : 0.78f);
+                    feFab.Width = 104;
+                    feFab.Height = 38;
+                    feFab.HorizontalAlignment = HorizontalAlignment.Right;
+                    feFab.VerticalAlignment = VerticalAlignment.Bottom;
+                    feFab.Margin = new Thickness(0, 0, 24, 24);
                 }
-            })
-        {
-            Height = 46
-        };
-        _activeControls.Add(segCtrl);
-        stack.Children.Add(segCtrl);
-        stack.Children.Add(Spacer(10));
+                canvas.Children.Add(fab);
+                break;
+            }
+            default:
+                canvas.Children.Add(BuildCodeEditor());
+                break;
+        }
+        return canvas;
+    }
 
-        // 3. Coalescing Floating Split Toolbar (sminCubic)
+    private UIElement BuildFloatingToolbarControl()
+    {
         IReadOnlyList<SeaGlassSdfEngine.SdfNode> ComputeToolbarNodes(double w, double h)
         {
             float tw = (float)Math.Max(240, w);
-            float th = 58f;
+            float th = 48f;
             float gap = _floatingToolbar.CurrentGapDp;
             float mainW = MathF.Max(th * 2f, tw - th - MathF.Max(0f, gap));
             float fabLeft = MathF.Min(tw - th, mainW + gap);
             return
             [
-                new SeaGlassSdfEngine.SdfNode(mainW * 0.5f, th * 0.5f, mainW * 0.5f, th * 0.5f, th * 0.5f, 2.5f, CustomSurfaceMaterial.TintColorArgb, CustomSurfaceMaterial.ThicknessDp * 1.5f),
-                new SeaGlassSdfEngine.SdfNode(fabLeft + th * 0.5f, th * 0.5f, th * 0.5f, th * 0.5f, th * 0.5f, 2.5f, CustomPrimaryMaterial.TintColorArgb, CustomPrimaryMaterial.ThicknessDp * 1.5f)
+                new SeaGlassSdfEngine.SdfNode(mainW * 0.5f, th * 0.5f, mainW * 0.5f, th * 0.5f, th * 0.5f, 2.2f, CustomPrimaryMaterial.TintColorArgb, CustomPrimaryMaterial.ThicknessDp * 1.4f),
+                new SeaGlassSdfEngine.SdfNode(fabLeft + th * 0.5f, th * 0.5f, th * 0.5f, th * 0.5f, th * 0.5f, 2.2f, CustomTertiaryMaterial.TintColorArgb, CustomTertiaryMaterial.ThicknessDp * 1.4f)
             ];
         }
 
@@ -1678,170 +1699,794 @@ public sealed class MainWindow : Window
             (dc, frame, w, h) =>
             {
                 int c = frame.OptimalContentColorArgb;
-                double mainW = Math.Max(140, w - 58 - Math.Max(0, _floatingToolbar.CurrentGapDp));
+                double mainW = Math.Max(140, w - 48 - Math.Max(0, _floatingToolbar.CurrentGapDp));
                 double slotW = mainW / 4.0;
                 for (int i = 0; i < _floatingToolbar.Actions.Count; i++)
                 {
                     var (glyph, lbl) = _floatingToolbar.Actions[i];
                     bool sel = i == _floatingToolbar.SelectedActionIndex;
-                    double sx = i * slotW + 14;
-                    SeaGlassXamlRenderer.DrawGlyph(dc, glyph, new Rect(sx, 20, 18, 18), c, sel ? 1f : 0.76f);
-                    if (sel)
-                    {
-                        SeaGlassXamlRenderer.DrawLabel(dc, lbl, new Point(sx + 22, 20), c, 12.0, bold: true, extraBold: true);
-                    }
+                    double sx = i * slotW + 16;
+                    SeaGlassXamlRenderer.DrawGlyph(dc, glyph, new Rect(sx, 16, 16, 16), c, sel ? 1f : 0.78f);
+                    StudioText.DrawInRow(dc, lbl, sx + 22, 0, h, 12, c, sel ? StudioText.Style.Semibold : StudioText.Style.Regular, sel ? 1f : 0.8f);
                 }
-                double fabLeft = Math.Min(w - 58, mainW + _floatingToolbar.CurrentGapDp);
-                int fc = SeaGlassColorMath.OptimalContentColorFor(CustomPrimaryMaterial.TintColorArgb, CustomPrimaryMaterial.TintDensity);
-                SeaGlassXamlRenderer.DrawGlyph(
-                    dc,
-                    _floatingToolbar.FabDetached ? SeaGlassGlyph.Close : SeaGlassGlyph.Plus,
-                    new Rect(fabLeft + 18, 18, 22, 22),
-                    fc);
+                double fabLeft = Math.Min(w - 48, mainW + _floatingToolbar.CurrentGapDp);
+                int fc = SeaGlassColorMath.OptimalContentColorFor(CustomTertiaryMaterial.TintColorArgb, CustomTertiaryMaterial.TintDensity);
+                SeaGlassXamlRenderer.DrawGlyph(dc, _floatingToolbar.FabDetached ? SeaGlassGlyph.Close : SeaGlassGlyph.Plus, new Rect(fabLeft + 15, 15, 18, 18), fc);
             },
             activeNodesProvider: () => ComputeToolbarNodes(_floatingToolbar.SizePx.X, _floatingToolbar.SizePx.Y),
-            smoothRadiusDp: 32f)
+            smoothRadiusDp: 30f,
+            customStateSignature: () => HashCode.Combine((int)(_floatingToolbar.CurrentGapDp * 100f), _floatingToolbar.SelectedActionIndex),
+            interactiveHoverLift: true)
         {
-            Height = 58
+            Width = 440,
+            Height = 48,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 22, 0, 0)
         };
         _activeControls.Add(toolbarCtrl);
-        stack.Children.Add(toolbarCtrl);
-        stack.Children.Add(Spacer(10));
+        return toolbarCtrl;
+    }
 
-        // 4. Selection, Input & Progress Card (Matches docs/assets/ui-kit-library.png 1:1!)
-        SeaGlassSurface selCardModel = new(_stageState, CustomSurfaceMaterial with { CornerRadiusDp = 28f });
-        SeaGlassVisualControl selCardCtrl = CreateGlassControl(
-            selCardModel,
-            height: 220,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, "SELECTION, INPUT & PROGRESS", new Point(18, 16), c, 10.0, bold: true, extraBold: true, alpha: 0.76f);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Switches, Checkboxes & Radios", new Point(18, 32), c, 14.5, bold: true, extraBold: true);
+    private FrameworkElement BuildDropletArena(double width, double height, float scale, float morph = 0.2f)
+    {
+        SeaGlassSurface arenaSurface = new(_stageState, CustomPrimaryMaterial);
+        _materialSyncCallbacks.Add(() => arenaSurface.Material = CustomPrimaryMaterial);
+        float rA = 44f * scale;
+        float rB = 40f * scale;
 
-                // Linear Progress Bar
-                SolidColorBrush trackBg = new(SeaGlassXamlRenderer.ToMediaColor(c, 0.16f));
-                trackBg.Freeze();
-                dc.DrawRoundedRectangle(trackBg, null, new Rect(18, 134, Math.Max(100, w - 36), 14), 7, 7);
-
-                LinearGradientBrush fillGrad = new(
-                    SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb),
-                    SeaGlassXamlRenderer.ToMediaColor(SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.35f)),
-                    new Point(0, 0), new Point(1, 0));
-                fillGrad.Freeze();
-                dc.DrawRoundedRectangle(fillGrad, null, new Rect(20, 136, Math.Max(20, (w - 40) * _linearProgress.AnimatedProgress), 10), 5, 5);
-
-                // Frosted TextField Preview
-                SolidColorBrush tfBg = new(SeaGlassXamlRenderer.ToMediaColor(c, 0.10f));
-                tfBg.Freeze();
-                dc.DrawRoundedRectangle(tfBg, null, new Rect(18, 160, Math.Max(100, w - 36), 44), 18, 18);
-                SeaGlassXamlRenderer.DrawLabel(dc, "PRESET SCENE NAME", new Point(32, 165), c, 9.0, bold: true, extraBold: true, alpha: 0.70f);
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Tune, new Rect(32, 181, 16, 16), c, 0.82f);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Coastal Acoustic Suite", new Point(54, 180), c, 13.0, bold: true);
-            });
-
-        // Interactive live child controls inside Selection Card (FAB at top-right, Toggles + Ring on row 2)
-        Grid selCardLayout = new() { Margin = new Thickness(18, 12, 18, 0) };
-        selCardLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(52) });
-        selCardLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(60) });
-
-        UIElement fabCtrl = BuildInteractiveExtendedFabControl();
-        if (fabCtrl is FrameworkElement feFab)
+        IReadOnlyList<SeaGlassSdfEngine.SdfNode> ComputeArenaNodes(double w, double h)
         {
-            feFab.HorizontalAlignment = HorizontalAlignment.Right;
-            feFab.VerticalAlignment = VerticalAlignment.Center;
+            float aw = (float)Math.Max(rA * 4, w);
+            float ah = (float)Math.Max(rA * 2.4f, h);
+            float cAX = aw * 0.38f;
+            float cAY = ah * 0.5f;
+            float cBX = Math.Clamp(cAX + _dropletSepDp * scale + _dragOffsetPx.X, rB + 4f, aw - rB - 4f);
+            float cBY = Math.Clamp(cAY + _dragOffsetPx.Y, rB + 4f, ah - rB - 4f);
+            return
+            [
+                new SeaGlassSdfEngine.SdfNode(
+                    centerX: cAX, centerY: cAY, halfWidth: rA, halfHeight: rA, uniformCornerRadius: rA,
+                    cornerSmoothing: 2.2f, tintColorArgb: CustomPrimaryMaterial.TintColorArgb, thicknessPx: 34f * scale,
+                    startShapeKind: SeaGlassShapeKind.Squircle, endShapeKind: SeaGlassShapeKind.Cookie9, shapeMorphProgress: morph),
+                new SeaGlassSdfEngine.SdfNode(
+                    centerX: cBX, centerY: cBY, halfWidth: rB, halfHeight: rB, uniformCornerRadius: rB,
+                    cornerSmoothing: 2.2f, tintColorArgb: CustomTertiaryMaterial.TintColorArgb, thicknessPx: 32f * scale,
+                    startShapeKind: SeaGlassShapeKind.Circle, endShapeKind: SeaGlassShapeKind.Flower, shapeMorphProgress: morph)
+            ];
         }
-        Grid.SetRow(fabCtrl, 0);
-        selCardLayout.Children.Add(fabCtrl);
 
-        Grid togglesRow = new();
-        StackPanel leftToggles = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        leftToggles.Children.Add(BuildInteractiveSwitchControl(_switchA));
-        leftToggles.Children.Add(SpacerW(10));
-        leftToggles.Children.Add(BuildInteractiveCheckboxControl(_checkA));
-        leftToggles.Children.Add(SpacerW(10));
-        leftToggles.Children.Add(BuildInteractiveCheckboxControl(_checkB));
-        leftToggles.Children.Add(SpacerW(10));
-        leftToggles.Children.Add(BuildInteractiveRadioControl(_radioA));
-        leftToggles.Children.Add(SpacerW(10));
-        leftToggles.Children.Add(BuildInteractiveRadioControl(_radioB));
-        togglesRow.Children.Add(leftToggles);
-
-        UIElement ringCtrl = BuildInteractiveCircularProgressControl();
-        if (ringCtrl is FrameworkElement feRing)
+        SeaGlassVisualControl arenaCtrl = new(
+            surfaceModel: arenaSurface,
+            stageBackdrop: _stageBackdropVisuals,
+            stageCoordinateRoot: _stageRootGrid,
+            customStepEvaluator: dt =>
+            {
+                double w = arenaSurface.SizePx.X > 10 ? arenaSurface.SizePx.X : width;
+                double h = arenaSurface.SizePx.Y > 10 ? arenaSurface.SizePx.Y : height;
+                return arenaSurface.EvaluateFrame(dt, SeaGlassTheme.Current, ComputeArenaNodes(w, h), smoothRadiusDp: _smoothBridgeDp * scale);
+            },
+            activeNodesProvider: () => ComputeArenaNodes(arenaSurface.SizePx.X, arenaSurface.SizePx.Y),
+            smoothRadiusDp: _smoothBridgeDp * scale,
+            customStateSignature: () => HashCode.Combine((int)(_dropletSepDp * 100f), (int)(_dragOffsetPx.X * 10f), (int)(_dragOffsetPx.Y * 10f), (int)(_smoothBridgeDp * 10f)))
         {
-            feRing.HorizontalAlignment = HorizontalAlignment.Right;
-            feRing.VerticalAlignment = VerticalAlignment.Center;
+            Width = width,
+            Height = height,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        Point? lastDragPt = null;
+        double dragTravel = 0;
+        arenaCtrl.MouseLeftButtonDown += (_, e) =>
+        {
+            lastDragPt = e.GetPosition(arenaCtrl);
+            dragTravel = 0;
+            arenaCtrl.CaptureMouse();
+        };
+        arenaCtrl.MouseMove += (_, e) =>
+        {
+            if (arenaCtrl.IsMouseCaptured && lastDragPt is { } prev)
+            {
+                Point cur = e.GetPosition(arenaCtrl);
+                Vector2 delta = new((float)(cur.X - prev.X), (float)(cur.Y - prev.Y));
+                _dragOffsetPx += delta;
+                dragTravel += delta.Length();
+                lastDragPt = cur;
+            }
+        };
+        arenaCtrl.MouseLeftButtonUp += (_, _) =>
+        {
+            arenaCtrl.ReleaseMouseCapture();
+            if (dragTravel < 4.0) _coalescedPreset = !_coalescedPreset;
+            lastDragPt = null;
+        };
+        _materialSyncCallbacks.Add(() => arenaCtrl.SmoothRadiusDp = _smoothBridgeDp * scale);
+        _activeControls.Add(arenaCtrl);
+        return arenaCtrl;
+    }
+
+    private FrameworkElement BuildSpecimenLens(double width, double height)
+    {
+        SeaGlassSurface specimenSurface = new(_stageState, CustomPrimaryMaterial);
+        _materialSyncCallbacks.Add(() => specimenSurface.Material = CustomPrimaryMaterial);
+
+        IReadOnlyList<SeaGlassSdfEngine.SdfNode> ComputeSpecimenNodes(double w, double h)
+        {
+            float sw = (float)Math.Max(120, w);
+            float sh = (float)Math.Max(80, h);
+            float hw = sw * 0.5f - 8f;
+            float hh = sh * 0.5f - 8f;
+            float thick = _thicknessDp * 2.6f;
+            return
+            [
+                // Tumbled pebble: squircle body
+                new SeaGlassSdfEngine.SdfNode(
+                    centerX: sw * 0.5f, centerY: sh * 0.5f, halfWidth: hw, halfHeight: hh, uniformCornerRadius: hh * 0.92f,
+                    cornerSmoothing: 2.4f, tintColorArgb: CustomPrimaryMaterial.TintColorArgb, thicknessPx: thick),
+                // Coincident twin node (union == body) keeps the volumetric multi-node optics path
+                new SeaGlassSdfEngine.SdfNode(
+                    centerX: sw * 0.5f, centerY: sh * 0.5f, halfWidth: hw, halfHeight: hh, uniformCornerRadius: hh * 0.92f,
+                    cornerSmoothing: 2.4f, tintColorArgb: CustomPrimaryMaterial.TintColorArgb, thicknessPx: thick)
+            ];
         }
-        togglesRow.Children.Add(ringCtrl);
 
-        Grid.SetRow(togglesRow, 1);
-        selCardLayout.Children.Add(togglesRow);
+        SeaGlassVisualControl ctrl = new(
+            surfaceModel: specimenSurface,
+            stageBackdrop: _stageBackdropVisuals,
+            stageCoordinateRoot: _stageRootGrid,
+            customStepEvaluator: dt =>
+            {
+                double w = specimenSurface.SizePx.X > 10 ? specimenSurface.SizePx.X : width;
+                double h = specimenSurface.SizePx.Y > 10 ? specimenSurface.SizePx.Y : height;
+                return specimenSurface.EvaluateFrame(dt, SeaGlassTheme.Current, ComputeSpecimenNodes(w, h), smoothRadiusDp: 18f);
+            },
+            activeNodesProvider: () => ComputeSpecimenNodes(specimenSurface.SizePx.X, specimenSurface.SizePx.Y),
+            smoothRadiusDp: 18f,
+            customStateSignature: () => HashCode.Combine((int)(_thicknessDp * 10f), GlobalOpticsRevision),
+            interactiveHoverLift: true)
+        {
+            Width = width,
+            Height = height
+        };
+        _activeControls.Add(ctrl);
+        return ctrl;
+    }
 
-        selCardCtrl.Child = selCardLayout;
-        stack.Children.Add(selCardCtrl);
-        stack.Children.Add(Spacer(10));
-
-        // 5. Dialog Card & Snackbar
-        SeaGlassSurface snackbarModel = new(
+    private FrameworkElement BuildMediaDeckControl()
+    {
+        SeaGlassSurface deckSurface = new(
             stageState: _stageState,
-            material: CustomPrimaryMaterial with { CornerRadiusDp = 24f, ThicknessDp = 18f },
-            contentRole: SeaGlassContentRole.NavigationChrome);
-        SeaGlassVisualControl snackbarCtrl = CreateGlassControl(
-            snackbarModel,
-            height: 46,
-            overlay: (dc, frame, w, h) =>
+            material: CustomPrimaryMaterial,
+            onClick: () =>
+            {
+                _heroFlowState = (_heroFlowState + 1) % 3;
+                _miniTrackIndex = (_miniTrackIndex + 1) % _miniTracks.Length;
+                _miniPlayerBar.Title = _miniTracks[_miniTrackIndex].Title;
+                _miniPlayerBar.Subtitle = _miniTracks[_miniTrackIndex].Artist;
+            });
+        _materialSyncCallbacks.Add(() => deckSurface.Material = CustomPrimaryMaterial);
+        const float orbR = 34f;
+
+        IReadOnlyList<SeaGlassSdfEngine.SdfNode> ComputeDeckNodes(double w, double h)
+        {
+            float deckW = (float)Math.Max(260.0, w);
+            float deckH = (float)Math.Max(64.0, h);
+            float capW = MathF.Max(orbR * 3f, deckW - orbR * 2f - MathF.Max(0f, _playOrbGapDp) - 6f);
+            float cy = deckH * 0.5f;
+            float orbCX = MathF.Min(deckW - orbR - 4f, capW + _playOrbGapDp + orbR);
+            return
+            [
+                new SeaGlassSdfEngine.SdfNode(
+                    centerX: capW * 0.5f, centerY: cy, halfWidth: capW * 0.5f, halfHeight: deckH * 0.46f,
+                    uniformCornerRadius: deckH * 0.46f, cornerSmoothing: 2.0f,
+                    tintColorArgb: CustomPrimaryMaterial.TintColorArgb, thicknessPx: CustomPrimaryMaterial.ThicknessDp * 2.2f),
+                new SeaGlassSdfEngine.SdfNode(
+                    centerX: orbCX, centerY: cy, halfWidth: orbR, halfHeight: orbR,
+                    uniformCornerRadius: orbR, cornerSmoothing: 2.2f,
+                    tintColorArgb: CustomTertiaryMaterial.TintColorArgb, thicknessPx: CustomTertiaryMaterial.ThicknessDp * 2.2f)
+            ];
+        }
+
+        SeaGlassVisualControl deckCtrl = new(
+            surfaceModel: deckSurface,
+            stageBackdrop: _stageBackdropVisuals,
+            stageCoordinateRoot: _stageRootGrid,
+            interactiveHoverLift: true,
+            customStepEvaluator: dt =>
+            {
+                double w = deckSurface.SizePx.X > 10 ? deckSurface.SizePx.X : 480;
+                double h = deckSurface.SizePx.Y > 10 ? deckSurface.SizePx.Y : 72;
+                return deckSurface.EvaluateFrame(dt, SeaGlassTheme.Current, ComputeDeckNodes(w, h), smoothRadiusDp: 36f);
+            },
+            customOverlayPainter: (dc, frame, w, h) =>
             {
                 int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Sparkles, new Rect(16, 14, 18, 18), c);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Oklab Screen + SrcOver volumetric tint calibrated", new Point(42, 14), c, 12.5, bold: true);
-            });
-        stack.Children.Add(snackbarCtrl);
-        stack.Children.Add(Spacer(10));
+                LinearGradientBrush art = new(Color.FromRgb(0xF0, 0x68, 0x4E), Color.FromRgb(0xC8, 0x3E, 0x5B), new Point(0, 0), new Point(1, 1));
+                art.Freeze();
+                dc.DrawRoundedRectangle(art, Stroke(unchecked((int)0xFFFFFFFF), 0.7f, 1.0), new Rect(16, (h - 42) * 0.5, 42, 42), 9, 9);
+                dc.DrawEllipse(Brushes.White, null, new Point(37, h * 0.5), 3.5, 3.5);
 
-        // 6. Frosted List Items + Export SeaGlass Design Tokens Dialog Card (Matches MainActivity.kt lines 1870-1932)
-        SeaGlassSurface listItem1Model = new(
-            stageState: _stageState,
-            material: CustomSurfaceMaterial with { CornerRadiusDp = 22f, ThicknessDp = 14f },
-            onClick: () => _switchA.Toggle());
-        SeaGlassVisualControl listItem1Ctrl = CreateGlassControl(
-            listItem1Model,
-            height: 62,
-            overlay: (dc, frame, w, h) =>
+                StudioText.Draw(dc, _miniPlayerBar.Title, 70, h * 0.5 - 19, 13.5, c, StudioText.Style.Semibold);
+                StudioText.Draw(dc, $"{_miniPlayerBar.Subtitle}  ·  Spatial Audio", 70, h * 0.5 + 1, 11.5, c, StudioText.Style.Regular, 0.78f);
+
+                float capW = MathF.Max(orbR * 3f, (float)w - orbR * 2f - MathF.Max(0f, _playOrbGapDp) - 6f);
+                float orbCX = MathF.Min((float)w - orbR - 4f, capW + _playOrbGapDp + orbR);
+                double waveX = capW - 50;
+                double[] bars = [10, 20, 14, 24, 12];
+                SolidColorBrush wave = Fill(c, 0.82f);
+                for (int i = 0; i < bars.Length; i++)
+                {
+                    double bh = _heroFlowState != 2 ? bars[i] : 6;
+                    dc.DrawRoundedRectangle(wave, null, new Rect(waveX + i * 6.5, (h - bh) * 0.5, 3.2, bh), 1.6, 1.6);
+                }
+                SeaGlassXamlRenderer.DrawGlyph(dc, _heroFlowState != 2 ? SeaGlassGlyph.Pause : SeaGlassGlyph.Play, new Rect(orbCX - 9, h * 0.5 - 9, 18, 18), c);
+            },
+            activeNodesProvider: () => ComputeDeckNodes(deckSurface.SizePx.X, deckSurface.SizePx.Y),
+            smoothRadiusDp: 36f,
+            customStateSignature: () => HashCode.Combine(_heroFlowState, (int)(_playOrbGapDp * 200f), _miniTrackIndex))
+        {
+            Width = 470,
+            Height = 72,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+        _activeControls.Add(deckCtrl);
+        return deckCtrl;
+    }
+
+    private FrameworkElement BuildHudPill(string text, double width)
+    {
+        SeaGlassSurface hud = new(_stageState, DesktopCardMaterial with { CornerRadiusDp = 18f }, contentRole: SeaGlassContentRole.NavigationChrome)
+        {
+            CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed
+        };
+        _materialSyncCallbacks.Add(() => hud.SnapMaterial(DesktopCardMaterial with { CornerRadiusDp = 18f }));
+        SeaGlassVisualControl ctrl = CreateGlassControl(hud, width, 36, (dc, frame, w, h) =>
+            StudioText.DrawCentered(dc, text, new Point(w * 0.5, h * 0.5), 12, frame.OptimalContentColorArgb, StudioText.Style.Regular, 0.9f));
+        ctrl.HorizontalAlignment = HorizontalAlignment.Center;
+        ctrl.IsHitTestVisible = false;
+        return ctrl;
+    }
+
+    /// <summary>
+    /// A realistic glass flyout (Quick Settings) anchored beneath the floating toolbar — the place
+    /// where switches, checkboxes, radios, segmented controls, and progress actually live on desktop.
+    /// </summary>
+    private UIElement BuildQuickSettingsFlyout()
+    {
+        const double fw = 372;
+        const double fh = 500;
+        SeaGlassSurface flyout = new(_stageState, DesktopCardMaterial with { CornerRadiusDp = 12f }, contentRole: SeaGlassContentRole.NavigationChrome)
+        {
+            CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed
+        };
+        _materialSyncCallbacks.Add(() => flyout.SnapMaterial(DesktopCardMaterial with { CornerRadiusDp = 12f }));
+
+        (string Label, double Y)[] labelRows =
+        [
+            ("Live refraction", 104), ("Reduce motion", 144),
+            ("Surface grain", 196), ("Chalky rim glow", 236),
+            ("Follow palette tint", 288), ("Always clear glass", 328)
+        ];
+
+        SeaGlassVisualControl panel = CreateGlassControl(flyout, fw, fh, (dc, frame, w, h) =>
+        {
+            int c = frame.OptimalContentColorArgb;
+            StudioText.DrawInRow(dc, "Quick Settings", 18, 0, 48, 14, c, StudioText.Style.Display);
+            StudioText.DrawRightInRow(dc, "Esc", w - 18, 0, 48, 11, c, StudioText.Style.Mono, 0.45f);
+
+            for (int i = 0; i < labelRows.Length; i++)
+            {
+                double x = i < 2 ? 18 : 50;
+                StudioText.DrawInRow(dc, labelRows[i].Label, x, labelRows[i].Y, 40, 13, c, StudioText.Style.Regular, 0.92f);
+            }
+
+            SolidColorBrush div = Fill(c, 0.10f);
+            foreach (double dy in new[] { 98.0, 190.0, 282.0, 374.0, 442.0 })
+            {
+                dc.DrawRectangle(div, null, new Rect(14, dy, w - 28, 1));
+            }
+
+            StudioText.Draw(dc, "Rendering preview", 18, 386, 13, c, StudioText.Style.Regular, 0.92f);
+            double barW = w - 18 - 76;
+            dc.DrawRoundedRectangle(Fill(c, 0.14f), null, new Rect(18, 416, barW, 4), 2, 2);
+            dc.DrawRoundedRectangle(Fill(AccentFill), null, new Rect(18, 416, Math.Max(4, barW * _linearProgress.AnimatedProgress), 4), 2, 2);
+        });
+        panel.CustomStateSignature = () => (int)(_linearProgress.AnimatedProgress * 500f);
+        panel.HorizontalAlignment = HorizontalAlignment.Center;
+        panel.VerticalAlignment = VerticalAlignment.Top;
+        panel.Margin = new Thickness(0, 84, 0, 0);
+
+        Grid inner = new();
+        void Place(UIElement el, HorizontalAlignment ha, double left, double top, double right = 0)
+        {
+            if (el is FrameworkElement fe)
+            {
+                fe.HorizontalAlignment = ha;
+                fe.VerticalAlignment = VerticalAlignment.Top;
+                fe.Margin = new Thickness(left, top, right, 0);
+            }
+            inner.Children.Add(el);
+        }
+
+        Place(BuildSegmentedControl(fw - 36, 32), HorizontalAlignment.Left, 18, 54);
+        Place(BuildInteractiveSwitchControl(_switchA), HorizontalAlignment.Right, 0, 104 + 7, 18);
+        Place(BuildInteractiveSwitchControl(_switchB), HorizontalAlignment.Right, 0, 144 + 7, 18);
+        Place(BuildInteractiveCheckboxControl(_checkA), HorizontalAlignment.Left, 18, 196 + 8);
+        Place(BuildInteractiveCheckboxControl(_checkB), HorizontalAlignment.Left, 18, 236 + 8);
+        Place(BuildInteractiveRadioControl(_radioA), HorizontalAlignment.Left, 17, 288 + 7);
+        Place(BuildInteractiveRadioControl(_radioB), HorizontalAlignment.Left, 17, 328 + 7);
+        Place(BuildInteractiveCircularProgressControl(), HorizontalAlignment.Right, 0, 384, 16);
+
+        StackPanel footer = new() { Orientation = Orientation.Horizontal };
+        footer.Children.Add(CreateDesktopButtonControl(new SeaGlassPill("Reset", false, () =>
+        {
+            float p = _segmentedRow.SelectedIndex switch { 0 => 0.74f, 1 => 0.48f, _ => 0.92f };
+            _linearProgress.Progress = p;
+            _circularProgress.Progress = p;
+        }, _stageState), height: 30, margin: new Thickness(0, 0, 8, 0), width: 76));
+        footer.Children.Add(CreateDesktopButtonControl(new SeaGlassPill("Apply", true, () =>
+        {
+            _linearProgress.Progress = 1f;
+            _circularProgress.Progress = 1f;
+        }, _stageState), height: 30, width: 84));
+        Place(footer, HorizontalAlignment.Right, 0, 456, 16);
+
+        panel.Child = inner;
+        return panel;
+    }
+
+    // ── Code editor (Shader Code page) ──────────────────────────────────────────
+
+    private static readonly HashSet<string> ShaderKeywords =
+    [
+        "cbuffer", "struct", "uniform", "layout", "in", "out", "inout", "return", "if", "else", "for", "const",
+        "static", "register", "precision", "highp", "mediump", "lowp", "binding", "std140", "set", "location"
+    ];
+
+    private static readonly HashSet<string> ShaderTypes =
+    [
+        "float", "float2", "float3", "float4", "float4x4", "half", "half2", "half3", "half4", "vec2", "vec3", "vec4",
+        "mat2", "mat3", "mat4", "int", "uint", "bool", "void", "sampler2D", "Texture2D", "SamplerState", "shader"
+    ];
+
+    private readonly Dictionary<ShaderDialect, List<FormattedText>> _codeLineCache = new();
+
+    private List<FormattedText> GetHighlightedLines(ShaderDialect dialect)
+    {
+        if (_codeLineCache.TryGetValue(dialect, out List<FormattedText>? cached)) return cached;
+
+        Typeface mono = new(new FontFamily("Cascadia Mono, Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        SolidColorBrush Br(uint argb) { SolidColorBrush b = new(Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb)); b.Freeze(); return b; }
+        SolidColorBrush plain = Br(0xFFD4D7DD), keyword = Br(0xFF7AA2F7), type = Br(0xFF5FD4C4), number = Br(0xFFE0AF68),
+            comment = Br(0xFF6E7A8A), preproc = Br(0xFFC792EA), call = Br(0xFFE6D58C);
+
+        string source = SeaGlassShaderCompiler.CompileForDialect(dialect).SeaGlassCompositeFragmentSource.Replace("\r", "");
+        List<FormattedText> lines = new();
+        foreach (string raw in source.Split('\n'))
+        {
+            string line = raw.Replace("\t", "    ");
+            FormattedText ft = new(line.Length == 0 ? " " : line, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight, mono, 12.5, plain, 1.25);
+            int i = 0;
+            string trimmed = line.TrimStart();
+            if (trimmed.StartsWith('#'))
+            {
+                ft.SetForegroundBrush(preproc, 0, line.Length);
+                lines.Add(ft);
+                continue;
+            }
+            while (i < line.Length)
+            {
+                char ch = line[i];
+                if (ch == '/' && i + 1 < line.Length && line[i + 1] == '/')
+                {
+                    ft.SetForegroundBrush(comment, i, line.Length - i);
+                    break;
+                }
+                if (char.IsLetter(ch) || ch == '_')
+                {
+                    int start = i;
+                    while (i < line.Length && (char.IsLetterOrDigit(line[i]) || line[i] == '_')) i++;
+                    string word = line[start..i];
+                    int next = i;
+                    while (next < line.Length && line[next] == ' ') next++;
+                    if (ShaderKeywords.Contains(word)) ft.SetForegroundBrush(keyword, start, i - start);
+                    else if (ShaderTypes.Contains(word)) ft.SetForegroundBrush(type, start, i - start);
+                    else if (next < line.Length && line[next] == '(') ft.SetForegroundBrush(call, start, i - start);
+                    continue;
+                }
+                if (char.IsDigit(ch))
+                {
+                    int start = i;
+                    while (i < line.Length && (char.IsLetterOrDigit(line[i]) || line[i] == '.')) i++;
+                    ft.SetForegroundBrush(number, start, i - start);
+                    continue;
+                }
+                i++;
+            }
+            lines.Add(ft);
+        }
+        _codeLineCache[dialect] = lines;
+        return lines;
+    }
+
+    private static string DialectTabLabel(ShaderDialect d) => d switch
+    {
+        ShaderDialect.HlslSm50 => "SeaGlass.hlsl",
+        ShaderDialect.D2D1Hlsl => "SeaGlass.d2d1.hlsl",
+        ShaderDialect.VulkanGlsl450 => "seaglass.frag (450)",
+        ShaderDialect.GlslEs300 => "seaglass.frag (ES 3.0)",
+        _ => "seaglass.agsl"
+    };
+
+    private UIElement BuildCodeEditor()
+    {
+        ShaderDialect[] dialects = Enum.GetValues<ShaderDialect>();
+        const double tabH = 38;
+        const double lineH = 19;
+        List<double> tabEdges = new();
+
+        StudioPaintHost editor = null!;
+        editor = NewPaintHost((dc, w, h) =>
+        {
+            int fg = unchecked((int)0xFFE6E9EF);
+            tabEdges.Clear();
+            double x = 12;
+            for (int i = 0; i < dialects.Length; i++)
+            {
+                FormattedText ft = StudioText.Get(DialectTabLabel(dialects[i]), 12, fg, StudioText.Style.Regular, dialects[i] == _selectedDialect ? 1f : 0.55f);
+                double tw = ft.Width + 28;
+                bool sel = dialects[i] == _selectedDialect;
+                if (sel)
+                {
+                    dc.DrawRectangle(Fill(unchecked((int)0xFFFFFFFF), 0.07f), null, new Rect(x, 0, tw, tabH));
+                    dc.DrawRectangle(Fill(CustomPrimaryMaterial.TintColorArgb), null, new Rect(x + 8, tabH - 2, tw - 16, 2));
+                }
+                dc.DrawText(ft, new Point(x + 14, (tabH - ft.Height) * 0.5));
+                tabEdges.Add(x);
+                x += tw;
+            }
+            tabEdges.Add(x);
+
+            List<FormattedText> lines = GetHighlightedLines(_selectedDialect);
+            int visible = (int)((h - tabH - 16) / lineH);
+            _codeScrollLine = Math.Clamp(_codeScrollLine, 0, Math.Max(0, lines.Count - visible));
+            dc.PushClip(new RectangleGeometry(new Rect(0, tabH, w, h - tabH)));
+            for (int row = 0; row < visible && row + _codeScrollLine < lines.Count; row++)
+            {
+                int ln = row + _codeScrollLine;
+                double y = tabH + 12 + row * lineH;
+                StudioText.DrawRight(dc, (ln + 1).ToString(), 44, y, 12, fg, StudioText.Style.Mono, 0.32f);
+                dc.DrawText(lines[ln], new Point(60, y));
+            }
+            dc.Pop();
+        }, () => HashCode.Combine(_selectedDialect, _codeScrollLine));
+
+        editor.MouseLeftButtonUp += (_, e) =>
+        {
+            Point p = e.GetPosition(editor);
+            if (p.Y > tabH) return;
+            for (int i = 0; i + 1 < tabEdges.Count; i++)
+            {
+                if (p.X >= tabEdges[i] && p.X < tabEdges[i + 1])
+                {
+                    _selectedDialect = dialects[i];
+                    _codeScrollLine = 0;
+                    RebuildUI();
+                    return;
+                }
+            }
+        };
+        editor.MouseWheel += (_, e) =>
+        {
+            _codeScrollLine = Math.Max(0, _codeScrollLine - Math.Sign(e.Delta) * 3);
+            editor.InvalidateVisual();
+        };
+        editor.Cursor = Cursors.IBeam;
+        return editor;
+    }
+
+    // ── Inspector (flat property rows) ──────────────────────────────────────────
+
+    private UIElement BuildInspector()
+    {
+        StackPanel rows = new() { Margin = new Thickness(0, 4, 0, 16) };
+        SeaGlassPalette palette = SeaGlassTheme.Current.Palette;
+
+        switch (_page)
+        {
+            case 0:
+                rows.Children.Add(InspectorPaletteSummary(palette));
+                rows.Children.Add(InspectorHeader("Optics"));
+                rows.Children.Add(InspectorSlider("Transparency", () => $"{_transparency * 100f:F0}%", () => (_transparency - 0.08f) / 0.87f, f => _transparency = 0.08f + f * 0.87f));
+                rows.Children.Add(InspectorSlider("Tint density", () => $"{_tintDensity * 100f:F0}%", () => (_tintDensity - 0.18f) / 0.77f, f => _tintDensity = 0.18f + f * 0.77f));
+                rows.Children.Add(InspectorSlider("Sand coarseness", () => $"{_coarseness * 100f:F0}%", () => _coarseness, f => _coarseness = f));
+                rows.Children.Add(InspectorSlider("Refraction index", () => $"{_ior:F2}", () => (_ior - 1.08f) / 0.72f, f => _ior = 1.08f + f * 0.72f));
+                rows.Children.Add(InspectorSlider("Dispersion", () => $"{_chromaticDispersion * 100f:F0}%", () => _chromaticDispersion, f => _chromaticDispersion = f));
+                rows.Children.Add(InspectorSlider("Thickness", () => $"{_thicknessDp:F0} dp", () => (_thicknessDp - 6f) / 22f, f => _thicknessDp = 6f + f * 22f));
+                rows.Children.Add(InspectorSlider("Rim chalkiness", () => $"{_rimChalkiness * 100f:F0}%", () => _rimChalkiness, f => _rimChalkiness = f));
+                break;
+
+            case 1:
+                rows.Children.Add(InspectorHeader("Coalescing", divider: false));
+                rows.Children.Add(InspectorSlider("Bridge radius (k)", () => $"{_smoothBridgeDp:F0} dp", () => (_smoothBridgeDp - 8f) / 52f, f => _smoothBridgeDp = 8f + f * 52f));
+                SeaGlassSwitch mergeSwitch = new(_coalescedPreset, v => _coalescedPreset = v, _stageState, CustomPrimaryMaterial, DesktopCardMaterial);
+                rows.Children.Add(InspectorToggle("Merge droplets", mergeSwitch));
+                rows.Children.Add(InspectorButtons(
+                    (new SeaGlassPill("Reset position", false, () => _dragOffsetPx = Vector2.Zero, _stageState), 116)));
+                rows.Children.Add(InspectorHeader("Nodes"));
+                rows.Children.Add(InspectorValue("Anchor", () => "Squircle"));
+                rows.Children.Add(InspectorValue("Droplet", () => "Circle"));
+                rows.Children.Add(InspectorValue("Separation", () => $"{_dropletSepDp:F0} dp", mono: true));
+                rows.Children.Add(InspectorValue("Drag offset", () => $"{_dragOffsetPx.X:F0}, {_dragOffsetPx.Y:F0}", mono: true));
+                rows.Children.Add(InspectorHeader("Field"));
+                rows.Children.Add(InspectorValue("Union", () => "sminCubic"));
+                rows.Children.Add(InspectorValue("Bridge spring", () => "ζ 0.68 · k 420", mono: true));
+                break;
+
+            case 2:
+                rows.Children.Add(InspectorHeader("Component state", divider: false));
+                rows.Children.Add(InspectorValue("Segment", () => _segmentedRow.Options[_segmentedRow.SelectedIndex]));
+                rows.Children.Add(InspectorValue("Live refraction", () => _switchA.Checked ? "On" : "Off"));
+                rows.Children.Add(InspectorValue("Reduce motion", () => _switchB.Checked ? "On" : "Off"));
+                rows.Children.Add(InspectorValue("Surface grain", () => _checkA.Checked ? "Checked" : "Unchecked"));
+                rows.Children.Add(InspectorValue("Rim glow", () => _checkB.Checked ? "Checked" : "Unchecked"));
+                rows.Children.Add(InspectorValue("Glass tint", () => _radioA.Selected ? "Follow palette" : "Always clear"));
+                rows.Children.Add(InspectorSlider("Progress", () => $"{_linearProgress.Progress * 100f:F0}%", () => _linearProgress.Progress, f =>
+                {
+                    _linearProgress.Progress = Math.Clamp(f, 0.04f, 1f);
+                    _circularProgress.Progress = _linearProgress.Progress;
+                }, syncMaterials: false));
+                rows.Children.Add(InspectorHeader("Motion"));
+                rows.Children.Add(InspectorValue("Spatial spring", () => "ζ 0.68 · k 540", mono: true));
+                rows.Children.Add(InspectorValue("Effects spring", () => "ζ 1.00 · k 900", mono: true));
+                rows.Children.Add(InspectorValue("Hover lift", () => "ζ 0.85 · k 460", mono: true));
+                break;
+
+            default:
+                rows.Children.Add(InspectorHeader("Dialect", divider: false));
+                foreach (ShaderDialect d in Enum.GetValues<ShaderDialect>())
+                {
+                    rows.Children.Add(InspectorChoice(d.DisplayName(), () => _selectedDialect == d, () =>
+                    {
+                        _selectedDialect = d;
+                        _codeScrollLine = 0;
+                        RebuildUI();
+                    }));
+                }
+                rows.Children.Add(InspectorHeader("Uniform block · 256 bytes"));
+                (string Name, int Offset, int Size)[] ubo =
+                [
+                    ("uResolutionAndOrigin", 0, 16), ("uOpticsPrimary", 16, 16), ("uOpticsSecondary", 32, 16),
+                    ("uLightAndMeta", 48, 16), ("uNodeBounds[4]", 64, 64), ("uNodeCorners[4]", 128, 64), ("uNodeTints[4]", 192, 64)
+                ];
+                foreach (var f in ubo)
+                {
+                    rows.Children.Add(InspectorValue($"+{f.Offset,3}  {f.Name}", () => $"{f.Size} B", mono: true, monoLabel: true));
+                }
+                rows.Children.Add(InspectorHeader("Backend"));
+                rows.Children.Add(InspectorValue("Tier", () => "D2D1_HLSL_FULL", mono: true));
+                rows.Children.Add(InspectorValue("Layout", () => "std140 · 16 × float4", mono: true));
+                rows.Children.Add(InspectorValue("Lines", () => GetHighlightedLines(_selectedDialect).Count.ToString(), mono: true));
+                break;
+        }
+
+        ScrollViewer scroll = new()
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = rows
+        };
+        scroll.ScrollChanged += (_, _) => MarkAllControlsOriginDirty();
+        return scroll;
+    }
+
+    private FrameworkElement InspectorHeader(string title, bool divider = true)
+    {
+        StudioPaintHost host = NewPaintHost((dc, w, h) =>
+        {
+            if (divider) dc.DrawRectangle(Fill(Ink, IsDarkTheme ? 0.10f : 0.08f), null, new Rect(16, 6, w - 32, 1));
+            StudioText.Draw(dc, title, 16, h - 26, 13, Ink, StudioText.Style.Semibold);
+        }, () => HashCode.Combine(IsDarkTheme));
+        host.Height = divider ? 46 : 38;
+        return host;
+    }
+
+    private FrameworkElement InspectorPaletteSummary(SeaGlassPalette palette)
+    {
+        StudioPaintHost host = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            StudioText.Draw(dc, palette.DisplayName, 16, 10, 16, ink, StudioText.Style.Display);
+            FormattedText tag = new(palette.Tagline, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                new Typeface(new FontFamily("Segoe UI Variable Text, Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal),
+                12, Fill(ink, 0.62f), 1.25)
+            {
+                MaxTextWidth = w - 32,
+                MaxLineCount = 2,
+                Trimming = TextTrimming.CharacterEllipsis
+            };
+            dc.DrawText(tag, new Point(16, 36));
+
+            (string Name, int Argb)[] chips = [("Primary", palette.PrimaryGlass.TintColorArgb), ("Secondary", palette.SecondaryGlass.TintColorArgb), ("Tertiary", palette.TertiaryGlass.TintColorArgb)];
+            double colW = (w - 32) / 3.0;
+            for (int i = 0; i < chips.Length; i++)
+            {
+                double x = 16 + i * colW;
+                dc.DrawRoundedRectangle(Fill(chips[i].Argb), Stroke(ink, 0.14f, 1.0), new Rect(x, 82, 22, 22), 5, 5);
+                StudioText.Draw(dc, chips[i].Name, x + 30, 79, 11, ink, StudioText.Style.Regular, 0.6f);
+                StudioText.Draw(dc, $"#{chips[i].Argb & 0xFFFFFF:X6}", x + 30, 93, 11, ink, StudioText.Style.Mono, 0.86f);
+            }
+        }, () => HashCode.Combine(palette.Id));
+        host.Height = 118;
+        return host;
+    }
+
+    private FrameworkElement InspectorSlider(string label, Func<string> valueText, Func<float> getNorm, Action<float> setNorm, bool syncMaterials = true)
+    {
+        StudioPaintHost host = null!;
+        host = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            float v = Math.Clamp(getNorm(), 0f, 1f);
+            StudioText.DrawAtBaseline(dc, label, 16, 20, 12.5, ink, StudioText.Style.Regular, 0.9f);
+            StudioText.DrawAtBaseline(dc, valueText(), w - 16, 20, 11.5, ink, StudioText.Style.Mono, 0.6f, rightAligned: true);
+
+            double tx = 16, tw = w - 32, ty = 36;
+            dc.DrawRoundedRectangle(Fill(ink, IsDarkTheme ? 0.22f : 0.16f), null, new Rect(tx, ty - 2, tw, 4), 2, 2);
+            dc.DrawRoundedRectangle(Fill(AccentFill), null, new Rect(tx, ty - 2, Math.Max(4, tw * v), 4), 2, 2);
+
+            Point thumb = new(tx + tw * v, ty);
+            bool active = host.IsMouseCaptured || host.IsHovered;
+            dc.DrawEllipse(Fill(unchecked((int)0xFF000000), 0.10f), null, new Point(thumb.X, thumb.Y + 1), 10, 10);
+            dc.DrawEllipse(Fill(IsDarkTheme ? unchecked((int)0xFF454951) : unchecked((int)0xFFFFFFFF)), Stroke(ink, 0.12f, 1.0), thumb, 9.5, 9.5);
+            double inner = host.IsMouseCaptured ? 4.0 : active ? 6.0 : 5.0;
+            dc.DrawEllipse(Fill(AccentFill), null, thumb, inner, inner);
+        });
+        host.Signature = () => HashCode.Combine((int)(getNorm() * 2000f), host.IsMouseCaptured, IsDarkTheme, GlobalOpticsRevision);
+        host.Height = 52;
+
+        void Apply(Point p)
+        {
+            double tw = Math.Max(10, host.ActualWidth - 32);
+            setNorm((float)Math.Clamp((p.X - 16) / tw, 0.0, 1.0));
+            if (syncMaterials) SyncComponentMaterials();
+            host.InvalidateVisual();
+        }
+        host.MouseLeftButtonDown += (_, e) => { host.CaptureMouse(); Apply(e.GetPosition(host)); e.Handled = true; };
+        host.MouseMove += (_, e) => { if (host.IsMouseCaptured) Apply(e.GetPosition(host)); };
+        host.MouseLeftButtonUp += (_, _) => { host.ReleaseMouseCapture(); host.InvalidateVisual(); };
+        return host;
+    }
+
+    private FrameworkElement InspectorValue(string label, Func<string> value, bool mono = false, bool monoLabel = false)
+    {
+        StudioPaintHost host = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            StudioText.DrawInRow(dc, label, 16, 0, h, monoLabel ? 11.5 : 12.5, ink, monoLabel ? StudioText.Style.Mono : StudioText.Style.Regular, 0.72f);
+            StudioText.DrawRightInRow(dc, value(), w - 16, 0, h, mono ? 11.5 : 12.5, ink, mono ? StudioText.Style.Mono : StudioText.Style.Regular, 0.95f);
+        }, () => HashCode.Combine(value(), IsDarkTheme));
+        host.Height = 30;
+        return host;
+    }
+
+    private FrameworkElement InspectorChoice(string label, Func<bool> isSelected, Action select)
+    {
+        StudioPaintHost host = null!;
+        host = NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            bool sel = isSelected();
+            Rect row = new(8, 1, w - 16, h - 2);
+            if (sel) dc.DrawRoundedRectangle(Fill(ink, IsDarkTheme ? 0.09f : 0.06f), null, row, 5, 5);
+            else if (host.IsHovered) dc.DrawRoundedRectangle(Fill(ink, IsDarkTheme ? 0.05f : 0.035f), null, row, 5, 5);
+            StudioText.DrawInRow(dc, label, 16, 0, h, 12.5, ink, sel ? StudioText.Style.Semibold : StudioText.Style.Regular, sel ? 1f : 0.82f);
+            if (sel) SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Check, new Rect(w - 34, (h - 14) * 0.5, 14, 14), AccentInk);
+        });
+        host.Signature = () => HashCode.Combine(isSelected(), host.IsHovered, IsDarkTheme);
+        host.Height = 32;
+        host.MouseLeftButtonUp += (_, _) => select();
+        return host;
+    }
+
+    private FrameworkElement InspectorToggle(string label, SeaGlassSwitch sw)
+    {
+        _materialSyncCallbacks.Add(() => { sw.CheckedMaterial = CustomPrimaryMaterial; sw.UncheckedMaterial = DesktopCardMaterial; });
+        Grid row = new() { Height = 44 };
+        row.Children.Add(NewPaintHost((dc, w, h) => StudioText.DrawInRow(dc, label, 16, 0, h, 12.5, Ink, StudioText.Style.Regular, 0.9f), () => HashCode.Combine(IsDarkTheme)));
+        UIElement ctrl = BuildInteractiveSwitchControl(sw);
+        if (ctrl is FrameworkElement fe)
+        {
+            fe.HorizontalAlignment = HorizontalAlignment.Right;
+            fe.VerticalAlignment = VerticalAlignment.Center;
+            fe.Margin = new Thickness(0, 0, 16, 0);
+        }
+        row.Children.Add(ctrl);
+        return row;
+    }
+
+    private FrameworkElement InspectorButtons(params (SeaGlassPill Pill, double Width)[] buttons)
+    {
+        StackPanel row = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 6, 16, 8) };
+        foreach (var (pill, width) in buttons)
+        {
+            row.Children.Add(CreateDesktopButtonControl(pill, height: 30, margin: new Thickness(0, 0, 8, 0), width: width));
+        }
+        return row;
+    }
+
+    // ── Status bar ──────────────────────────────────────────────────────────────
+
+    private UIElement BuildStatusBar()
+    {
+        SeaGlassPalette palette = SeaGlassTheme.Current.Palette;
+        return NewPaintHost((dc, w, h) =>
+        {
+            int ink = Ink;
+            double x = 16;
+            dc.DrawEllipse(Fill(AccentFill), null, new Point(x + 3.5, h * 0.5), 3.5, 3.5);
+            x += 14;
+            string[] left = ["D2D1_HLSL_FULL", "256-byte cbuffer", $"{_activeControls.Count} glass surfaces"];
+            foreach (string item in left)
+            {
+                FormattedText ft = StudioText.Get(item, 11.5, ink, StudioText.Style.Regular, 0.66f);
+                dc.DrawText(ft, new Point(x, (h - ft.Height) * 0.5));
+                x += ft.Width + 18;
+            }
+
+            double r = w - 16;
+            string[] right = [$"{_fps:F0} fps", palette.DisplayName, PageTitles[_page]];
+            foreach (string item in right)
+            {
+                FormattedText ft = StudioText.Get(item, 11.5, ink, StudioText.Style.Regular, 0.66f);
+                dc.DrawText(ft, new Point(r - ft.Width, (h - ft.Height) * 0.5));
+                r -= ft.Width + 18;
+            }
+        }, () => HashCode.Combine((int)Math.Round(_fps), palette.Id, _page, _activeControls.Count));
+    }
+
+    private UIElement BuildSegmentedControl(double width, double height)
+    {
+        _segmentedRow.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
+        _segmentedRow.ContainerMaterial = DesktopCardMaterial with { CornerRadiusDp = 8f };
+        _segmentedRow.SnapMaterial(_segmentedRow.ContainerMaterial);
+
+        SeaGlassVisualControl segCtrl = new(
+            _segmentedRow,
+            _stageBackdropVisuals,
+            _stageRootGrid,
+            dt => _segmentedRow.StepAndEvaluate(dt, SeaGlassTheme.Current),
+            (dc, frame, w, h) =>
             {
                 int c = frame.OptimalContentColorArgb;
-                SolidColorBrush iconBox = new(SeaGlassXamlRenderer.ToMediaColor(c, 0.12f));
-                iconBox.Freeze();
-                dc.DrawRoundedRectangle(iconBox, null, new Rect(14, 12, 38, 38), 12, 12);
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Layers, new Rect(23, 21, 20, 20), c);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Adaptive Subsurface Diffusion", new Point(64, 13), c, 13.5, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Maintains >= 28dp Gaussian interior frost behind text & icons", new Point(64, 33), c, 11.0, bold: false, alpha: 0.78f);
-            });
-        stack.Children.Add(listItem1Ctrl);
-        stack.Children.Add(Spacer(10));
+                double slotW = (w - 6.0) / 3.0;
+                double x = 3.0 + _segmentedRow.LeftEdgeSlot * slotW;
+                double pillW = Math.Max(slotW * 0.85, _segmentedRow.LozengeSlotSpan * slotW);
+                double yInset = 3.0 + _segmentedRow.MotionEnergy * 1.8;
+                double pillH = Math.Max(18.0, h - yInset * 2.0);
 
-        SeaGlassSurface dialogModel = new(
-            stageState: _stageState,
-            material: CustomSurfaceMaterial with { CornerRadiusDp = 30f, ThicknessDp = 20f, RimChalkiness = 0.88f });
-        SeaGlassVisualControl dialogCtrl = CreateGlassControl(
-            dialogModel,
-            height: 146,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SolidColorBrush iconBox = new(SeaGlassXamlRenderer.ToMediaColor(c, 0.14f));
-                iconBox.Freeze();
-                dc.DrawRoundedRectangle(iconBox, null, new Rect(18, 16, 40, 40), 14, 14);
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Sparkles, new Rect(27, 25, 22, 22), c);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Export SeaGlass Design Tokens", new Point(70, 24), c, 15.5, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(
-                    dc,
-                    "Generates WinUI 3 XAML tokens, Compose themes, and 256-byte cbuffer / std140 shader uniforms for Direct2D HLSL, Vulkan 1.1, GLES 3.0, and AGSL.",
-                    new Point(18, 66), c, 11.5, bold: false, alpha: 0.86f, maxWidth: Math.Max(140, w - 36));
-            });
-        stack.Children.Add(dialogCtrl);
+                Color pillTop = SeaGlassXamlRenderer.ToMediaColor(
+                    SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.28f), 0.82f);
+                Color pillBot = SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb, 0.68f);
+                LinearGradientBrush pillBrush = new(pillTop, pillBot, new Point(0, 0), new Point(0, 1));
+                pillBrush.Freeze();
+                Pen pillPen = new(new SolidColorBrush(Color.FromArgb(190, 255, 255, 255)), 1.0);
+                pillPen.Freeze();
+                dc.DrawRoundedRectangle(pillBrush, pillPen, new Rect(x, yInset, pillW, pillH), 6.0, 6.0);
 
-        return stack;
+                for (int i = 0; i < 3; i++)
+                {
+                    bool sel = i == _segmentedRow.SelectedIndex;
+                    SeaGlassXamlRenderer.DrawCenteredLabel(dc, _segmentedRow.Options[i], new Point(3 + (i + 0.5) * slotW, h * 0.5), c, 11.0, bold: sel, extraBold: sel, alpha: sel ? 1f : 0.72f);
+                }
+            },
+            customStateSignature: () => HashCode.Combine((int)(_segmentedRow.LeftEdgeSlot * 500f), (int)(_segmentedRow.LozengeSlotSpan * 500f), _segmentedRow.SelectedIndex))
+        {
+            Width = width,
+            Height = height
+        };
+        _activeControls.Add(segCtrl);
+        return segCtrl;
     }
 
     private UIElement BuildInteractiveSwitchControl(SeaGlassSwitch sw)
@@ -1853,29 +2498,28 @@ public sealed class MainWindow : Window
             dt => sw.StepAndEvaluate(dt, SeaGlassTheme.Current),
             (dc, frame, w, h) =>
             {
-                double thumbW = 26.0 * sw.ThumbScaleX;
-                double thumbH = 24.0 * sw.ThumbScaleY;
-                double travel = Math.Max(4.0, w - 32.0);
-                double tx = 3.0 + travel * Math.Clamp(sw.ThumbProgress, -0.1f, 1.1f);
+                int c = frame.OptimalContentColorArgb;
+                Pen trackBorder = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(c, sw.Checked ? 0.28f : 0.42f)), 1.2);
+                trackBorder.Freeze();
+                dc.DrawRoundedRectangle(null, trackBorder, new Rect(1.5, 1.5, w - 3.0, h - 3.0), (h - 3.0) * 0.5, (h - 3.0) * 0.5);
+
+                double thumbW = 20.0 * sw.ThumbScaleX;
+                double thumbH = 18.0 * sw.ThumbScaleY;
+                double travel = Math.Max(4.0, w - 26.0);
+                double tx = 4.0 + travel * Math.Clamp(sw.ThumbProgress, -0.06f, 1.06f);
                 double ty = (h - thumbH) * 0.5;
 
-                LinearGradientBrush thumbBrush = new(
-                    Color.FromArgb(240, 255, 255, 255),
-                    SeaGlassXamlRenderer.ToMediaColor(sw.CheckedMaterial.TintColorArgb, sw.Checked ? 0.58f : 0.28f),
-                    new Point(0, 0), new Point(0, 1));
+                SolidColorBrush thumbBrush = new(Colors.White);
                 thumbBrush.Freeze();
-                Pen border = new(new SolidColorBrush(Color.FromArgb(215, 255, 255, 255)), 1.2);
+                Pen border = new(new SolidColorBrush(Color.FromArgb(80, 0, 0, 0)), 0.8);
                 border.Freeze();
-                dc.DrawRoundedRectangle(thumbBrush, border, new Rect(tx, ty, thumbW, thumbH), 12, 12);
-
-                if (sw.Checked)
-                {
-                    SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Check, new Rect(tx + thumbW * 0.5 - 6.5, ty + thumbH * 0.5 - 6.5, 13, 13), frame.OptimalContentColorArgb);
-                }
-            })
+                dc.DrawRoundedRectangle(thumbBrush, border, new Rect(tx, ty, thumbW, thumbH), thumbH * 0.5, thumbH * 0.5);
+            },
+            customStateSignature: () => HashCode.Combine((int)(sw.ThumbProgress * 500f), (int)(sw.ThumbScaleX * 500f), sw.Checked),
+            interactiveHoverLift: true)
         {
-            Width = 56,
-            Height = 32
+            Width = 48,
+            Height = 26
         };
         _activeControls.Add(ctrl);
         return ctrl;
@@ -1883,6 +2527,12 @@ public sealed class MainWindow : Window
 
     private UIElement BuildInteractiveCheckboxControl(SeaGlassCheckbox cb)
     {
+        cb.UseDesktopSquareContour = true;
+        cb.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
+        cb.CheckedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = 6f };
+        cb.UncheckedMaterial = DesktopCardMaterial with { CornerRadiusDp = 6f };
+        cb.SnapMaterial(cb.Checked ? cb.CheckedMaterial : cb.UncheckedMaterial);
+
         SeaGlassVisualControl ctrl = new(
             cb,
             _stageBackdropVisuals,
@@ -1890,14 +2540,23 @@ public sealed class MainWindow : Window
             dt => cb.StepAndEvaluate(dt, SeaGlassTheme.Current),
             (dc, frame, w, h) =>
             {
-                if (cb.MorphProgress > 0.15f)
+                int c = frame.OptimalContentColorArgb;
+                if (cb.MorphProgress <= 0.15f)
                 {
-                    SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Check, new Rect(w * 0.5 - 8, h * 0.5 - 8, 16, 16), frame.OptimalContentColorArgb);
+                    Pen wellPen = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(c, 0.36f)), 1.2);
+                    wellPen.Freeze();
+                    dc.DrawRoundedRectangle(null, wellPen, new Rect(1.5, 1.5, w - 3, h - 3), 5, 5);
                 }
-            })
+                else
+                {
+                    SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Check, new Rect(w * 0.5 - 6.5, h * 0.5 - 6.5, 13, 13), c);
+                }
+            },
+            customStateSignature: () => (int)(cb.MorphProgress * 500f),
+            interactiveHoverLift: true)
         {
-            Width = 30,
-            Height = 30
+            Width = 24,
+            Height = 24
         };
         _activeControls.Add(ctrl);
         return ctrl;
@@ -1912,17 +2571,23 @@ public sealed class MainWindow : Window
             dt => rb.StepAndEvaluate(dt, SeaGlassTheme.Current),
             (dc, frame, w, h) =>
             {
-                double r = 6.0 * rb.InnerDropletScale;
+                int c = frame.OptimalContentColorArgb;
+                Pen wellPen = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(c, rb.Selected ? 0.32f : 0.42f)), 1.3);
+                wellPen.Freeze();
+                dc.DrawEllipse(null, wellPen, new Point(w * 0.5, h * 0.5), w * 0.5 - 2.0, h * 0.5 - 2.0);
+
+                double r = 4.5 * rb.InnerDropletScale;
                 if (r > 0.5)
                 {
-                    SolidColorBrush b = new(SeaGlassXamlRenderer.ToMediaColor(frame.OptimalContentColorArgb));
-                    b.Freeze();
-                    dc.DrawEllipse(b, null, new Point(w * 0.5, h * 0.5), r, r);
+                    dc.DrawEllipse(Fill(unchecked((int)0xFF000000), 0.14f), null, new Point(w * 0.5, h * 0.5 + 0.6), r + 0.8, r + 0.8);
+                    dc.DrawEllipse(Brushes.White, null, new Point(w * 0.5, h * 0.5), r, r);
                 }
-            })
+            },
+            customStateSignature: () => (int)(rb.InnerDropletScale * 500f),
+            interactiveHoverLift: true)
         {
-            Width = 30,
-            Height = 30
+            Width = 26,
+            Height = 26
         };
         _activeControls.Add(ctrl);
         return ctrl;
@@ -1940,9 +2605,9 @@ public sealed class MainWindow : Window
                 int c = frame.OptimalContentColorArgb;
                 Point center = new(w * 0.5, h * 0.5);
                 double radius = Math.Min(w, h) * 0.36;
-                Pen trackPen = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(c, 0.18f)), 4.0);
+                Pen trackPen = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(c, 0.16f)), 3.8);
                 trackPen.Freeze();
-                Pen arcPen = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb)), 4.0)
+                Pen arcPen = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb)), 3.8)
                 {
                     StartLineCap = PenLineCap.Round,
                     EndLineCap = PenLineCap.Round
@@ -1952,11 +2617,12 @@ public sealed class MainWindow : Window
                 DrawArcGeometry(dc, arcPen, center, radius, -90, _circularProgress.SweepAngleDegrees);
 
                 int pct = (int)MathF.Round(_circularProgress.AnimatedProgress * 100f);
-                SeaGlassXamlRenderer.DrawLabel(dc, $"{pct}%", new Point(center.X - 11, center.Y - 7), c, 10.0, bold: true, extraBold: true);
-            })
+                SeaGlassXamlRenderer.DrawCenteredLabel(dc, $"{pct}%", center, c, 9.5, bold: true, extraBold: true);
+            },
+            customStateSignature: () => (int)(_circularProgress.SweepAngleDegrees * 20f))
         {
-            Width = 52,
-            Height = 52
+            Width = 46,
+            Height = 46
         };
         _activeControls.Add(ctrl);
         return ctrl;
@@ -1964,6 +2630,14 @@ public sealed class MainWindow : Window
 
     private UIElement BuildInteractiveExtendedFabControl()
     {
+        _extendedFab.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
+        _extendedFab.SetExpanded(_extendedFab.Expanded, CustomPrimaryMaterial with { CornerRadiusDp = 6f, ThicknessDp = 14f });
+        _extendedFab.SnapMaterial(_extendedFab.Material);
+        _materialSyncCallbacks.Add(() =>
+        {
+            _extendedFab.SetExpanded(_extendedFab.Expanded, CustomPrimaryMaterial with { CornerRadiusDp = 6f, ThicknessDp = 14f });
+            _extendedFab.SnapMaterial(_extendedFab.Material);
+        });
         SeaGlassVisualControl ctrl = new(
             _extendedFab,
             _stageBackdropVisuals,
@@ -1972,207 +2646,18 @@ public sealed class MainWindow : Window
             (dc, frame, w, h) =>
             {
                 int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Sparkles, new Rect(16, h * 0.5 - 10, 20, 20), c);
+                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Sparkles, new Rect(12, h * 0.5 - 7, 14, 14), c);
                 if (_extendedFab.Expanded)
                 {
-                    SeaGlassXamlRenderer.DrawLabel(dc, "Create", new Point(42, h * 0.5 - 9), c, 13.5, bold: true, extraBold: true);
+                    SeaGlassXamlRenderer.DrawLabel(dc, "Create", new Point(32, h * 0.5 - 7.5), c, 11.0, bold: true, extraBold: true);
                 }
-            })
+            },
+            customStateSignature: () => _extendedFab.Expanded ? 1 : 0,
+            interactiveHoverLift: true)
         {
-            Width = 104,
-            Height = 48
+            Width = 84,
+            Height = 30
         };
-        _activeControls.Add(ctrl);
-        return ctrl;
-    }
-
-    /// <summary>
-    /// Exact 1:1 port of <c>BackendArchitectureSection</c> in <c>MainActivity.kt</c>.
-    /// </summary>
-    private UIElement BuildBackendArchitectureSection()
-    {
-        StackPanel stack = new();
-
-        SeaGlassTierDiagnostics diag = SeaGlassDeviceTierResolver.GetDiagnostics(SeaGlassTheme.Current.TierOverride);
-        CompiledShaderBundle bundle = SeaGlassShaderCompiler.CompileForDialect(_selectedDialect);
-
-        SeaGlassSurface gpuCardModel = new(_stageState, CustomSurfaceMaterial with { CornerRadiusDp = 28f });
-        SeaGlassVisualControl gpuCard = CreateGlassControl(
-            gpuCardModel,
-            height: 118,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, "BACKEND-AGNOSTIC GPU ENGINE", new Point(18, 14), c, 10.5, bold: true, extraBold: true, alpha: 0.75f);
-                SeaGlassXamlRenderer.DrawLabel(dc, diag.TierDisplayName, new Point(18, 32), c, 15.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, $"OS: {diag.OsDescription} · cbuffer / std140 UBO: {diag.UniformBlockBytes} bytes (16 × float4)", new Point(18, 58), c, 11.5, bold: false, alpha: 0.85f);
-                SeaGlassXamlRenderer.DrawLabel(dc, "Dialects: HLSL SM 5.0 · Direct2D D2D1 · Vulkan GLSL 450 · OpenGL ES 3.00 · Android AGSL 1.0", new Point(18, 82), c, 11.0, bold: true, alpha: 0.80f);
-            });
-        stack.Children.Add(gpuCard);
-        stack.Children.Add(Spacer(10));
-
-        UniformGrid dialectRow = new() { Rows = 1, Columns = 5 };
-        foreach (ShaderDialect d in Enum.GetValues<ShaderDialect>())
-        {
-            ShaderDialect captured = d;
-            string shortLbl = d switch
-            {
-                ShaderDialect.HlslSm50 => "HLSL 5.0",
-                ShaderDialect.D2D1Hlsl => "D2D1 HLSL",
-                ShaderDialect.VulkanGlsl450 => "Vulkan 450",
-                ShaderDialect.GlslEs300 => "GLES 3.00",
-                _ => "AGSL 1.0"
-            };
-            dialectRow.Children.Add(CreatePillControl(new SeaGlassPill(
-                shortLbl,
-                _selectedDialect == d,
-                () =>
-                {
-                    _selectedDialect = captured;
-                    RebuildUI();
-                },
-                _stageState, CustomPrimaryMaterial, CustomSurfaceMaterial), 36, new Thickness(2, 0, 2, 0)));
-        }
-        stack.Children.Add(dialectRow);
-        stack.Children.Add(Spacer(10));
-
-        string snippet = string.Join("\n", bundle.SeaGlassCompositeFragmentSource.Split('\n')[..Math.Min(18, bundle.SeaGlassCompositeFragmentSource.Split('\n').Length)]);
-        SeaGlassSurface shaderCardModel = new(_stageState, CustomSurfaceMaterial with { CornerRadiusDp = 28f });
-        SeaGlassVisualControl shaderCard = CreateGlassControl(
-            shaderCardModel,
-            height: 290,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawLabel(dc, $"PORTABLE SHADER SOURCE · {_selectedDialect.DisplayName().ToUpperInvariant()}", new Point(18, 14), c, 10.5, bold: true, extraBold: true, alpha: 0.78f);
-                SolidColorBrush codeBg = new(Color.FromArgb(42, 0, 0, 0));
-                codeBg.Freeze();
-                dc.DrawRoundedRectangle(codeBg, null, new Rect(14, 36, Math.Max(100, w - 28), h - 50), 16, 16);
-                SeaGlassXamlRenderer.DrawLabel(dc, snippet, new Point(24, 46), c, 10.5, bold: true, mono: true, alpha: 0.92f);
-            });
-        stack.Children.Add(shaderCard);
-
-        return stack;
-    }
-
-    /// <summary>
-    /// Exact 1:1 port of <c>SeaGlassMiniPlayerBar</c> in <c>SeaGlassComponents.kt</c>.
-    /// </summary>
-    private UIElement BuildMiniPlayerBarControl()
-    {
-        SeaGlassVisualControl ctrl = CreateGlassControl(
-            _miniPlayerBar,
-            height: 56,
-            overlay: (dc, frame, w, h) =>
-            {
-                int c = frame.OptimalContentColorArgb;
-
-                // Coral/Orange Vinyl Album Artwork Thumbnail (40x40 rounded 10dp)
-                LinearGradientBrush artBrush = new(Color.FromRgb(0xE8, 0x6A, 0x50), Color.FromRgb(0xD8, 0x4E, 0x38), new Point(0, 0), new Point(1, 1));
-                artBrush.Freeze();
-                dc.DrawRoundedRectangle(artBrush, null, new Rect(12, 8, 40, 40), 10, 10);
-                Pen groovePen = new(new SolidColorBrush(Color.FromArgb(210, 40, 18, 12)), 2.0);
-                groovePen.Freeze();
-                dc.DrawEllipse(null, groovePen, new Point(32, 28), 9.5, 9.5);
-                dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(0xFF, 0xDF, 0xC8)), null, new Point(32, 28), 3.2, 3.2);
-
-                // Track Title & Subtitle
-                SeaGlassXamlRenderer.DrawLabel(dc, _miniPlayerBar.Title, new Point(64, 11), c, 14.0, bold: true, extraBold: true);
-                SeaGlassXamlRenderer.DrawLabel(dc, _miniPlayerBar.Subtitle, new Point(64, 30), c, 12.0, bold: false, alpha: 0.78f);
-
-                // Play/Pause + Next Vector Controls
-                SeaGlassXamlRenderer.DrawGlyph(
-                    dc,
-                    _miniPlayerBar.IsPlaying ? SeaGlassGlyph.Pause : SeaGlassGlyph.Play,
-                    new Rect(w - 84, 19, 18, 18),
-                    c);
-                SeaGlassXamlRenderer.DrawGlyph(
-                    dc,
-                    SeaGlassGlyph.Next,
-                    new Rect(w - 42, 17, 22, 22),
-                    c);
-            });
-
-        ctrl.MouseUp += (_, e) =>
-        {
-            if (e.GetPosition(ctrl).X > ctrl.ActualWidth - 54)
-            {
-                _miniPlayerBar.OnNextTrack();
-            }
-        };
-
-        return ctrl;
-    }
-
-    /// <summary>
-    /// Exact 1:1 port of <c>SeaGlassFluidBar</c> in <c>SeaGlassComponents.kt</c>.
-    /// </summary>
-    private UIElement BuildBottomFluidBarControl()
-    {
-        SeaGlassGlyph[] navGlyphs =
-        [
-            SeaGlassGlyph.Home,
-            SeaGlassGlyph.Sparkles,
-            SeaGlassGlyph.Layers,
-            SeaGlassGlyph.Tune,
-            SeaGlassGlyph.Search
-        ];
-
-        SeaGlassVisualControl ctrl = new(
-            _bottomFluidBar,
-            _stageBackdropVisuals,
-            _stageRootGrid,
-            dt => _bottomFluidBar.StepAndEvaluate(dt, SeaGlassTheme.Current),
-            (dc, frame, w, h) =>
-            {
-                int baseInk = frame.OptimalContentColorArgb;
-                bool isDarkBar = SeaGlassColorMath.ArgbToOklab(_bottomFluidBar.BarMaterial.TintColorArgb).L < 0.48f;
-                int activeAccent = isDarkBar
-                    ? unchecked((int)0xFFFF6482)
-                    : SeaGlassColorMath.LerpOklab(unchecked((int)0xFFC41238), CustomPrimaryMaterial.TintColorArgb, 0.16f);
-
-                int count = _bottomFluidBar.Items.Count;
-                double innerW = Math.Max(100, w - 8.0);
-                double slotW = innerW / count;
-                double pillX = 4.0 + _bottomFluidBar.LeftEdgeSlot * slotW;
-                double pillW = Math.Max(slotW * 0.85, _bottomFluidBar.LozengeSlotSpan * slotW);
-                double yInset = 4.0 + _bottomFluidBar.MotionEnergy * 3.0;
-                double pillH = Math.Max(20.0, h - yInset * 2.0);
-
-                // Plump Liquid Glass Active Tab Lozenge Pill with dual-edge lead-lag stretch
-                Color pillTop = isDarkBar
-                    ? SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb, 0.48f)
-                    : SeaGlassXamlRenderer.ToMediaColor(SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.48f), 0.56f);
-                Color pillBottom = isDarkBar
-                    ? Color.FromArgb(88, 10, 30, 48)
-                    : SeaGlassXamlRenderer.ToMediaColor(SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.28f), 0.42f);
-
-                LinearGradientBrush lozengeBrush = new(pillTop, pillBottom, new Point(0, 0), new Point(0, 1));
-                lozengeBrush.Freeze();
-                dc.DrawRoundedRectangle(lozengeBrush, null, new Rect(pillX, yInset, pillW, pillH), pillH * 0.5, pillH * 0.5);
-
-                for (int i = 0; i < count; i++)
-                {
-                    bool selected = !_widescreenGalleryMode && i == _selectedTab;
-                    int itemColor = selected ? activeAccent : baseInk;
-                    float alpha = selected ? 1.0f : 0.86f;
-                    double cx = 4.0 + (i + 0.5) * slotW;
-
-                    SeaGlassXamlRenderer.DrawGlyph(dc, navGlyphs[i % navGlyphs.Length], new Rect(cx - 10.5, 12, 21, 21), itemColor, alpha);
-                    SeaGlassXamlRenderer.DrawCenteredLabel(dc, _bottomFluidBar.Items[i], new Point(cx, 46), itemColor, 11.0, bold: true, extraBold: selected, alpha: alpha);
-                }
-            })
-        {
-            Height = 68
-        };
-
-        ctrl.MouseUp += (_, e) =>
-        {
-            double u = e.GetPosition(ctrl).X / Math.Max(1.0, ctrl.ActualWidth);
-            int idx = Math.Clamp((int)(u * _bottomFluidBar.Items.Count), 0, _bottomFluidBar.Items.Count - 1);
-            _bottomFluidBar.SelectTab(idx);
-        };
-
         _activeControls.Add(ctrl);
         return ctrl;
     }
@@ -2181,25 +2666,42 @@ public sealed class MainWindow : Window
         SeaGlassSurface model,
         double? width = null,
         double? height = null,
-        Action<DrawingContext, SeaGlassSurfaceFrameState, double, double>? overlay = null)
+        Action<DrawingContext, SeaGlassSurfaceFrameState, double, double>? overlay = null,
+        bool interactiveHoverLift = false)
     {
+        model.SnapMaterial(model.Material);
         SeaGlassVisualControl ctrl = new(
             surfaceModel: model,
             stageBackdrop: _stageBackdropVisuals,
             stageCoordinateRoot: _stageRootGrid,
-            customOverlayPainter: overlay);
+            customOverlayPainter: overlay,
+            interactiveHoverLift: interactiveHoverLift);
         if (width is { } w) ctrl.Width = w;
         if (height is { } h) ctrl.Height = h;
         _activeControls.Add(ctrl);
         return ctrl;
     }
 
-    private UIElement CreatePillControl(SeaGlassPill pill, double height = 38, Thickness? margin = null, double? width = null)
+    private UIElement CreateDesktopButtonControl(SeaGlassPill pill, double height = 32, Thickness? margin = null, double? width = null)
     {
+        pill.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
+        pill.SelectedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = 6f };
+        pill.UnselectedMaterial = DesktopCardMaterial with { CornerRadiusDp = 6f };
+        pill.SetSelected(pill.Selected);
+        pill.SnapMaterial(pill.Material);
+
+        _materialSyncCallbacks.Add(() =>
+        {
+            pill.SelectedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = 6f };
+            pill.UnselectedMaterial = DesktopCardMaterial with { CornerRadiusDp = 6f };
+            pill.SetSelected(pill.Selected);
+            pill.SnapMaterial(pill.Material);
+        });
         SeaGlassVisualControl ctrl = CreateGlassControl(
             pill,
             width: width,
             height: height,
+            interactiveHoverLift: true,
             overlay: (dc, frame, w, h) =>
             {
                 SeaGlassXamlRenderer.DrawCenteredLabel(
@@ -2207,67 +2709,12 @@ public sealed class MainWindow : Window
                     pill.Label,
                     new Point(w * 0.5, h * 0.5),
                     frame.OptimalContentColorArgb,
-                    12.0,
-                    bold: true,
+                    11.0,
+                    bold: pill.Selected,
                     extraBold: pill.Selected);
             });
         if (margin is { } m) ctrl.Margin = m;
         return ctrl;
-    }
-
-    private static void DrawCustomOpticalBar(
-        DrawingContext dc,
-        string label,
-        string valueBadge,
-        float normalizedValue,
-        double x,
-        double y,
-        double width,
-        int contentColorArgb,
-        int accentArgb)
-    {
-        SeaGlassXamlRenderer.DrawLabel(dc, label, new Point(x, y), contentColorArgb, 12.0, bold: true);
-
-        SolidColorBrush badgeBg = new(SeaGlassXamlRenderer.ToMediaColor(contentColorArgb, 0.14f));
-        badgeBg.Freeze();
-        dc.DrawRoundedRectangle(badgeBg, null, new Rect(x + width - 58, y - 1, 58, 18), 7, 7);
-        SeaGlassXamlRenderer.DrawLabel(dc, valueBadge, new Point(x + width - 50, y + 1), contentColorArgb, 10.5, bold: true, mono: true);
-
-        double trackY = y + 23;
-        SolidColorBrush trackBg = new(SeaGlassXamlRenderer.ToMediaColor(contentColorArgb, 0.22f));
-        trackBg.Freeze();
-        dc.DrawRoundedRectangle(trackBg, null, new Rect(x, trackY, width, 6), 3, 3);
-
-        double fillW = Math.Clamp(normalizedValue, 0.02f, 1.0f) * width;
-        SolidColorBrush activeTrack = new(SeaGlassXamlRenderer.ToMediaColor(contentColorArgb, 0.84f));
-        activeTrack.Freeze();
-        dc.DrawRoundedRectangle(activeTrack, null, new Rect(x, trackY, fillW, 6), 3, 3);
-
-        // Thumb
-        SolidColorBrush thumb = new(SeaGlassXamlRenderer.ToMediaColor(contentColorArgb));
-        thumb.Freeze();
-        dc.DrawEllipse(thumb, null, new Point(x + fillW, trackY + 3), 7.5, 7.5);
-    }
-
-    private static void DrawMiniGlassPod(
-        DrawingContext dc,
-        Rect rect,
-        double cornerRadius,
-        int tintArgb,
-        string title,
-        string subtitle,
-        int contentColorArgb)
-    {
-        int richArgb = SeaGlassColorMath.LerpOklab(tintArgb, unchecked((int)0xFFFFFFFF), 0.30f);
-        SolidColorBrush fill = new(SeaGlassXamlRenderer.ToMediaColor(richArgb, 0.72f));
-        fill.Freeze();
-        Pen rim = new(new SolidColorBrush(Color.FromArgb(215, 255, 255, 255)), 1.5);
-        rim.Freeze();
-        double r = Math.Clamp(cornerRadius, 8, Math.Min(rect.Width, rect.Height) * 0.65);
-        dc.DrawRoundedRectangle(fill, rim, rect, r, r);
-
-        SeaGlassXamlRenderer.DrawLabel(dc, title, new Point(rect.X + 12, rect.Y + 12), contentColorArgb, 11.0, bold: true, extraBold: true);
-        SeaGlassXamlRenderer.DrawLabel(dc, subtitle, new Point(rect.X + 12, rect.Y + 30), contentColorArgb, 9.5, bold: false, alpha: 0.86f);
     }
 
     private static void DrawArcGeometry(
@@ -2312,6 +2759,8 @@ public sealed class MainWindow : Window
     {
         _sharpBackdropCanvas.Phase = 0.85;
         _frostedBackdropCanvas.Phase = 0.85;
+        _sharpBackdropCanvas.CacheMode = null;
+        _frostedBackdropHost.CacheMode = null;
 
         Measure(new System.Windows.Size(Width, Height));
         Arrange(new Rect(0, 0, Width, Height));
@@ -2323,9 +2772,16 @@ public sealed class MainWindow : Window
             rootVisual.Arrange(new Rect(0, 0, Width, Height));
             rootVisual.UpdateLayout();
 
-            foreach (SeaGlassVisualControl ctrl in _activeControls)
+            for (int i = 0; i < 90; i++)
             {
-                ctrl.StepPhysics(1f / 60f);
+                foreach (SeaGlassVisualControl ctrl in _activeControls)
+                {
+                    ctrl.StepPhysics(1f / 60f);
+                }
+            }
+            foreach (StudioPaintHost host in _paintHosts)
+            {
+                host.InvalidateVisual();
             }
             rootVisual.UpdateLayout();
 
@@ -2334,7 +2790,13 @@ public sealed class MainWindow : Window
 
             PngBitmapEncoder encoder = new();
             encoder.Frames.Add(BitmapFrame.Create(rtb));
-            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
+
+            string? dir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
             using FileStream fs = File.Create(outputPath);
             encoder.Save(fs);
         }

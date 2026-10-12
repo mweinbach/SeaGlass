@@ -19,8 +19,41 @@ public sealed record SeaGlassSurfaceFrameState(
     float ScaleY,
     float TiltRotationXDegrees,
     float TiltRotationYDegrees,
-    string XamlContourPathData,
-    SeaGlassUniformBlock UniformBlock);
+    SeaGlassUniformBlock UniformBlock,
+    SeaGlassVectorPath2D? ContourPath = null,
+    bool IsUniformSingleNode = false,
+    float WidthPx = 0f,
+    float HeightPx = 0f)
+{
+    private string? _cachedXamlContourPathData;
+
+    /// <summary>
+    /// Lazily serialized XAML / SVG path string (<c>F1 M ... C ... Z</c>).
+    /// Live Direct2D / WPF rendering consumes <see cref="ContourPath"/> and <see cref="IsUniformSingleNode"/>
+    /// directly without string formatting or <c>Geometry.Parse</c>.
+    /// </summary>
+    public string XamlContourPathData
+    {
+        get
+        {
+            if (_cachedXamlContourPathData is not null) return _cachedXamlContourPathData;
+            if (ContourPath is { IsEmpty: false })
+            {
+                _cachedXamlContourPathData = ContourPath.ToXamlPathData();
+                return _cachedXamlContourPathData;
+            }
+            SeaGlassVectorPath2D fallback = new();
+            fallback.AddRoundRect(
+                0f, 0f, MathF.Max(1f, WidthPx), MathF.Max(1f, HeightPx),
+                SolvedCornerRadiiPx.TopLeftPx,
+                SolvedCornerRadiiPx.TopRightPx,
+                SolvedCornerRadiiPx.BottomRightPx,
+                SolvedCornerRadiiPx.BottomLeftPx);
+            _cachedXamlContourPathData = fallback.ToXamlPathData();
+            return _cachedXamlContourPathData;
+        }
+    }
+}
 
 /// <summary>
 /// Foundational SeaGlass container surface for WinUI with Material 3 Expressive state morphing,
@@ -31,9 +64,10 @@ public sealed record SeaGlassSurfaceFrameState(
 /// </summary>
 public class SeaGlassSurface
 {
-    private readonly SeaGlassMaterialAnimator _materialAnimator;
+    private SeaGlassMaterialAnimator _materialAnimator;
     private readonly SeaGlassUniformBlock _uniformBlock = new();
     private readonly SeaGlassVectorPath2D _contourPath = new();
+    private readonly SeaGlassSdfEngine.SdfNode[] _singleNodeBuffer = new SeaGlassSdfEngine.SdfNode[1];
     private float _pressFraction;
     private float _pressVelocity;
     private float _tiltRotX, _tiltVelX;
@@ -83,6 +117,15 @@ public class SeaGlassSurface
         _materialAnimator = new SeaGlassMaterialAnimator(Material);
     }
 
+    /// <summary>
+    /// Immediately snaps both the target <see cref="Material"/> and internal spring animator to <paramref name="material"/>.
+    /// </summary>
+    public void SnapMaterial(SeaGlassMaterial material)
+    {
+        Material = material;
+        _materialAnimator = new SeaGlassMaterialAnimator(material);
+    }
+
     public void OnPointerStateChanged(Vector2? localPosition, bool isDown)
     {
         if (localPosition is not null) LastTouchOffsetInLocal = localPosition;
@@ -115,6 +158,10 @@ public class SeaGlassSurface
         float clampedPress = Math.Clamp(_pressFraction, 0f, 1.25f);
 
         SeaGlassMaterial targetMaterial = Material.Pressed(Math.Clamp(clampedPress, 0f, 1f));
+        if (!SeaGlass.WinUI.Rendering.SeaGlassXamlRenderer.PointerTiltAndGlowEnabled)
+        {
+            targetMaterial = targetMaterial with { RimChalkiness = Material.RimChalkiness };
+        }
         SeaGlassMaterial effectiveMaterial = _materialAnimator.StepToward(targetMaterial, motion, dtSeconds);
 
         float wPx = MathF.Max(1f, SizePx.X);
@@ -124,8 +171,9 @@ public class SeaGlassSurface
         float normTouchX = LastTouchOffsetInLocal is { } ptX ? Math.Clamp((ptX.X - cx) / cx, -1f, 1f) : 0f;
         float normTouchY = LastTouchOffsetInLocal is { } ptY ? Math.Clamp((ptY.Y - cy) / cy, -1f, 1f) : 0f;
 
-        motion.FastSpatial.Step(ref _tiltRotX, ref _tiltVelX, -normTouchY * 4.8f * clampedPress, dtSeconds);
-        motion.FastSpatial.Step(ref _tiltRotY, ref _tiltVelY, normTouchX * 4.8f * clampedPress, dtSeconds);
+        float tiltGain = SeaGlass.WinUI.Rendering.SeaGlassXamlRenderer.PointerTiltAndGlowEnabled ? 4.8f * clampedPress : 0f;
+        motion.FastSpatial.Step(ref _tiltRotX, ref _tiltVelX, -normTouchY * tiltGain, dtSeconds);
+        motion.FastSpatial.Step(ref _tiltRotY, ref _tiltVelY, normTouchX * tiltGain, dtSeconds);
 
         float scaleX = 1f + 0.022f * clampedPress;
         float scaleY = 1f - 0.018f * clampedPress;
@@ -143,22 +191,24 @@ public class SeaGlassSurface
         float proximityPx = MathF.Max(1f, CornerProximityThresholdDp * density);
         float fullMatchPx = MathF.Max(0f, CornerFullMatchDistanceDp * density);
 
-        SeaGlassCornerRadiiPx deviceSolved = SeaGlassCornerAdaptationSolver.SolveElementCornerRadiiPx(
-            elementLeftPx: leftInStage,
-            elementTopPx: topInStage,
-            elementRightPx: leftInStage + wPx,
-            elementBottomPx: topInStage + hPx,
-            containerWidthPx: stageSize.X,
-            containerHeightPx: stageSize.Y,
-            containerCornersPx: activeTheme.DeviceCornerSpec.ToRadiiPx(),
-            baseCornerRadiusPx: baseCornerPx,
-            minCornerFloorPx: 8f * density,
-            influenceDistancePx: proximityPx,
-            adaptationStrength: CornerAdaptationStrength,
-            mode: CornerAdaptationMode,
-            cornerMask: CornerMask,
-            fullMatchDistancePx: fullMatchPx,
-            allowAsymmetricCorners: AllowAsymmetricCorners);
+        SeaGlassCornerRadiiPx deviceSolved = (CornerAdaptationMode == SeaGlassCornerAdaptationMode.Fixed || CornerMask == SeaGlassCornerMask.None)
+            ? SeaGlassCornerRadiiPx.Uniform(baseCornerPx)
+            : SeaGlassCornerAdaptationSolver.SolveElementCornerRadiiPx(
+                elementLeftPx: leftInStage,
+                elementTopPx: topInStage,
+                elementRightPx: leftInStage + wPx,
+                elementBottomPx: topInStage + hPx,
+                containerWidthPx: stageSize.X,
+                containerHeightPx: stageSize.Y,
+                containerCornersPx: activeTheme.DeviceCornerSpec.ToRadiiPx(),
+                baseCornerRadiusPx: baseCornerPx,
+                minCornerFloorPx: 8f * density,
+                influenceDistancePx: proximityPx,
+                adaptationStrength: CornerAdaptationStrength,
+                mode: CornerAdaptationMode,
+                cornerMask: CornerMask,
+                fullMatchDistancePx: fullMatchPx,
+                allowAsymmetricCorners: AllowAsymmetricCorners);
 
         SeaGlassCornerRadiiPx solvedRadii = deviceSolved;
         if (AdaptToParentContainer &&
@@ -197,9 +247,14 @@ public class SeaGlassSurface
                 BasePaddingPx.W)
             : new SeaGlassSafePaddingPx(BasePaddingPx.X, BasePaddingPx.Y, BasePaddingPx.Z, BasePaddingPx.W);
 
-        IReadOnlyList<SeaGlassSdfEngine.SdfNode> activeNodes = nodesOverride ??
-        [
-            new SeaGlassSdfEngine.SdfNode(
+        IReadOnlyList<SeaGlassSdfEngine.SdfNode> activeNodes;
+        if (nodesOverride is not null)
+        {
+            activeNodes = nodesOverride;
+        }
+        else
+        {
+            _singleNodeBuffer[0] = new SeaGlassSdfEngine.SdfNode(
                 CenterX: wPx * 0.5f,
                 CenterY: hPx * 0.5f,
                 HalfWidth: wPx * 0.5f,
@@ -210,19 +265,28 @@ public class SeaGlassSurface
                 CornerTopLeft: solvedRadii.TopLeftPx,
                 CornerSmoothing: effectiveMaterial.CornerSmoothing,
                 TintColorArgb: effectiveMaterial.TintColorArgb,
-                ThicknessPx: effectiveMaterial.ThicknessDp * density)
-        ];
+                ThicknessPx: effectiveMaterial.ThicknessDp * density);
+            activeNodes = _singleNodeBuffer;
+        }
+
+        bool isUniformSingleNode = customContourBuilder is null &&
+                                   nodesOverride is null &&
+                                   !solvedRadii.IsAsymmetric;
 
         if (customContourBuilder is not null)
         {
             customContourBuilder(wPx, hPx, _contourPath);
         }
-        else
+        else if (!isUniformSingleNode)
         {
             SeaGlassContourPathBuilder.BuildCoalescingScenePath(
                 nodes: activeNodes,
                 smoothRadiusPx: smoothRadiusDp * density,
                 outPath: _contourPath);
+        }
+        else
+        {
+            _contourPath.Reset();
         }
 
         Vector2 backdropOffset = activeStage?.ComputeLocalBackdropOffset(OriginInRoot) ?? OriginInRoot;
@@ -250,8 +314,11 @@ public class SeaGlassSurface
             ScaleY: scaleY,
             TiltRotationXDegrees: _tiltRotX,
             TiltRotationYDegrees: _tiltRotY,
-            XamlContourPathData: _contourPath.ToXamlPathData(),
-            UniformBlock: _uniformBlock);
+            UniformBlock: _uniformBlock,
+            ContourPath: _contourPath,
+            IsUniformSingleNode: isUniformSingleNode,
+            WidthPx: wPx,
+            HeightPx: hPx);
     }
 }
 
@@ -317,14 +384,23 @@ public sealed class SeaGlassPill : SeaGlassButton
         SizePx = new Vector2(112f, 40f);
         BasePaddingPx = new Vector4(18f, 10f, 18f, 10f);
         SetSelected(selected);
+        SnapMaterial(Material);
     }
 
     public void SetSelected(bool selected)
     {
         Selected = selected;
         Material = selected
-            ? SelectedMaterial with { CornerRadiusDp = 26f, ThicknessDp = 16f }
-            : UnselectedMaterial with { CornerRadiusDp = 18f, ThicknessDp = 10f };
+            ? SelectedMaterial with
+            {
+                CornerRadiusDp = SelectedMaterial.CornerRadiusDp < 16f ? SelectedMaterial.CornerRadiusDp : 26f,
+                ThicknessDp = 16f
+            }
+            : UnselectedMaterial with
+            {
+                CornerRadiusDp = UnselectedMaterial.CornerRadiusDp < 16f ? UnselectedMaterial.CornerRadiusDp : 18f,
+                ThicknessDp = 10f
+            };
     }
 }
 
