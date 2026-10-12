@@ -711,5 +711,24 @@ class SeaGlassCoreTest {
             assertTrue("Dialect $dialect must include frostRind bevel transition", src.contains("frostRind"))
             assertTrue("Dialect $dialect must include rindStipple micro-facet modulation", src.contains("rindStipple"))
         }
+
+        // 5. Subsurface lower bevel caustic color & tonal mineral pit color
+        for (tint in listOf(peachTint, orchidTint, periwinkleTint)) {
+            val baseLab2 = SeaGlassColorMath.argbToOklab(tint)
+            val causticLab = SeaGlassColorMath.argbToOklab(
+                SeaGlassColorMath.computeSubsurfaceCausticColor(tint, coarseness = 0.50f)
+            )
+            val pitLab = SeaGlassColorMath.argbToOklab(
+                SeaGlassColorMath.computeTonalPitColor(tint, tintDensity = 0.70f)
+            )
+            assertTrue(
+                "Subsurface caustic (${causticLab.l}) must be more luminous than base tint (${baseLab2.l})",
+                causticLab.l > baseLab2.l
+            )
+            assertTrue(
+                "Tonal mineral pit (${pitLab.l}) must be deeper than base tint (${baseLab2.l})",
+                pitLab.l < baseLab2.l
+            )
+        }
     }
 }

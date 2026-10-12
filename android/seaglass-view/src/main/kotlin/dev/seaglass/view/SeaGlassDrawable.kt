@@ -56,6 +56,8 @@ class SeaGlassDrawable(
     }
     private val sandGrainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+        isFilterBitmap = true
+        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.OVERLAY)
         shader = SeaGlassSandGrainTexture.obtainShader()
     }
     private val grainMatrix = Matrix()
@@ -170,58 +172,52 @@ class SeaGlassDrawable(
         )
 
         val sandWear = material.effectiveSandWear
-        val bodyAlpha = ((sandWear * 0.66f + material.tintDensity * (0.14f + 0.28f * sandWear))
-            .coerceIn(0.06f, 0.92f) * 255f).toInt()
+        val bodyAlpha = ((sandWear * 0.76f + material.tintDensity * (0.18f + 0.28f * sandWear))
+            .coerceIn(0.08f, 0.92f) * 255f).toInt()
+        val causticBottom = SeaGlassColorMath.computeSubsurfaceCausticColor(secondaryTint, material.coarseness)
         val topWithAlpha = (bodyAlpha shl 24) or (transmittedTop and 0x00FFFFFF)
-        val bottomWithAlpha = (bodyAlpha shl 24) or (transmittedBottom and 0x00FFFFFF)
+        val midWithAlpha = (bodyAlpha shl 24) or (transmittedBottom and 0x00FFFFFF)
+        val bottomWithAlpha = (bodyAlpha shl 24) or (causticBottom and 0x00FFFFFF)
 
         bodyPaint.shader = LinearGradient(
-            bounds.left.toFloat(),
+            bounds.exactCenterX(),
             bounds.top.toFloat(),
-            bounds.right.toFloat(),
+            bounds.exactCenterX(),
             bounds.bottom.toFloat(),
-            topWithAlpha,
-            bottomWithAlpha,
+            intArrayOf(topWithAlpha, midWithAlpha, bottomWithAlpha),
+            floatArrayOf(0.0f, 0.58f, 1.0f),
             Shader.TileMode.CLAMP
         )
 
-        val grainScale = (density * 0.29f).coerceIn(0.58f, 0.98f)
+        val grainScale = (density * 0.54f).coerceIn(0.85f, 1.65f)
         grainMatrix.reset()
         grainMatrix.setScale(grainScale, grainScale)
         sandGrainPaint.shader?.setLocalMatrix(grainMatrix)
-        sandGrainPaint.alpha = (material.coarseness * (0.48f + 0.52f * sandWear) * 200f)
+        sandGrainPaint.alpha = (material.coarseness * (0.56f + 0.44f * sandWear) * 230f)
             .toInt()
-            .coerceIn(0, 200)
+            .coerceIn(0, 230)
 
         val cx = bounds.exactCenterX()
-        val cy = bounds.exactCenterY()
-        val rimLight = (0.44f + material.rimChalkiness * 0.50f).coerceIn(0.28f, 0.96f)
-        val effectiveDispersion = (material.chromaticDispersion * (1f - 0.72f * material.coarseness))
-            .coerceIn(0f, 0.85f)
-        val windwardRim = SeaGlassColorMath.computeFrostedRindColor(
+        val rimLight = (0.54f + material.rimChalkiness * 0.44f).coerceIn(0.38f, 0.98f)
+        val topBevel = SeaGlassColorMath.computeFrostedRindColor(
             primaryTint,
             material.coarseness,
-            0.70f
+            0.78f
         ) and 0x00FFFFFF
-        val leewardRim = SeaGlassColorMath.computeFrostedRindColor(
+        val sideBevel = SeaGlassColorMath.computeFrostedRindColor(
             secondaryTint,
             material.coarseness,
-            0.62f
+            0.66f
         ) and 0x00FFFFFF
-        val coolDispersion = SeaGlassColorMath.lerpOklab(
-            primaryTint,
-            0xFFEAF7FF.toInt(),
-            0.56f + 0.18f * effectiveDispersion
-        ) and 0x00FFFFFF
-        val warmDispersion = SeaGlassColorMath.lerpOklab(
-            secondaryTint,
-            0xFFFFF4EC.toInt(),
-            0.56f + 0.18f * effectiveDispersion
+        val bottomCrest = SeaGlassColorMath.lerpOklab(
+            causticBottom,
+            0xFFFFFFFF.toInt(),
+            0.76f + 0.14f * material.coarseness
         ) and 0x00FFFFFF
         val milkyRind = SeaGlassColorMath.computeFrostedRindColor(
             primaryTint,
             material.coarseness,
-            0.78f
+            0.84f
         ) and 0x00FFFFFF
 
         fun argb(rgb: Int, aFloat: Float): Int {
@@ -229,37 +225,34 @@ class SeaGlassDrawable(
             return (a shl 24) or rgb
         }
 
-        innerSlopePaint.strokeWidth = 11.5f * density
-        innerSlopePaint.shader = SweepGradient(
+        innerSlopePaint.strokeWidth = 17.5f * density
+        innerSlopePaint.shader = LinearGradient(
             cx,
-            cy,
+            bounds.top.toFloat(),
+            cx,
+            bounds.bottom.toFloat(),
             intArrayOf(
-                argb(coolDispersion, rimLight * 0.62f),
-                argb(warmDispersion, rimLight * 0.72f),
-                argb(leewardRim, rimLight * 0.82f),
-                argb(windwardRim, rimLight * 0.48f),
-                argb(coolDispersion, rimLight * 0.66f),
-                argb(windwardRim, rimLight * 0.78f),
-                argb(windwardRim, rimLight * 0.46f),
-                argb(coolDispersion, rimLight * 0.62f)
+                argb(topBevel, rimLight * 0.74f),
+                argb(sideBevel, rimLight * 0.58f),
+                argb(bottomCrest, rimLight * 0.92f)
             ),
-            floatArrayOf(0.0f, 0.10f, 0.20f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
+            floatArrayOf(0.0f, 0.45f, 1.0f),
+            Shader.TileMode.CLAMP
         )
 
-        rimPaint.strokeWidth = 2.2f * density
-        rimPaint.shader = SweepGradient(
+        rimPaint.strokeWidth = 2.4f * density
+        rimPaint.shader = LinearGradient(
             cx,
-            cy,
+            bounds.top.toFloat(),
+            cx,
+            bounds.bottom.toFloat(),
             intArrayOf(
-                argb(milkyRind, rimLight * 0.62f),
-                argb(leewardRim, rimLight * 0.72f),
-                argb(windwardRim, rimLight * 0.42f),
-                argb(windwardRim, rimLight * 0.68f),
-                argb(milkyRind, (rimLight * (0.76f - 0.12f * material.coarseness)).coerceIn(0.32f, 0.82f)),
-                argb(milkyRind, rimLight * 0.44f),
-                argb(milkyRind, rimLight * 0.62f)
+                argb(0xFAFDFF, rimLight * 0.76f),
+                argb(milkyRind, rimLight * 0.54f),
+                argb(0xFFFFFF, rimLight * 0.90f)
             ),
-            floatArrayOf(0.0f, 0.15f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
+            floatArrayOf(0.0f, 0.50f, 1.0f),
+            Shader.TileMode.CLAMP
         )
     }
 
@@ -267,7 +260,7 @@ class SeaGlassDrawable(
         canvas.drawPath(contourPath, bodyPaint)
         canvas.save()
         canvas.clipPath(contourPath)
-        innerSlopePaint.alpha = 148
+        innerSlopePaint.alpha = 225
         canvas.drawPath(contourPath, innerSlopePaint)
         if (sandGrainPaint.alpha > 4) {
             canvas.drawRect(bounds, sandGrainPaint)

@@ -38,34 +38,55 @@ public static class SeaGlassSandGrainTexture
         {
             for (int x = 0; x < TileSize; x++)
             {
-                // Multi-frequency toroidal stipple hash (periodic mod TileSize)
                 float hFineA = Hash2D(x, y, 101);
                 float hFineB = Hash2D((x + 59) & (TileSize - 1), (y + 113) & (TileSize - 1), 179);
                 float hFineC = Hash2D((x * 3 + 17) & (TileSize - 1), (y * 3 + 43) & (TileSize - 1), 263);
                 float hMed = BilinearPeriodicHash(x * 0.5f, y * 0.5f, 128, 211);
+                float baseStipple = (hFineA * 0.42f + hFineB * 0.28f + hFineC * 0.14f + hMed * 0.16f) - 0.50f;
 
-                float combined = hFineA * 0.44f + hFineB * 0.28f + hFineC * 0.14f + hMed * 0.14f;
+                float pinpointPits = EvaluateToroidalSeaGlassPits(
+                    x: x,
+                    y: y,
+                    gridCount: 28,
+                    minRadiusPx: 1.35f,
+                    maxRadiusPx: 2.55f,
+                    spawnThreshold: 0.30f,
+                    seed: 347);
+                float sparsePits = EvaluateToroidalSeaGlassPits(
+                    x: x,
+                    y: y,
+                    gridCount: 16,
+                    minRadiusPx: 1.95f,
+                    maxRadiusPx: 3.35f,
+                    spawnThreshold: 0.48f,
+                    seed: 587);
+
+                float pitSignal = Math.Clamp(pinpointPits * 0.72f + sparsePits * 0.68f, -1f, 1f);
+                float delta = MathF.Abs(pitSignal) > 0.12f
+                    ? pitSignal * 0.78f + baseStipple * 0.22f
+                    : baseStipple * 0.56f + pitSignal * 0.44f;
+                float combined = Math.Clamp(0.50f + delta, 0f, 1f);
 
                 byte r, g, b, a;
-                if (combined >= 0.46f)
+                if (combined >= 0.49f)
                 {
                     // Powdery chalk-white sand-abraded micro-facet stipple (0xFFFFFF)
-                    float norm = Math.Clamp((combined - 0.46f) / 0.54f, 0f, 1f);
-                    float sparkle = norm * (0.80f + 0.55f * norm);
-                    a = (byte)Math.Clamp((int)(sparkle * 168f), 0, 182);
+                    float norm = Math.Clamp((combined - 0.49f) / 0.51f, 0f, 1f);
+                    float sparkle = MathF.Pow(norm, 0.64f);
+                    a = (byte)Math.Clamp((int)(sparkle * 195f), 0, 210);
                     r = 0xFF;
                     g = 0xFF;
                     b = 0xFF;
                 }
                 else
                 {
-                    // Subtle micro-facet pore relief (0x142638)
-                    float valley = Math.Clamp((0.46f - combined) / 0.46f, 0f, 1f);
-                    float pore = valley * valley;
-                    a = (byte)Math.Clamp((int)(pore * 36f), 0, 40);
-                    r = 0x14;
-                    g = 0x26;
-                    b = 0x38;
+                    // Pinpoint tumbled sea-glass mineral pit relief (0x102234)
+                    float valley = Math.Clamp((0.49f - combined) / 0.49f, 0f, 1f);
+                    float pore = MathF.Pow(valley, 0.72f);
+                    a = (byte)Math.Clamp((int)(pore * 72f), 0, 84);
+                    r = 0x10;
+                    g = 0x22;
+                    b = 0x34;
                 }
 
                 // Premultiply for WPF / Direct2D Pbgra32
@@ -78,6 +99,53 @@ public static class SeaGlassSandGrainTexture
         }
 
         return pixels;
+    }
+
+    private static float EvaluateToroidalSeaGlassPits(
+        float x,
+        float y,
+        int gridCount,
+        float minRadiusPx,
+        float maxRadiusPx,
+        float spawnThreshold,
+        int seed)
+    {
+        float cellSize = (float)TileSize / gridCount;
+        float gx = x / cellSize;
+        float gy = y / cellSize;
+        int baseCellX = (int)gx;
+        int baseCellY = (int)gy;
+
+        float accum = 0f;
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int cx = (baseCellX + dx + gridCount) % gridCount;
+                int cy = (baseCellY + dy + gridCount) % gridCount;
+                float spawn = Hash2D(cx, cy, seed);
+                if (spawn < spawnThreshold) continue;
+
+                float jitterX = 0.18f + 0.64f * Hash2D(cx, cy, seed + 31);
+                float jitterY = 0.18f + 0.64f * Hash2D(cx, cy, seed + 67);
+                float pitX = (baseCellX + dx + jitterX) * cellSize;
+                float pitY = (baseCellY + dy + jitterY) * cellSize;
+
+                float distSq = (x - pitX) * (x - pitX) + (y - pitY) * (y - pitY);
+                float r = minRadiusPx + (maxRadiusPx - minRadiusPx) * Hash2D(cx, cy, seed + 103);
+                float rSq = r * r;
+                if (distSq < rSq)
+                {
+                    float u = MathF.Sqrt(distSq) / r;
+                    float smooth = Math.Clamp(1f - u * u * (3f - 2f * u), 0f, 1f);
+                    float polarityHash = Hash2D(cx, cy, seed + 151);
+                    float sign = polarityHash < 0.54f ? -1f : 0.92f;
+                    float strength = 0.55f + 0.45f * Hash2D(cx, cy, seed + 199);
+                    accum += sign * smooth * strength;
+                }
+            }
+        }
+        return Math.Clamp(accum, -1f, 1f);
     }
 
     private static float Hash2D(int x, int y, int seed)

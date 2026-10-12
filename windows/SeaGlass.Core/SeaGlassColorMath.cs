@@ -252,8 +252,51 @@ public static class SeaGlassColorMath
         float rindWhiteness = 0.64f)
     {
         float grit = Math.Clamp(coarseness, 0f, 1f);
-        float blend = Math.Clamp(rindWhiteness + 0.16f * grit, 0.25f, 0.90f);
+        float blend = Math.Clamp(rindWhiteness + 0.16f * grit, 0.25f, 0.92f);
         return LerpOklab(tintArgb, unchecked((int)0xFFFAFCFF), blend);
+    }
+
+    /// <summary>
+    /// Computes the luminous internal subsurface caustic color that pools along the lower bevel
+    /// and curved bottom edge of a thick, convex piece of tumbled sea glass.
+    /// </summary>
+    public static int ComputeSubsurfaceCausticColor(
+        int tintArgb,
+        float coarseness = 0.45f)
+    {
+        OklabColor lab = ArgbToOklab(tintArgb);
+        float grit = Math.Clamp(coarseness, 0f, 1f);
+        int causticTargetArgb = (lab.B < -0.02f && lab.A < 0.06f)
+            ? unchecked((int)0xFFBCFAFF)
+            : (lab.B < 0.0f && lab.A >= 0.06f)
+                ? unchecked((int)0xFFFEE8FF)
+                : (lab.A > 0.02f || lab.B > 0.03f)
+                    ? unchecked((int)0xFFFFF1DF)
+                    : unchecked((int)0xFFDCFFF6);
+        float blend = lab.L < 0.48f
+            ? Math.Clamp(0.34f + 0.14f * grit, 0.25f, 0.55f)
+            : Math.Clamp(0.46f + 0.18f * grit, 0.35f, 0.72f);
+        return LerpOklab(tintArgb, causticTargetArgb, blend);
+    }
+
+    /// <summary>
+    /// Computes the deeper, chroma-enriched tonal mineral pit color for sand-abraded dimples
+    /// on the surface of tumbled sea glass (never grey or black mud).
+    /// </summary>
+    public static int ComputeTonalPitColor(int tintArgb, float tintDensity = 0.65f)
+    {
+        OklabColor lab = ArgbToOklab(tintArgb);
+        float chroma = MathF.Sqrt(lab.A * lab.A + lab.B * lab.B);
+        float hue = MathF.Atan2(lab.B, lab.A);
+        float density = Math.Clamp(tintDensity, 0f, 1f);
+        float pitL = Math.Clamp(lab.L - (0.11f + 0.06f * density), 0.18f, 0.78f);
+        float pitChroma = Math.Clamp(chroma * (1.28f + 0.22f * density), 0.04f, 0.22f);
+        return OklabToArgb(new OklabColor(
+            L: pitL,
+            A: pitChroma * MathF.Cos(hue),
+            B: pitChroma * MathF.Sin(hue),
+            Alpha: 1f
+        ));
     }
 
     /// <summary>

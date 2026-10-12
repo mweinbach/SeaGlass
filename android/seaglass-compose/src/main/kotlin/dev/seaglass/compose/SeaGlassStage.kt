@@ -1,6 +1,7 @@
 package dev.seaglass.compose
 
 import android.graphics.BlurMaskFilter
+import android.graphics.LinearGradient as AndroidLinearGradient
 import android.graphics.Matrix as AndroidMatrix
 import android.graphics.Paint as AndroidPaint
 import android.graphics.Path
@@ -92,13 +93,11 @@ enum class SeaGlassContentRole {
 /**
  * Exact 3-channel RGB spectral isolation filters ($M_R + M_G + M_B = \mathbf{I}_{\text{RGB}}$).
  */
-private val InnerSlopeStopPositions = floatArrayOf(
-    0.00f, 0.08f, 0.125f, 0.17f, 0.25f, 0.375f, 0.50f, 0.625f, 0.71f, 0.875f, 1.00f
-)
+private val BevelSlopeStopPositions = floatArrayOf(0.00f, 0.34f, 0.72f, 1.00f)
 
-private val OuterLipStopPositions = floatArrayOf(
-    0.00f, 0.125f, 0.25f, 0.375f, 0.50f, 0.625f, 0.75f, 0.875f, 1.00f
-)
+private val MidCrestStopPositions = floatArrayOf(0.00f, 0.46f, 1.00f)
+
+private val OuterLipStopPositions = floatArrayOf(0.00f, 0.48f, 1.00f)
 
 private val PureRedChannelFilter: ColorFilter = ColorFilter.colorMatrix(
     ColorMatrix(
@@ -361,10 +360,16 @@ fun Modifier.seaGlass(
 
     val uniformBlock = remember { SeaGlassUniformBlock() }
     val outerAndroidPath = remember { Path() }
-    val slopeColors = remember { IntArray(11) }
-    val lipColors = remember { IntArray(9) }
+    val slopeColors = remember { IntArray(4) }
+    val midCrestColors = remember { IntArray(3) }
+    val lipColors = remember { IntArray(3) }
 
     val ambientShadowPaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.FILL
+        }
+    }
+    val causticShadowPaint = remember {
         AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
             style = AndroidPaint.Style.FILL
         }
@@ -403,7 +408,8 @@ fun Modifier.seaGlass(
             style = AndroidPaint.Style.STROKE
             strokeCap = AndroidPaint.Cap.ROUND
             strokeJoin = AndroidPaint.Join.ROUND
-            isFilterBitmap = true
+            isFilterBitmap = false
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.OVERLAY)
             shader = SeaGlassSandGrainTexture.obtainShader()
         }
     }
@@ -537,19 +543,6 @@ fun Modifier.seaGlass(
 
             val composeOuterPath: ComposePath = outerAndroidPath.asComposePath()
 
-            val shadowColorArgb = SeaGlassColorMath.lerpOklab(
-                material.tintColorArgb,
-                0xFF0A1624.toInt(),
-                0.68f
-            )
-            val shadowAlpha = ((0.13f + sandWear * 0.14f) * 255f).toInt().coerceIn(20, 68)
-            ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
-            ambientShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(11.5f * density)
-
-            val rimLight = (0.44f + material.rimChalkiness * 0.50f).coerceIn(0.28f, 0.96f)
-            // As sand coarseness increases, prism dispersion diffuses into a soft, milky sand-frosted glass rind
-            val effectiveDispersion = (material.chromaticDispersion * (1f - 0.72f * material.coarseness))
-                .coerceIn(0.0f, 0.85f)
             val primaryTintArgb = activeNodes.firstOrNull()?.tintColorArgb ?: material.tintColorArgb
             val secondaryTintArgb = if (activeNodes.size >= 2) {
                 activeNodes[1].tintColorArgb
@@ -557,33 +550,50 @@ fun Modifier.seaGlass(
                 primaryTintArgb
             }
 
-            // Ocean-tumbled frosted rind & bevel colors in perceptual Oklab space:
-            // Models how sand and pebble abrasion create a milky-pastel frosted rind around the perimeter
-            // while the thicker interior retains deeper Beer-Lambert volumetric chroma.
-            val windwardCrestRgb = SeaGlassColorMath.computeFrostedRindColor(
+            // Grounding drop shadow (models physical thickness & 3D elevation beneath the bright bottom bevel)
+            val shadowColorArgb = SeaGlassColorMath.lerpOklab(
+                primaryTintArgb,
+                0xFF142030.toInt(),
+                0.74f
+            )
+            val shadowAlpha = ((0.22f + sandWear * 0.12f) * 255f).toInt().coerceIn(48, 86)
+            ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
+            ambientShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(5.5f * density)
+
+            val causticGlowArgb = SeaGlassColorMath.computeSubsurfaceCausticColor(
+                secondaryTintArgb,
+                material.coarseness
+            )
+
+            val rimLight = (0.50f + material.rimChalkiness * 0.44f).coerceIn(0.36f, 0.96f)
+            // Ocean-tumbled 3D Pillow Bevel & Subsurface Caustic colors in perceptual Oklab space:
+            // Models how sand and pebble abrasion create a wide, pillowy frosted bevel around the
+            // perimeter (without a harsh white border line!) while internal refracted light focuses
+            // into a luminous bottom bevel arc.
+            val topBevelRgb = SeaGlassColorMath.computeFrostedRindColor(
                 primaryTintArgb,
                 material.coarseness,
-                0.70f
+                0.52f
             ) and 0x00FFFFFF
-            val leewardCausticRgb = SeaGlassColorMath.computeFrostedRindColor(
-                secondaryTintArgb,
-                material.coarseness,
-                0.62f
-            ) and 0x00FFFFFF
-            val coolDispersionRgb = SeaGlassColorMath.lerpOklab(
+            val sideBevelRgb = SeaGlassColorMath.computeFrostedRindColor(
                 primaryTintArgb,
-                0xFFEAF7FF.toInt(),
-                0.56f + 0.18f * effectiveDispersion
+                material.coarseness,
+                0.66f
             ) and 0x00FFFFFF
-            val warmDispersionRgb = SeaGlassColorMath.lerpOklab(
-                secondaryTintArgb,
-                0xFFFFF4EC.toInt(),
-                0.56f + 0.18f * effectiveDispersion
+            val causticBevelRgb = SeaGlassColorMath.lerpOklab(
+                causticGlowArgb,
+                0xFFFAFDFF.toInt(),
+                0.56f + 0.16f * material.coarseness
+            ) and 0x00FFFFFF
+            val bottomCrestRgb = SeaGlassColorMath.lerpOklab(
+                causticGlowArgb,
+                0xFFFFFFFF.toInt(),
+                0.76f + 0.14f * material.coarseness
             ) and 0x00FFFFFF
             val milkyRindRgb = SeaGlassColorMath.computeFrostedRindColor(
                 primaryTintArgb,
                 material.coarseness,
-                0.78f
+                0.76f
             ) and 0x00FFFFFF
 
             fun argbWithAlpha(rgb: Int, aFloat: Float): Int {
@@ -594,42 +604,58 @@ fun Modifier.seaGlass(
             val cx = widthPx * 0.5f
             val cy = heightPx * 0.5f
 
-            // 1. Wide Gaussian-Feathered Milky-Pastel Bevel Cushion:
-            // Uses a wide 13dp Gaussian blur so the milky-frosted perimeter melts seamlessly
-            // into the richer interior volumetric core with zero visible ring or step seam.
-            innerSlopeChromaticPaint.strokeWidth = min(minDimPx * 0.36f, 17.5f * density).coerceAtLeast(7.5f * density)
-            innerSlopeChromaticPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(13.0f * density)
-            slopeColors[0] = argbWithAlpha(coolDispersionRgb, rimLight * 0.54f)
-            slopeColors[1] = argbWithAlpha(warmDispersionRgb, rimLight * 0.64f)
-            slopeColors[2] = argbWithAlpha(leewardCausticRgb, rimLight * 0.72f)
-            slopeColors[3] = argbWithAlpha(warmDispersionRgb, rimLight * 0.64f)
-            slopeColors[4] = argbWithAlpha(leewardCausticRgb, rimLight * 0.50f)
-            slopeColors[5] = argbWithAlpha(windwardCrestRgb, rimLight * 0.38f)
-            slopeColors[6] = argbWithAlpha(coolDispersionRgb, rimLight * 0.56f)
-            slopeColors[7] = argbWithAlpha(windwardCrestRgb, rimLight * 0.66f)
-            slopeColors[8] = argbWithAlpha(warmDispersionRgb, rimLight * 0.50f)
-            slopeColors[9] = argbWithAlpha(windwardCrestRgb, rimLight * 0.38f)
-            slopeColors[10] = argbWithAlpha(coolDispersionRgb, rimLight * 0.54f)
-            innerSlopeChromaticPaint.shader = AndroidSweepGradient(cx, cy, slopeColors, InnerSlopeStopPositions)
+            // 1. Wide Pillowy 3D Bevel Cushion (reaches ~4.5dp..8.5dp inward, feathered over 5.8dp):
+            // Gentle and tint-harmonized along the top edge so the glass color reaches the top rim,
+            // milky-frosted on the lateral caps, and luminous along the bottom subsurface caustic bevel!
+            innerSlopeChromaticPaint.strokeWidth = min(minDimPx * 0.36f, 17.0f * density).coerceAtLeast(8.5f * density)
+            innerSlopeChromaticPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(5.8f * density)
+            slopeColors[0] = argbWithAlpha(topBevelRgb, rimLight * 0.22f)
+            slopeColors[1] = argbWithAlpha(sideBevelRgb, rimLight * 0.46f)
+            slopeColors[2] = argbWithAlpha(causticBevelRgb, rimLight * 0.72f)
+            slopeColors[3] = argbWithAlpha(bottomCrestRgb, rimLight * 0.94f)
+            innerSlopeChromaticPaint.shader = AndroidLinearGradient(
+                cx * 0.92f,
+                0f,
+                cx * 1.08f,
+                heightPx,
+                slopeColors,
+                BevelSlopeStopPositions,
+                Shader.TileMode.CLAMP
+            )
 
-            // 2. Wide Mid Chalk-Frost Cushion (feathered with 8.5dp blur so there is never a hard white ring)
-            midFrostRindPaint.strokeWidth = min(minDimPx * 0.22f, 10.5f * density).coerceAtLeast(4.5f * density)
-            midFrostRindPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(8.5f * density)
-            midFrostRindPaint.color = argbWithAlpha(milkyRindRgb, (rimLight * (0.28f + 0.26f * sandWear)).coerceIn(0.14f, 0.52f))
+            // 2. Mid Bevel Cushion (reaches ~2.2dp..4.2dp inward, 3.2dp feather so there is zero white ring line)
+            midFrostRindPaint.strokeWidth = min(minDimPx * 0.18f, 8.4f * density).coerceAtLeast(4.4f * density)
+            midFrostRindPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(3.2f * density)
+            midCrestColors[0] = argbWithAlpha(topBevelRgb, rimLight * 0.14f)
+            midCrestColors[1] = argbWithAlpha(sideBevelRgb, rimLight * 0.36f)
+            midCrestColors[2] = argbWithAlpha(bottomCrestRgb, rimLight * 0.84f)
+            midFrostRindPaint.shader = AndroidLinearGradient(
+                cx,
+                0f,
+                cx,
+                heightPx,
+                midCrestColors,
+                MidCrestStopPositions,
+                Shader.TileMode.CLAMP
+            )
 
-            // 3. Soft Feathered Tumbled Edge Kiss (1.8dp blur, gentle alpha so cards & pills have a soft tumbled edge)
+            // 3. Soft Tumbled Edge Lip (subtle on top/sides, luminous catch-light on the bottom rim)
             outerContactLipPaint.strokeWidth = 1.6f * density
-            outerContactLipPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(1.8f * density)
-            lipColors[0] = argbWithAlpha(milkyRindRgb, rimLight * 0.38f)
-            lipColors[1] = argbWithAlpha(leewardCausticRgb, rimLight * 0.44f)
-            lipColors[2] = argbWithAlpha(milkyRindRgb, rimLight * 0.34f)
-            lipColors[3] = argbWithAlpha(windwardCrestRgb, rimLight * 0.26f)
-            lipColors[4] = argbWithAlpha(windwardCrestRgb, rimLight * 0.42f)
-            lipColors[5] = argbWithAlpha(milkyRindRgb, (rimLight * (0.46f - 0.10f * material.coarseness)).coerceIn(0.20f, 0.50f))
-            lipColors[6] = argbWithAlpha(windwardCrestRgb, rimLight * 0.34f)
-            lipColors[7] = argbWithAlpha(milkyRindRgb, rimLight * 0.28f)
-            lipColors[8] = argbWithAlpha(milkyRindRgb, rimLight * 0.38f)
-            outerContactLipPaint.shader = AndroidSweepGradient(cx, cy, lipColors, OuterLipStopPositions)
+            outerContactLipPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.85f * density)
+            lipColors[0] = argbWithAlpha(milkyRindRgb, rimLight * 0.16f)
+            lipColors[1] = argbWithAlpha(milkyRindRgb, rimLight * 0.28f)
+            lipColors[2] = argbWithAlpha(bottomCrestRgb, rimLight * 0.74f)
+            outerContactLipPaint.shader = AndroidLinearGradient(
+                cx,
+                0f,
+                cx,
+                heightPx,
+                lipColors,
+                OuterLipStopPositions,
+                Shader.TileMode.CLAMP
+            )
+
+            rindStipplePaint.strokeWidth = min(minDimPx * 0.34f, 15.0f * density).coerceAtLeast(7.0f * density)
 
             val dispPx = material.chromaticDispersion *
                 (1.8f * density) *
@@ -655,9 +681,6 @@ fun Modifier.seaGlass(
 
                 val combinedTiltX = tiltState.tiltX.coerceIn(-1f, 1f)
                 val combinedTiltY = tiltState.tiltY.coerceIn(-1f, 1f)
-                val activeLightAngleDeg = Math.toDegrees(
-                    atan2(combinedTiltY.toDouble(), combinedTiltX.toDouble())
-                ).toFloat()
 
                 uniformBlock.pack(
                     widthPx = widthPx,
@@ -675,11 +698,11 @@ fun Modifier.seaGlass(
 
                 val nCanvas = drawContext.canvas.nativeCanvas
 
-                // Pass 0: Ambient elevation shadow
+                // Pass 0: Grounding elevation drop shadow beneath the bottom bevel
                 nCanvas.save()
                 nCanvas.translate(
-                    -combinedTiltX * 4.0f * density,
-                    (4.0f - combinedTiltY * 3.0f) * density
+                    -combinedTiltX * 2.0f * density,
+                    (5.2f - combinedTiltY * 1.8f) * density
                 )
                 nCanvas.drawPath(outerAndroidPath, ambientShadowPaint)
                 nCanvas.restore()
@@ -755,12 +778,7 @@ fun Modifier.seaGlass(
                     }
                 }
 
-                rimSweepMatrix.reset()
-                rimSweepMatrix.setRotate(activeLightAngleDeg - 225f, cx, cy)
-                innerSlopeChromaticPaint.shader?.setLocalMatrix(rimSweepMatrix)
-                outerContactLipPaint.shader?.setLocalMatrix(rimSweepMatrix)
-
-                // Pass 2: Volumetric Tint, Velvet Coarseness Continuum, & Feathered Corner/Edge Bevel
+                // Pass 2: Volumetric Tint, Subsurface Caustic Pool, 3D Pillow Bevel, & Tumbled Pitting
                 drawWaterDropSeaGlassOptics(
                     composeOuterPath = composeOuterPath,
                     outerAndroidPath = outerAndroidPath,
@@ -830,17 +848,17 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
         Offset(widthPx * 0.85f, heightPx)
     }
 
-    // 1. Continuous Volumetric Tinting, Organic Core Depth Swells & Velvet Subsurface Scatter:
+    // 1. Volumetric Beer-Lambert Absorption, Pastel Body Chroma, & Lower Subsurface Caustic Pool:
     // - At sandWear == 0f (completely clear untreated glass): zero frosted wash, pure Beer-Lambert tint.
-    // - As sandWear develops (0f -> 1f): velvet subsurface scatter increases smoothly in the glass's
-    //   true Oklab hue (never bleaching the center toward white with depth!) while the thicker upper-middle
-    //   core develops richer Beer-Lambert saturation and the outer bevel transitions into a milky-frosted rind.
+    // - As sandWear develops (0f -> 1f): the upper-middle interior retains rich Beer-Lambert pastel
+    //   saturation (never bleached to white by Screen!), while internal refracted light pools into
+    //   a luminous subsurface caustic glow along the lower third and bottom bevel.
     val primaryLab = SeaGlassColorMath.argbToOklab(primaryTintArgb)
     val isDarkGlass = primaryLab.l < 0.48f
 
     if (isDarkGlass) {
-        val filterStrength = ((0.18f + material.tintDensity * 0.46f + sandWear * 0.28f) *
-            (0.25f + 0.75f * max(sandWear, material.tintDensity))).coerceIn(0.04f, 0.88f)
+        val filterStrength = ((0.22f + material.tintDensity * 0.48f + sandWear * 0.26f) *
+            (0.25f + 0.75f * max(sandWear, material.tintDensity))).coerceIn(0.06f, 0.90f)
         val filterStartColor = Color(
             SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), primaryTintArgb, filterStrength)
         )
@@ -857,148 +875,308 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
             blendMode = BlendMode.Modulate
         )
 
-        val darkBodyAlpha = (sandWear * 0.66f + material.tintDensity * (0.14f + 0.26f * sandWear))
-            .coerceIn(0.02f, 0.90f)
+        val darkBodyAlpha = (sandWear * 0.68f + material.tintDensity * (0.18f + 0.28f * sandWear))
+            .coerceIn(0.04f, 0.92f)
+        val darkCausticColor = Color(
+            SeaGlassColorMath.computeSubsurfaceCausticColor(secondaryTintArgb, material.coarseness)
+        )
         drawPath(
             path = composeOuterPath,
-            brush = Brush.linearGradient(
-                colors = listOf(
-                    Color(primaryTintArgb).copy(alpha = darkBodyAlpha),
-                    Color(secondaryTintArgb).copy(alpha = darkBodyAlpha)
-                ),
-                start = gradStart,
-                end = gradEnd
+            brush = Brush.verticalGradient(
+                0.00f to Color(primaryTintArgb).copy(alpha = darkBodyAlpha),
+                0.62f to Color(secondaryTintArgb).copy(alpha = darkBodyAlpha),
+                1.00f to darkCausticColor.copy(alpha = (darkBodyAlpha * 0.92f).coerceIn(0.04f, 0.90f)),
+                startY = 0f,
+                endY = heightPx
             )
         )
     } else {
         // Light/pastel sea glass (Seafoam, Cobalt, Amber, Lavender, Rose, Kelp, Milk Glass):
-        // Step 1A: Subtle Beer-Lambert / Screen subsurface lift (scaled by sandWear so clear glass
-        // stays clear and frosted glass gently lifts dark background pockets without bleaching to white)
-        val screenAlpha = (sandWear * 0.34f + material.tintDensity * 0.22f * (0.20f + 0.80f * sandWear))
-            .coerceIn(0.0f, 0.54f)
-        if (screenAlpha > 0.01f) {
+        // Step 1A: Beer-Lambert spectral absorption (`BlendMode.Modulate`) so light backgrounds
+        // are optically tinted by the glass volume rather than bleached white.
+        val absorbStrength = ((0.18f + material.tintDensity * 0.36f) * (0.30f + 0.70f * sandWear))
+            .coerceIn(0.02f, 0.56f)
+        if (absorbStrength > 0.01f) {
+            val absorbStart = Color(
+                SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), primaryTintArgb, absorbStrength)
+            )
+            val absorbEnd = Color(
+                SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), secondaryTintArgb, absorbStrength)
+            )
             drawPath(
                 path = composeOuterPath,
                 brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color(primaryTintArgb).copy(alpha = screenAlpha),
-                        Color(secondaryTintArgb).copy(alpha = screenAlpha)
-                    ),
+                    colors = listOf(absorbStart, absorbEnd),
                     start = gradStart,
                     end = gradEnd
                 ),
-                blendMode = BlendMode.Screen
+                blendMode = BlendMode.Modulate
             )
         }
 
-        // Step 1B: Milky-Frosted Sea-Glass Base Slab + Rich Interior Volumetric Core Cloud
-        // Real ocean-tumbled sea glass has a milky-frosted perimeter rind where sand and pebbles
-        // abraded the curved edges, while the thicker interior slab retains deeper Beer-Lambert
-        // volumetric color saturation.
+        // Step 1B: Rich Pastel Sea-Glass Body + Lower Subsurface Caustic Pool
         val roleWeight = when (contentRole) {
             SeaGlassContentRole.NAVIGATION_CHROME -> 1.06f
-            SeaGlassContentRole.TEXT_AND_ICONS -> 1.00f
-            SeaGlassContentRole.PURE_OPTICAL_LENS -> 0.84f
+            SeaGlassContentRole.TEXT_AND_ICONS -> 1.02f
+            SeaGlassContentRole.PURE_OPTICAL_LENS -> 0.86f
         }
-        val bodyAlpha = ((sandWear * 0.74f + material.tintDensity * (0.16f + 0.24f * sandWear)) * roleWeight)
+        val bodyAlpha = ((sandWear * 0.78f + material.tintDensity * (0.18f + 0.26f * sandWear)) * roleWeight)
             .coerceIn(0.0f, 0.92f)
 
         if (bodyAlpha > 0.01f) {
-            val milkyPrimary = Color(
+            val bodyPrimary = Color(
                 SeaGlassColorMath.computeFrostedRindColor(
                     primaryTintArgb,
                     material.coarseness,
-                    0.34f * sandWear
+                    0.12f * sandWear
                 )
             )
-            val milkySecondary = Color(
+            val bodySecondary = Color(
                 SeaGlassColorMath.computeFrostedRindColor(
                     secondaryTintArgb,
                     material.coarseness,
-                    0.38f * sandWear
+                    0.14f * sandWear
                 )
             )
             drawPath(
                 path = composeOuterPath,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        milkyPrimary.copy(alpha = bodyAlpha),
-                        milkySecondary.copy(alpha = bodyAlpha)
+                        bodyPrimary.copy(alpha = bodyAlpha),
+                        bodySecondary.copy(alpha = bodyAlpha)
                     ),
                     start = gradStart,
                     end = gradEnd
                 )
             )
 
-            // Step 1C: Smooth Interior Volumetric Core Cloud (Vertical + Elliptical Depth)
-            // Deepens the glass's true Oklab pastel chroma in the upper-middle interior and tapers
-            // smoothly before the bottom and lateral frosted bevel rims—with zero ring seams!
-            val coreDepthAlpha = (bodyAlpha * (0.42f + 0.28f * material.tintDensity)).coerceIn(0.0f, 0.64f)
-            if (coreDepthAlpha > 0.01f) {
-                val richPrimary = Color(primaryTintArgb)
-                val deepCorePrimary = Color(
-                    SeaGlassColorMath.computeDeepVolumetricCoreColor(primaryTintArgb, material.tintDensity)
-                )
-                drawPath(
-                    path = composeOuterPath,
-                    brush = Brush.verticalGradient(
-                        0.00f to richPrimary.copy(alpha = coreDepthAlpha * 0.30f),
-                        0.26f to deepCorePrimary.copy(alpha = coreDepthAlpha * 0.78f),
-                        0.56f to richPrimary.copy(alpha = coreDepthAlpha * 0.64f),
-                        0.84f to richPrimary.copy(alpha = coreDepthAlpha * 0.24f),
-                        1.00f to Color.Transparent,
-                        startY = 0f,
-                        endY = heightPx
-                    )
-                )
+            // Step 1C: Smooth Vertical Volumetric Body -> Lower Subsurface Caustic Pool
+            // Rich pastel body in the upper two-thirds transitioning smoothly into a luminous
+            // subsurface caustic glow along the lower third and bottom bevel!
+            val deepCorePrimary = Color(
+                SeaGlassColorMath.computeDeepVolumetricCoreColor(primaryTintArgb, material.tintDensity)
+            )
+            val subsurfaceCaustic = Color(
+                SeaGlassColorMath.computeSubsurfaceCausticColor(secondaryTintArgb, material.coarseness)
+            )
+            val coreAlpha = (bodyAlpha * (0.36f + 0.24f * material.tintDensity)).coerceIn(0.0f, 0.58f)
+            val causticPoolAlpha = (bodyAlpha * (0.52f + 0.26f * material.rimChalkiness)).coerceIn(0.0f, 0.78f)
 
-                val coreRadius = max(widthPx * 0.56f, heightPx * 0.68f).coerceAtLeast(16f)
-                drawPath(
-                    path = composeOuterPath,
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            deepCorePrimary.copy(alpha = coreDepthAlpha * 0.52f),
-                            richPrimary.copy(alpha = coreDepthAlpha * 0.26f),
-                            Color.Transparent
-                        ),
-                        center = Offset(widthPx * 0.47f, heightPx * 0.42f),
-                        radius = coreRadius
-                    )
+            drawPath(
+                path = composeOuterPath,
+                brush = Brush.verticalGradient(
+                    0.00f to deepCorePrimary.copy(alpha = coreAlpha * 0.42f),
+                    0.35f to deepCorePrimary.copy(alpha = coreAlpha * 0.60f),
+                    0.64f to bodySecondary.copy(alpha = coreAlpha * 0.24f),
+                    0.84f to subsurfaceCaustic.copy(alpha = causticPoolAlpha * 0.52f),
+                    1.00f to subsurfaceCaustic.copy(alpha = causticPoolAlpha * 0.88f),
+                    startY = 0f,
+                    endY = heightPx
                 )
-            }
+            )
         }
     }
 
-    // 2. Wide Gaussian-Feathered Milky-Pastel Rind + Crisp Powdery Crystalline Sand Stipple
-    val grainScale = (density * 0.34f).coerceIn(0.68f, 1.05f)
+    // 2. Sculpted 3D Pillow Bevel + Crisp Pinpoint Tumbled Sea-Glass Pitting
+    val grainScale = (density * 0.38f).coerceIn(0.78f, 1.22f)
     shaderLocalMatrix.reset()
     shaderLocalMatrix.setScale(grainScale, grainScale)
     sandGrainPaint.shader?.setLocalMatrix(shaderLocalMatrix)
+    rindStipplePaint.shader?.setLocalMatrix(shaderLocalMatrix)
 
-    val velvetProgress = material.coarseness.coerceIn(0f, 1f).pow(0.75f)
-    val grainAlpha = (velvetProgress * (0.52f + 0.48f * sandWear) * 225f)
+    val velvetProgress = material.coarseness.coerceIn(0f, 1f).pow(0.72f)
+    val grainAlpha = (velvetProgress * (0.52f + 0.48f * sandWear) * 198f)
         .toInt()
-        .coerceIn(0, 225)
+        .coerceIn(0, 205)
+    val bevelStippleAlpha = (velvetProgress * (0.45f + 0.40f * sandWear) * 135f)
+        .toInt()
+        .coerceIn(0, 145)
 
     val nCanvas = drawContext.canvas.nativeCanvas
     nCanvas.save()
     nCanvas.clipPath(outerAndroidPath)
 
-    // Pass 2A: Wide Gaussian-feathered milky-pastel bevel cushion (melts perimeter into core with zero ring seam)
-    val slopeAlpha = ((0.30f + 0.50f * max(sandWear, material.rimChalkiness * 0.50f)) * 135f)
+    // Pass 2A: Wide pillowy 3D bevel cushion + mid bevel cushion
+    val slopeAlpha = ((0.50f + 0.42f * max(sandWear, material.rimChalkiness * 0.60f)) * 225f)
         .toInt()
-        .coerceIn(36, 135)
+        .coerceIn(105, 232)
     innerSlopeChromaticPaint.alpha = slopeAlpha
     nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
     nCanvas.drawPath(outerAndroidPath, midFrostRindPaint)
 
-    // Pass 2B: Crisp powdery salt/sand micro-facet stipple across the entire glass piece
+    // Pass 2B: Crisp pinpoint sea-glass pitting & crystalline sand grain across body and bevel
     if (grainAlpha > 2) {
         sandGrainPaint.alpha = grainAlpha
         nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
     }
+    if (bevelStippleAlpha > 4) {
+        rindStipplePaint.alpha = bevelStippleAlpha
+        nCanvas.drawPath(outerAndroidPath, rindStipplePaint)
+    }
 
-    // Pass 2C: Softly feathered tumbled outer edge kiss
+    // Pass 2C: Soft tumbled outer edge lip
     nCanvas.drawPath(outerAndroidPath, outerContactLipPaint)
     nCanvas.restore()
+}
+
+/**
+ * Renders a nested 3D Pillow-Beveled Sea-Glass Inlay Capsule or Medallion inside a host SeaGlass bar
+ * (such as the active `"Mail"` pill inside `"Mail | Meet"`, the active `"Photos"` pill inside
+ * `SeaGlassPillNavBar`, the active tab pill in `SeaGlassFluidBar`, or the voice medallion in `SeaGlassPromptBar`).
+ *
+ * Replaces flat wireframe borders with a true 3D frosted bevel slope, subsurface bottom caustic lift,
+ * grounding pillow shadow, and continuous multi-scale sea-glass sand pitting.
+ */
+@Composable
+internal fun Modifier.seaGlassBeveledInlay(
+    tintColorArgb: Int,
+    coarseness: Float = 0.48f,
+    cornerRadiusDp: Float = 24f,
+    fillOpacityScale: Float = 1.0f
+): Modifier {
+    val inlayPath = remember { Path() }
+    val slopeColors = remember { IntArray(3) }
+    val lipColors = remember { IntArray(3) }
+    val grainMatrix = remember { AndroidMatrix() }
+
+    val shadowPaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.FILL
+        }
+    }
+    val bevelSlopePaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.STROKE
+            strokeCap = AndroidPaint.Cap.ROUND
+            strokeJoin = AndroidPaint.Join.ROUND
+        }
+    }
+    val outerLipPaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.STROKE
+            strokeCap = AndroidPaint.Cap.ROUND
+            strokeJoin = AndroidPaint.Join.ROUND
+        }
+    }
+    val grainPaint = remember {
+        AndroidPaint(AndroidPaint.ANTI_ALIAS_FLAG).apply {
+            style = AndroidPaint.Style.FILL
+            isFilterBitmap = false
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.OVERLAY)
+            shader = SeaGlassSandGrainTexture.obtainShader()
+        }
+    }
+
+    return this.drawWithCache {
+        val w = size.width.coerceAtLeast(1f)
+        val h = size.height.coerceAtLeast(1f)
+        val minDim = min(w, h)
+        val rPx = min(cornerRadiusDp * density, minDim * 0.5f)
+
+        inlayPath.reset()
+        inlayPath.addRoundRect(0f, 0f, w, h, rPx, rPx, Path.Direction.CW)
+        val composeInlayPath = inlayPath.asComposePath()
+
+        val lab = SeaGlassColorMath.argbToOklab(tintColorArgb)
+        val isDark = lab.l < 0.48f
+
+        val shadowArgb = SeaGlassColorMath.lerpOklab(tintColorArgb, 0xFF0A1828.toInt(), 0.68f)
+        val shadowAlpha = ((if (isDark) 0.24f else 0.14f) * fillOpacityScale * 255f).toInt().coerceIn(14, 72)
+        shadowPaint.color = (shadowAlpha shl 24) or (shadowArgb and 0x00FFFFFF)
+        shadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(3.2f * density)
+
+        val topFillColor = if (isDark) {
+            Color(SeaGlassColorMath.lerpOklab(tintColorArgb, 0xFFFFFFFF.toInt(), 0.20f))
+                .copy(alpha = (0.44f * fillOpacityScale).coerceIn(0.12f, 0.80f))
+        } else {
+            Color(SeaGlassColorMath.computeFrostedRindColor(tintColorArgb, coarseness, 0.68f))
+                .copy(alpha = (0.42f * fillOpacityScale).coerceIn(0.12f, 0.78f))
+        }
+        val midFillColor = if (isDark) {
+            Color(tintColorArgb).copy(alpha = (0.38f * fillOpacityScale).coerceIn(0.10f, 0.74f))
+        } else {
+            Color(SeaGlassColorMath.computeFrostedRindColor(tintColorArgb, coarseness, 0.58f))
+                .copy(alpha = (0.36f * fillOpacityScale).coerceIn(0.10f, 0.72f))
+        }
+        val bottomFillColor = if (isDark) {
+            Color(SeaGlassColorMath.computeSubsurfaceCausticColor(tintColorArgb, coarseness))
+                .copy(alpha = (0.48f * fillOpacityScale).coerceIn(0.12f, 0.82f))
+        } else {
+            Color(SeaGlassColorMath.computeFrostedRindColor(tintColorArgb, coarseness, 0.78f))
+                .copy(alpha = (0.50f * fillOpacityScale).coerceIn(0.14f, 0.82f))
+        }
+
+        val topBevelRgb = SeaGlassColorMath.computeFrostedRindColor(tintColorArgb, coarseness, 0.78f) and 0x00FFFFFF
+        val midBevelRgb = SeaGlassColorMath.computeFrostedRindColor(tintColorArgb, coarseness, 0.68f) and 0x00FFFFFF
+        val botBevelRgb = SeaGlassColorMath.computeFrostedRindColor(tintColorArgb, coarseness, 0.88f) and 0x00FFFFFF
+
+        fun argb(rgb: Int, aFloat: Float): Int {
+            val a = (aFloat.coerceIn(0f, 1f) * 255f).toInt()
+            return (a shl 24) or rgb
+        }
+
+        bevelSlopePaint.strokeWidth = min(minDim * 0.26f, 9.0f * density).coerceAtLeast(4.5f * density)
+        bevelSlopePaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(3.4f * density)
+        slopeColors[0] = argb(topBevelRgb, 0.34f * fillOpacityScale)
+        slopeColors[1] = argb(midBevelRgb, 0.28f * fillOpacityScale)
+        slopeColors[2] = argb(botBevelRgb, 0.52f * fillOpacityScale)
+        bevelSlopePaint.shader = AndroidLinearGradient(
+            w * 0.5f,
+            0f,
+            w * 0.5f,
+            h,
+            slopeColors,
+            MidCrestStopPositions,
+            Shader.TileMode.CLAMP
+        )
+
+        outerLipPaint.strokeWidth = 1.2f * density
+        outerLipPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.8f * density)
+        lipColors[0] = argb(topBevelRgb, 0.22f * fillOpacityScale)
+        lipColors[1] = argb(topBevelRgb, 0.18f * fillOpacityScale)
+        lipColors[2] = argb(botBevelRgb, 0.38f * fillOpacityScale)
+        outerLipPaint.shader = AndroidLinearGradient(
+            w * 0.5f,
+            0f,
+            w * 0.5f,
+            h,
+            lipColors,
+            OuterLipStopPositions,
+            Shader.TileMode.CLAMP
+        )
+
+        val grainScale = (density * 0.38f).coerceIn(0.78f, 1.22f)
+        grainMatrix.reset()
+        grainMatrix.setScale(grainScale, grainScale)
+        grainPaint.shader?.setLocalMatrix(grainMatrix)
+        grainPaint.alpha = (coarseness.coerceIn(0f, 1f).pow(0.74f) * 145f * fillOpacityScale)
+            .toInt()
+            .coerceIn(0, 165)
+
+        onDrawWithContent {
+            val nCanvas = drawContext.canvas.nativeCanvas
+
+            drawPath(
+                path = composeInlayPath,
+                brush = Brush.verticalGradient(
+                    0.00f to topFillColor,
+                    0.52f to midFillColor,
+                    1.00f to bottomFillColor,
+                    startY = 0f,
+                    endY = h
+                )
+            )
+
+            nCanvas.save()
+            nCanvas.clipPath(inlayPath)
+            nCanvas.drawPath(inlayPath, bevelSlopePaint)
+            if (grainPaint.alpha > 4) {
+                nCanvas.drawRect(0f, 0f, w, h, grainPaint)
+            }
+            nCanvas.drawPath(inlayPath, outerLipPaint)
+            nCanvas.restore()
+
+            this@onDrawWithContent.drawContent()
+        }
+    }
 }

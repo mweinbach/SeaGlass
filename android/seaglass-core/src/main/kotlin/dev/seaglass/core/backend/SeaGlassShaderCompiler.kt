@@ -414,20 +414,22 @@ object SeaGlassShaderCompiler {
                 vec3 bodyLinear = sgOklabToLinearSrgb(labBody);
 
                 // Interior plateau skips bevel lighting ALU when meniscus == 0.0
-                float stippleGrain = coarseness * (sandNoise.x * 0.58 + sandNoise.y * 0.42) * 0.046;
-                vec3 finalLinear = bodyLinear + vec3(stippleGrain);
+                float stippleGrain = coarseness * (sandNoise.x * 0.58 + sandNoise.y * 0.42) * 0.056;
+                float verticalCaustic = smoothstep(0.42, 0.98, vTexCoord.y) * (0.16 + 0.14 * coarseness);
+                vec3 causticTint = mix(safeTint, vec3(0.94, 0.98, 1.0), 0.52 + 0.20 * coarseness);
+                vec3 finalLinear = mix(bodyLinear, causticTint, verticalCaustic) + vec3(stippleGrain);
                 if (meniscus > 0.001) {
                     vec3 lightDir = uLightAndMeta.xyz;
                     float rimChalkiness = uOpticsSecondary.x;
-                    float fresnelRim = meniscus * sqrt(meniscus) * (0.28 + 0.52 * rimChalkiness);
+                    float fresnelRim = meniscus * sqrt(meniscus) * (0.38 + 0.54 * rimChalkiness);
                     float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * meniscus;
-                    float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.65) * 1.6;
-                    vec3 rimColor = mix(safeTint, vec3(0.96, 0.98, 1.0), 0.62 + 0.24 * coarseness);
-                    float frostRind = clamp(meniscus * (0.34 + 0.44 * coarseness) * rimChalkiness, 0.0, 0.78);
-                    float rindStipple = clamp(1.0 + coarseness * (sandNoise.x * 0.35 + sandNoise.y * 0.25), 0.68, 1.32);
-                    finalLinear = mix(finalLinear, rimColor, clamp(frostRind * rindStipple, 0.0, 0.80));
-                    finalLinear += rimColor * (fresnelRim * 0.20 + keyHighlight * 0.26)
-                        + safeTint * (leewardCaustic * 0.18);
+                    float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.55) * 2.1;
+                    vec3 rimColor = mix(safeTint, vec3(0.97, 0.99, 1.0), 0.70 + 0.22 * coarseness);
+                    float frostRind = clamp(meniscus * (0.48 + 0.46 * coarseness) * rimChalkiness, 0.0, 0.88);
+                    float rindStipple = clamp(1.0 + coarseness * (sandNoise.x * 0.40 + sandNoise.y * 0.30), 0.64, 1.38);
+                    finalLinear = mix(finalLinear, rimColor, clamp(frostRind * rindStipple, 0.0, 0.88));
+                    finalLinear += rimColor * (fresnelRim * 0.28 + keyHighlight * 0.32)
+                        + causticTint * (leewardCaustic * 0.24);
                 }
 
                 vec3 finalSrgb = sgLinearToSrgb(finalLinear);
@@ -603,20 +605,22 @@ object SeaGlassShaderCompiler {
                 );
                 vec3 bodyLinear = sgOklabToLinearSrgb(labBody);
 
-                float stippleGrain = coarseness * (sandNoise.x * 0.58 + sandNoise.y * 0.42) * 0.046;
-                vec3 finalLinear = bodyLinear + vec3(stippleGrain);
+                float stippleGrain = coarseness * (sandNoise.x * 0.58 + sandNoise.y * 0.42) * 0.056;
+                float verticalCaustic = smoothstep(0.42, 0.98, vTexCoord.y) * (0.16 + 0.14 * coarseness);
+                vec3 causticTint = mix(safeTint, vec3(0.94, 0.98, 1.0), 0.52 + 0.20 * coarseness);
+                vec3 finalLinear = mix(bodyLinear, causticTint, verticalCaustic) + vec3(stippleGrain);
                 if (meniscus > 0.001) {
                     vec3 lightDir = uLightAndMeta.xyz;
                     float rimChalkiness = uOpticsSecondary.x;
-                    float fresnelRim = meniscus * sqrt(meniscus) * (0.28 + 0.52 * rimChalkiness);
+                    float fresnelRim = meniscus * sqrt(meniscus) * (0.38 + 0.54 * rimChalkiness);
                     float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * meniscus;
-                    float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.65) * 1.6;
-                    vec3 rimColor = mix(safeTint, vec3(0.96, 0.98, 1.0), 0.62 + 0.24 * coarseness);
-                    float frostRind = clamp(meniscus * (0.34 + 0.44 * coarseness) * rimChalkiness, 0.0, 0.78);
-                    float rindStipple = clamp(1.0 + coarseness * (sandNoise.x * 0.35 + sandNoise.y * 0.25), 0.68, 1.32);
-                    finalLinear = mix(finalLinear, rimColor, clamp(frostRind * rindStipple, 0.0, 0.80));
-                    finalLinear += rimColor * (fresnelRim * 0.20 + keyHighlight * 0.26)
-                        + safeTint * (leewardCaustic * 0.18);
+                    float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.55) * 2.1;
+                    vec3 rimColor = mix(safeTint, vec3(0.97, 0.99, 1.0), 0.70 + 0.22 * coarseness);
+                    float frostRind = clamp(meniscus * (0.48 + 0.46 * coarseness) * rimChalkiness, 0.0, 0.88);
+                    float rindStipple = clamp(1.0 + coarseness * (sandNoise.x * 0.40 + sandNoise.y * 0.30), 0.64, 1.38);
+                    finalLinear = mix(finalLinear, rimColor, clamp(frostRind * rindStipple, 0.0, 0.88));
+                    finalLinear += rimColor * (fresnelRim * 0.28 + keyHighlight * 0.32)
+                        + causticTint * (leewardCaustic * 0.24);
                 }
 
                 vec3 finalSrgb = sgLinearToSrgb(finalLinear);
@@ -879,19 +883,23 @@ object SeaGlassShaderCompiler {
                 );
                 float3 bodyLinear = sgOklabToLinearSrgb(labBody);
 
-                float3 finalLinear = bodyLinear + float3(coarseness * (sandNoise.x * 0.58 + sandNoise.y * 0.42) * 0.046);
+                float normY = clamp(fragCoord.y / max(uResolutionAndOrigin.y, 1.0), 0.0, 1.0);
+                float verticalCaustic = smoothstep(0.42, 0.98, normY) * (0.16 + 0.14 * coarseness);
+                float3 causticTint = mix(safeTint, float3(0.94, 0.98, 1.0), 0.52 + 0.20 * coarseness);
+                float3 finalLinear = mix(bodyLinear, causticTint, verticalCaustic)
+                    + float3(coarseness * (sandNoise.x * 0.58 + sandNoise.y * 0.42) * 0.056);
                 if (meniscus > 0.001) {
                     float3 lightDir = uLightAndMeta.xyz;
                     float rimChalkiness = uOpticsSecondary.x;
-                    float fresnelRim = meniscus * sqrt(meniscus) * (0.28 + 0.52 * rimChalkiness);
+                    float fresnelRim = meniscus * sqrt(meniscus) * (0.38 + 0.54 * rimChalkiness);
                     float keyHighlight = max(0.0, dot(normal.xy, lightDir.xy)) * meniscus;
-                    float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.65) * 1.6;
-                    float3 rimColor = mix(safeTint, float3(0.96, 0.98, 1.0), 0.62 + 0.24 * coarseness);
-                    float frostRind = clamp(meniscus * (0.34 + 0.44 * coarseness) * rimChalkiness, 0.0, 0.78);
-                    float rindStipple = clamp(1.0 + coarseness * (sandNoise.x * 0.35 + sandNoise.y * 0.25), 0.68, 1.32);
-                    finalLinear = mix(finalLinear, rimColor, clamp(frostRind * rindStipple, 0.0, 0.80));
-                    finalLinear += rimColor * (fresnelRim * 0.20 + keyHighlight * 0.26)
-                        + safeTint * (leewardCaustic * 0.18);
+                    float leewardCaustic = max(0.0, dot(normal.xy, -lightDir.xy)) * meniscus * (1.0 - meniscus * 0.55) * 2.1;
+                    float3 rimColor = mix(safeTint, float3(0.97, 0.99, 1.0), 0.70 + 0.22 * coarseness);
+                    float frostRind = clamp(meniscus * (0.48 + 0.46 * coarseness) * rimChalkiness, 0.0, 0.88);
+                    float rindStipple = clamp(1.0 + coarseness * (sandNoise.x * 0.40 + sandNoise.y * 0.30), 0.64, 1.38);
+                    finalLinear = mix(finalLinear, rimColor, clamp(frostRind * rindStipple, 0.0, 0.88));
+                    finalLinear += rimColor * (fresnelRim * 0.28 + keyHighlight * 0.32)
+                        + causticTint * (leewardCaustic * 0.24);
                 }
 
                 float3 finalSrgb = sqrt(clamp(finalLinear, float3(0.0), float3(1.0)));

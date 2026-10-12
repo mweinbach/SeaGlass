@@ -824,35 +824,8 @@ fun SeaGlassFluidBar(
             val indicatorWidthDp = with(density) { ((rightEdgeTab - leftEdgeTab) * slotWidthPx).toDp() }
 
             val isDarkBar = SeaGlassColorMath.argbToOklab(barMaterial.tintColorArgb).l < 0.48f
-            val pillTopColor = if (isDarkBar) {
-                Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.56f)
-            } else {
-                Color(
-                    SeaGlassColorMath.computeFrostedRindColor(
-                        barMaterial.tintColorArgb,
-                        barMaterial.coarseness,
-                        0.72f
-                    )
-                ).copy(alpha = 0.46f)
-            }
-            val pillBottomColor = if (isDarkBar) {
-                Color(0xFF0A1E30).copy(alpha = 0.40f)
-            } else {
-                Color(
-                    SeaGlassColorMath.computeFrostedRindColor(
-                        barMaterial.tintColorArgb,
-                        barMaterial.coarseness,
-                        0.58f
-                    )
-                ).copy(alpha = 0.36f)
-            }
-            val pillRimColor = if (isDarkBar) {
-                Color.White.copy(alpha = 0.32f)
-            } else {
-                Color.White.copy(alpha = 0.38f)
-            }
 
-            // Dual-Edge Lead/Trail Milky-Frosted Sea-Glass Active Tab Lozenge Pill
+            // Dual-Edge Lead/Trail 3D Pillow-Beveled Sea-Glass Active Tab Lozenge Pill
             Box(
                 modifier = Modifier
                     .offset { IntOffset(x = indicatorOffsetX, y = 0) }
@@ -861,13 +834,11 @@ fun SeaGlassFluidBar(
                     .graphicsLayer {
                         scaleY = 1f - stretchSpan * 0.10f
                     }
-                    .clip(RoundedCornerShape(30.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(pillTopColor, pillBottomColor)
-                        )
+                    .seaGlassBeveledInlay(
+                        tintColorArgb = barMaterial.tintColorArgb,
+                        coarseness = barMaterial.coarseness,
+                        cornerRadiusDp = 30f
                     )
-                    .border(1.dp, pillRimColor, RoundedCornerShape(30.dp))
             )
 
             Row(
@@ -1260,7 +1231,7 @@ fun SeaGlassPillNavBar(
             val offsetX = (leftTab * slotW).roundToInt()
             val pillW = with(density) { ((rightTab - leftTab) * slotW).toDp() }
 
-            // Milky-Frosted Sea-Glass Inlay Capsule (matches the active "Photos" pill in reference)
+            // 3D Pillow-Beveled Sea-Glass Inlay Capsule (matches the active "Mail" / "Photos" pill in reference)
             Box(
                 modifier = Modifier
                     .offset { IntOffset(offsetX, 0) }
@@ -1269,9 +1240,11 @@ fun SeaGlassPillNavBar(
                     .graphicsLayer {
                         scaleY = 1f - stretch * 0.08f
                     }
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(Brush.verticalGradient(listOf(inlayTopColor, inlayBottomColor)))
-                    .border(0.8.dp, inlayRimColor, RoundedCornerShape(24.dp))
+                    .seaGlassBeveledInlay(
+                        tintColorArgb = material.tintColorArgb,
+                        coarseness = material.coarseness,
+                        cornerRadiusDp = 24f
+                    )
             )
 
             Row(
@@ -1465,7 +1438,7 @@ fun SeaGlassPromptBar(
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // Nested Circular Milky-Frosted Sea-Glass Voice Waveform Medallion
+            // Nested Circular 3D Pillow-Beveled Sea-Glass Voice Waveform Medallion
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -1474,9 +1447,11 @@ fun SeaGlassPromptBar(
                         scaleX = waveScale
                         scaleY = waveScale
                     }
-                    .clip(CircleShape)
-                    .background(Brush.verticalGradient(listOf(medallionTopColor, medallionBottomColor)))
-                    .border(0.8.dp, medallionRimColor, CircleShape)
+                    .seaGlassBeveledInlay(
+                        tintColorArgb = material.tintColorArgb,
+                        coarseness = material.coarseness,
+                        cornerRadiusDp = 24f
+                    )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,

@@ -287,8 +287,65 @@ object SeaGlassColorMath {
         rindWhiteness: Float = 0.64f
     ): Int {
         val grit = coarseness.coerceIn(0f, 1f)
-        val blend = (rindWhiteness + 0.16f * grit).coerceIn(0.25f, 0.90f)
+        val blend = (rindWhiteness + 0.16f * grit).coerceIn(0.25f, 0.92f)
         return lerpOklab(tintArgb, 0xFFFAFCFF.toInt(), blend)
+    }
+
+    /**
+     * Computes the luminous internal subsurface caustic color that pools along the lower bevel
+     * and curved bottom edge of a thick, convex piece of tumbled sea glass.
+     *
+     * Models how overhead light refracting through a thick frosted glass slab concentrates into a
+     * high-luminance, slightly hue-shifted caustic glow at the bottom bevel:
+     * - Periwinkle / cobalt / sky-blue glass shifts toward luminous icy aqua-cyan (`0xFFB8FAFF`).
+     * - Coral / rose / amber / peach glass shifts toward warm sunlit peach-ivory (`0xFFFFF0DC`).
+     * - Lavender / orchid glass shifts toward opalescent pink-alabaster (`0xFFFEEBFF`).
+     * - Seafoam / mint / kelp glass shifts toward luminous aqua-mint pearl (`0xFFD6FFF6`).
+     */
+    fun computeSubsurfaceCausticColor(
+        tintArgb: Int,
+        coarseness: Float = 0.45f
+    ): Int {
+        val lab = argbToOklab(tintArgb)
+        val grit = coarseness.coerceIn(0f, 1f)
+        // Determine warm vs cool vs orchid hue family in Oklab (a = green..red, b = blue..yellow)
+        val causticTargetArgb = when {
+            // Blue / Periwinkle / Cobalt (b < -0.02f): shift toward luminous icy aqua-cyan
+            lab.b < -0.02f && lab.a < 0.06f -> 0xFFBCFAFF.toInt()
+            // Lavender / Orchid (b < 0f and a >= 0.06f): shift toward opalescent pink-lilac
+            lab.b < 0.0f && lab.a >= 0.06f -> 0xFFFEE8FF.toInt()
+            // Coral / Rose / Amber / Peach (a > 0.02f or b > 0.03f): shift toward warm sunlit peach-cream
+            lab.a > 0.02f || lab.b > 0.03f -> 0xFFFFF1DF.toInt()
+            // Seafoam / Mint / Kelp: shift toward luminous icy aqua-mint
+            else -> 0xFFDCFFF6.toInt()
+        }
+        val blend = if (lab.l < 0.48f) {
+            (0.34f + 0.14f * grit).coerceIn(0.25f, 0.55f)
+        } else {
+            (0.46f + 0.18f * grit).coerceIn(0.35f, 0.72f)
+        }
+        return lerpOklab(tintArgb, causticTargetArgb, blend)
+    }
+
+    /**
+     * Computes the deeper, chroma-enriched tonal mineral pit color for sand-abraded dimples
+     * on the surface of tumbled sea glass (never grey or black mud).
+     */
+    fun computeTonalPitColor(tintArgb: Int, tintDensity: Float = 0.65f): Int {
+        val lab = argbToOklab(tintArgb)
+        val chroma = sqrt(lab.a * lab.a + lab.b * lab.b)
+        val hue = kotlin.math.atan2(lab.b, lab.a)
+        val density = tintDensity.coerceIn(0f, 1f)
+        val pitL = (lab.l - (0.11f + 0.06f * density)).coerceIn(0.18f, 0.78f)
+        val pitChroma = (chroma * (1.28f + 0.22f * density)).coerceIn(0.04f, 0.22f)
+        return oklabToArgb(
+            OklabColor(
+                l = pitL,
+                a = pitChroma * cos(hue),
+                b = pitChroma * sin(hue),
+                alpha = 1f
+            )
+        )
     }
 
     /**

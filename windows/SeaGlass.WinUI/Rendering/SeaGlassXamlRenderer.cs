@@ -1110,6 +1110,14 @@ public static class SeaGlassXamlRenderer
         double maxWidth = 0.0)
     {
         if (string.IsNullOrEmpty(text)) return;
+        SeaGlassColorMath.OklabColor lab = SeaGlassColorMath.ArgbToOklab(colorArgb);
+        bool isLightInk = lab.L > 0.55f;
+        int lipArgb = isLightInk ? unchecked((int)0xFF040C18) : unchecked((int)0xFFFFFFFF);
+        float lipAlpha = (isLightInk ? 0.62f : 0.86f) * alpha;
+        Point lipOffset = isLightInk ? new Point(origin.X - 0.35, origin.Y - 0.85) : new Point(origin.X + 0.40, origin.Y + 1.05);
+        FormattedText lipFt = CreateFormattedText(text, lipArgb, fontSize, bold, extraBold, mono, lipAlpha, maxWidth);
+        dc.DrawText(lipFt, lipOffset);
+
         FormattedText ft = CreateFormattedText(text, colorArgb, fontSize, bold, extraBold, mono, alpha, maxWidth);
         dc.DrawText(ft, origin);
     }
@@ -1127,7 +1135,17 @@ public static class SeaGlassXamlRenderer
     {
         if (string.IsNullOrEmpty(text)) return;
         FormattedText ft = CreateFormattedText(text, colorArgb, fontSize, bold, extraBold, mono, alpha);
-        dc.DrawText(ft, new Point(center.X - ft.Width * 0.5, center.Y - ft.Height * 0.5));
+        Point origin = new(center.X - ft.Width * 0.5, center.Y - ft.Height * 0.5);
+
+        SeaGlassColorMath.OklabColor lab = SeaGlassColorMath.ArgbToOklab(colorArgb);
+        bool isLightInk = lab.L > 0.55f;
+        int lipArgb = isLightInk ? unchecked((int)0xFF040C18) : unchecked((int)0xFFFFFFFF);
+        float lipAlpha = (isLightInk ? 0.62f : 0.86f) * alpha;
+        Point lipOffset = isLightInk ? new Point(origin.X - 0.35, origin.Y - 0.85) : new Point(origin.X + 0.40, origin.Y + 1.05);
+        FormattedText lipFt = CreateFormattedText(text, lipArgb, fontSize, bold, extraBold, mono, lipAlpha);
+        dc.DrawText(lipFt, lipOffset);
+
+        dc.DrawText(ft, origin);
     }
 
     /// <summary>
@@ -1219,37 +1237,29 @@ public static class SeaGlassXamlRenderer
 
         dc.PushClip(lensGeom);
 
-        // Volumetric Oklab water-drop body
-        int crestArgb = SeaGlassColorMath.LerpOklab(material.TintColorArgb, unchecked((int)0xFFFFFFFF), isActive ? 0.62f : 0.78f);
-        int baseArgb = SeaGlassColorMath.LerpOklab(material.TintColorArgb, unchecked((int)0xFFFFFFFF), isActive ? 0.18f : 0.42f);
-        float bodyAlpha = isActive ? 0.92f : 0.86f;
-
+        // Crystal-clear refractive water-drop interior (transparent center + lower-right focused caustic)
+        int causticArgb = SeaGlassColorMath.ComputeSubsurfaceCausticColor(material.TintColorArgb, material.Coarseness);
         LinearGradientBrush bodyBrush = new(
-            ToRgbColor(crestArgb, bodyAlpha),
-            ToRgbColor(baseArgb, bodyAlpha),
-            new Point(0.2, 0.0),
-            new Point(0.8, 1.0));
+            new GradientStopCollection
+            {
+                new GradientStop(Color.FromArgb(76, 255, 255, 255), 0.00),
+                new GradientStop(Color.FromArgb(0, 255, 255, 255), 0.36),
+                new GradientStop(ToRgbColor(causticArgb, 0.28f), 0.68),
+                new GradientStop(Color.FromArgb(158, 255, 255, 255), 1.00)
+            },
+            new Point(0.0, 0.0),
+            new Point(1.0, 1.0));
         bodyBrush.Freeze();
         dc.DrawRectangle(bodyBrush, null, bounds);
 
-        // Micro-facet sand grain
-        float grainAlpha = Math.Clamp(material.Coarseness * 0.26f, 0f, 0.32f);
-        if (grainAlpha > 0.01f)
-        {
-            dc.PushOpacity(grainAlpha);
-            dc.DrawRectangle(ObtainSandGrainBrush(), null, bounds);
-            dc.Pop();
-        }
-
-        // Prismatic meniscus inner slope + crisp contact lip
-        int rimTint = SeaGlassColorMath.LerpOklab(material.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.85f);
+        // Prismatic Fresnel meniscus inner slope + crisp contact lip
+        int rimTint = SeaGlassColorMath.LerpOklab(material.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.88f);
         LinearGradientBrush rimBrush = new(
             new GradientStopCollection
             {
-                new GradientStop(Color.FromArgb(245, 255, 255, 255), 0.0),
-                new GradientStop(ToRgbColor(0x0032F4FF, 0.45f * material.ChromaticDispersion), 0.35),
-                new GradientStop(ToRgbColor(0x00FF78A8, 0.40f * material.ChromaticDispersion), 0.70),
-                new GradientStop(ToRgbColor(rimTint, 0.88f), 1.0)
+                new GradientStop(Color.FromArgb(248, 255, 255, 255), 0.0),
+                new GradientStop(Color.FromArgb(88, 255, 255, 255), 0.42),
+                new GradientStop(ToRgbColor(rimTint, 0.92f), 1.0)
             },
             new Point(0, 0),
             new Point(1, 1));
@@ -1258,12 +1268,12 @@ public static class SeaGlassXamlRenderer
         rimPen.Freeze();
         dc.DrawGeometry(null, rimPen, lensGeom);
 
-        // High-point water-drop specular crown
-        Point crownPt = new(bounds.X + bounds.Width * 0.34, bounds.Y + bounds.Height * 0.28);
-        double crownRx = Math.Max(3.0, bounds.Width * 0.36);
-        double crownRy = Math.Max(2.5, bounds.Height * 0.28);
+        // Upper-left convex dome specular glint
+        Point crownPt = new(bounds.X + bounds.Width * 0.32, bounds.Y + bounds.Height * 0.25);
+        double crownRx = Math.Max(3.0, bounds.Width * 0.32);
+        double crownRy = Math.Max(2.5, bounds.Height * 0.24);
         RadialGradientBrush crownBrush = new(
-            Color.FromArgb(190, 255, 255, 255),
+            Color.FromArgb(235, 255, 255, 255),
             Color.FromArgb(0, 255, 255, 255));
         crownBrush.Freeze();
         dc.DrawEllipse(crownBrush, null, crownPt, crownRx, crownRy);

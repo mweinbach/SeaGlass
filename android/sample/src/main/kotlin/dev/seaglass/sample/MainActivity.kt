@@ -811,6 +811,41 @@ private fun OpticsLabSection(
         )
     }
 
+    var mailMeetTab by remember { mutableIntStateOf(0) }
+    var speakerActive by remember { mutableStateOf(true) }
+
+    val skyComposeMaterial = remember(coarseness, transparency, frostRadiusDp, tintDensity, thicknessDp, ior) {
+        SeaGlassMaterial(
+            tintColorArgb = 0xFF7CC8FF.toInt(),
+            tintDensity = (tintDensity * 1.06f).coerceIn(0.48f, 0.92f),
+            coarseness = (coarseness * 1.18f).coerceIn(0.38f, 0.95f),
+            frostRadiusDp = frostRadiusDp,
+            ior = ior,
+            chromaticDispersion = 0.24f,
+            rimChalkiness = 0.92f,
+            thicknessDp = (thicknessDp + 2f).coerceAtMost(32f),
+            cornerRadiusDp = 18f,
+            cornerSmoothing = 2.5f,
+            transparency = (transparency * 0.82f).coerceIn(0.28f, 0.82f)
+        )
+    }
+
+    val coralCallMaterial = remember(coarseness, transparency, frostRadiusDp, tintDensity, thicknessDp, ior) {
+        SeaGlassMaterial(
+            tintColorArgb = 0xFFF99B92.toInt(),
+            tintDensity = (tintDensity * 1.08f).coerceIn(0.52f, 0.94f),
+            coarseness = (coarseness * 1.22f).coerceIn(0.42f, 0.96f),
+            frostRadiusDp = frostRadiusDp,
+            ior = ior,
+            chromaticDispersion = 0.22f,
+            rimChalkiness = 0.92f,
+            thicknessDp = (thicknessDp + 2f).coerceAtMost(32f),
+            cornerRadiusDp = 29f,
+            cornerSmoothing = 2.5f,
+            transparency = (transparency * 0.80f).coerceIn(0.26f, 0.80f)
+        )
+    }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -818,38 +853,107 @@ private fun OpticsLabSection(
             .fillMaxWidth()
             .padding(vertical = 2.dp)
     ) {
+        // Reference Row A: Periwinkle "Mail | Meet" Beveled Pill + Sky-Blue Square Pencil FAB (Image 1)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            SeaGlassPill(
-                label = if (porcelainDaylight) "☀ Porcelain Studio" else "🌊 Coastal Stage",
-                selected = porcelainDaylight,
+            SeaGlassPillNavBar(
+                items = listOf(
+                    SeaGlassGlyph.Mail to "Mail",
+                    null to "Meet"
+                ),
+                selectedIndex = mailMeetTab,
+                onSelect = { mailMeetTab = it },
+                stageState = stageState,
+                material = periwinklePromptMaterial,
+                modifier = Modifier.weight(1f)
+            )
+
+            SeaGlassButton(
+                onClick = { mailMeetTab = (mailMeetTab + 1) % 2 },
+                stageState = stageState,
+                material = skyComposeMaterial.copy(cornerRadiusDp = 18f),
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(58.dp)
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.EditPencil,
+                    modifier = Modifier.size(23.dp),
+                    tint = LocalContentColor.current
+                )
+            }
+        }
+
+        // Reference Row B: Sky-Blue "Compose" Beveled Squircle + Speaker Squircle + Coral Hang-Up Pill (Images 2 & 3)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SeaGlassButton(
                 onClick = onTogglePorcelainDaylight,
                 stageState = stageState,
-                selectedMaterial = primaryMaterial,
-                unselectedMaterial = surfaceMaterial
-            )
-            SeaGlassPebbleOrb(
-                onClick = onTogglePorcelainDaylight,
+                material = skyComposeMaterial.copy(cornerRadiusDp = 17f),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 15.dp),
+                modifier = Modifier.height(56.dp)
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.EditPencil,
+                    modifier = Modifier.size(20.dp),
+                    tint = LocalContentColor.current
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Compose",
+                    maxLines = 1,
+                    style = MaterialTheme.typography.titleSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    ),
+                    color = LocalContentColor.current
+                )
+            }
+
+            SeaGlassButton(
+                onClick = { speakerActive = !speakerActive },
                 stageState = stageState,
-                size = 64.dp,
-                glyph = SeaGlassGlyph.BrandG,
-                material = peachPebbleMaterial
-            )
-            SeaGlassPill(
-                label = "Concept Triad",
-                selected = !porcelainDaylight,
+                material = if (speakerActive) {
+                    skyComposeMaterial.copy(cornerRadiusDp = 18f)
+                } else {
+                    surfaceMaterial.copy(cornerRadiusDp = 28f)
+                },
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(56.dp)
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.Speaker,
+                    modifier = Modifier.size(24.dp),
+                    tint = LocalContentColor.current
+                )
+            }
+
+            SeaGlassButton(
                 onClick = {
                     onApplyPreset(0.56f, 0.58f, 28f, 0.72f, 18f, 1.54f, 0.22f)
                 },
                 stageState = stageState,
-                selectedMaterial = primaryMaterial,
-                unselectedMaterial = surfaceMaterial
-            )
+                material = coralCallMaterial,
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 15.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(56.dp)
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.PhoneHangup,
+                    modifier = Modifier.size(26.dp),
+                    tint = LocalContentColor.current
+                )
+            }
         }
 
+        // Reference Row C: Orchid "Photos | Collections | Create" + Peach "G" Pebble + Ask Gemini
         SeaGlassPillNavBar(
             items = listOf(
                 SeaGlassGlyph.PhotoMountain to "Photos",

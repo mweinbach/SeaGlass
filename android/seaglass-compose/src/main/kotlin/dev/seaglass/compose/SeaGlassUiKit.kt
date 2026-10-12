@@ -134,7 +134,14 @@ enum class SeaGlassGlyph {
     DotGrid,
     PhotoMountain,
     Microphone,
-    BrandG
+    BrandG,
+    Mail,
+    EditPencil,
+    Speaker,
+    PhoneHangup,
+    Download,
+    Comment,
+    MoreVert
 }
 
 /**
@@ -589,6 +596,130 @@ fun SeaGlassIcon(
                     size = Size(outerR + gStroke * 0.2f, gStroke * 0.92f)
                 )
                 drawContext.canvas.restore()
+            }
+
+            SeaGlassGlyph.Mail -> {
+                // Filled rounded envelope with cut-out V-flap matching the "Mail" pill icon in Reference Image 1
+                val env = Path().apply {
+                    addRoundRect(
+                        androidx.compose.ui.geometry.RoundRect(
+                            left = w * 0.08f,
+                            top = h * 0.18f,
+                            right = w * 0.92f,
+                            bottom = h * 0.82f,
+                            cornerRadius = CornerRadius(w * 0.12f, h * 0.12f)
+                        )
+                    )
+                }
+                val cutFlap = Path().apply {
+                    moveTo(w * 0.06f, h * 0.22f)
+                    lineTo(w * 0.50f, h * 0.54f)
+                    lineTo(w * 0.94f, h * 0.22f)
+                    lineTo(w * 0.94f, h * 0.32f)
+                    lineTo(w * 0.50f, h * 0.64f)
+                    lineTo(w * 0.06f, h * 0.32f)
+                    close()
+                }
+                val combined = Path.combine(androidx.compose.ui.graphics.PathOperation.Difference, env, cutFlap)
+                drawPath(combined, color = tint)
+            }
+
+            SeaGlassGlyph.EditPencil -> {
+                // Diagonal pencil glyph matching the Compose button & square FAB in Reference Images 1 & 2
+                val body = Path().apply {
+                    moveTo(w * 0.16f, h * 0.84f)
+                    lineTo(w * 0.20f, h * 0.62f)
+                    lineTo(w * 0.68f, h * 0.14f)
+                    lineTo(w * 0.86f, h * 0.32f)
+                    lineTo(w * 0.38f, h * 0.80f)
+                    close()
+                }
+                drawPath(body, color = tint, style = stroke)
+                drawLine(
+                    color = tint,
+                    start = Offset(w * 0.56f, h * 0.26f),
+                    end = Offset(w * 0.74f, h * 0.44f),
+                    strokeWidth = sw * 0.95f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            SeaGlassGlyph.Speaker -> {
+                // Filled speaker cone + two acoustic wave arcs matching the "Speaker" button in Reference Image 3
+                val cone = Path().apply {
+                    moveTo(w * 0.12f, h * 0.38f)
+                    lineTo(w * 0.28f, h * 0.38f)
+                    lineTo(w * 0.50f, h * 0.18f)
+                    lineTo(w * 0.50f, h * 0.82f)
+                    lineTo(w * 0.28f, h * 0.62f)
+                    lineTo(w * 0.12f, h * 0.62f)
+                    close()
+                }
+                drawPath(cone, color = tint)
+                drawArc(
+                    color = tint,
+                    startAngle = -42f,
+                    sweepAngle = 84f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.34f, h * 0.30f),
+                    size = Size(w * 0.36f, h * 0.40f),
+                    style = Stroke(width = sw, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = tint,
+                    startAngle = -48f,
+                    sweepAngle = 96f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.24f, h * 0.16f),
+                    size = Size(w * 0.64f, h * 0.68f),
+                    style = Stroke(width = sw, cap = StrokeCap.Round)
+                )
+            }
+
+            SeaGlassGlyph.PhoneHangup -> {
+                // Downward curved phone receiver matching the coral end-call pill in Reference Image 3
+                val p = Path().apply {
+                    moveTo(w * 0.08f, h * 0.56f)
+                    cubicTo(w * 0.24f, h * 0.28f, w * 0.76f, h * 0.28f, w * 0.92f, h * 0.56f)
+                    lineTo(w * 0.78f, h * 0.70f)
+                    lineTo(w * 0.64f, h * 0.56f)
+                    cubicTo(w * 0.56f, h * 0.48f, w * 0.44f, h * 0.48f, w * 0.36f, h * 0.56f)
+                    lineTo(w * 0.22f, h * 0.70f)
+                    close()
+                }
+                drawPath(p, color = tint)
+            }
+
+            SeaGlassGlyph.Download -> {
+                drawLine(tint, Offset(w * 0.50f, h * 0.16f), Offset(w * 0.50f, h * 0.66f), sw, StrokeCap.Round)
+                val head = Path().apply {
+                    moveTo(w * 0.30f, h * 0.46f)
+                    lineTo(w * 0.50f, h * 0.68f)
+                    lineTo(w * 0.70f, h * 0.46f)
+                }
+                drawPath(head, color = tint, style = stroke)
+                drawLine(tint, Offset(w * 0.22f, h * 0.82f), Offset(w * 0.78f, h * 0.82f), sw, StrokeCap.Round)
+            }
+
+            SeaGlassGlyph.Comment -> {
+                val bubble = Path().apply {
+                    moveTo(w * 0.16f, h * 0.20f)
+                    lineTo(w * 0.84f, h * 0.20f)
+                    lineTo(w * 0.84f, h * 0.68f)
+                    lineTo(w * 0.38f, h * 0.68f)
+                    lineTo(w * 0.16f, h * 0.86f)
+                    close()
+                }
+                drawPath(bubble, color = tint, style = stroke)
+                drawLine(tint, Offset(w * 0.30f, h * 0.38f), Offset(w * 0.70f, h * 0.38f), sw * 0.85f, StrokeCap.Round)
+                drawLine(tint, Offset(w * 0.30f, h * 0.52f), Offset(w * 0.58f, h * 0.52f), sw * 0.85f, StrokeCap.Round)
+            }
+
+            SeaGlassGlyph.MoreVert -> {
+                val r = (min(w, h) * 0.085f).coerceAtLeast(1.8f)
+                drawCircle(tint, radius = r, center = Offset(w * 0.50f, h * 0.22f))
+                drawCircle(tint, radius = r, center = Offset(w * 0.50f, h * 0.50f))
+                drawCircle(tint, radius = r, center = Offset(w * 0.50f, h * 0.78f))
             }
         }
     }
@@ -1357,9 +1488,11 @@ fun SeaGlassSegmentedButtonRow(
                     .graphicsLayer {
                         scaleY = 1f - stretchSpan * 0.10f
                     }
-                    .clip(RoundedCornerShape(19.dp))
-                    .background(Brush.verticalGradient(listOf(pillTopColor, pillBottomColor)))
-                    .border(1.2.dp, pillRimColor, RoundedCornerShape(19.dp))
+                    .seaGlassBeveledInlay(
+                        tintColorArgb = indicatorMaterial.tintColorArgb,
+                        coarseness = indicatorMaterial.coarseness,
+                        cornerRadiusDp = 19f
+                    )
             )
 
             Row(
