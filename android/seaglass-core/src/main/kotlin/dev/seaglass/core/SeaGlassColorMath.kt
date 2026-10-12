@@ -214,25 +214,33 @@ object SeaGlassColorMath {
     }
 
     /**
-     * Computes a contrast-safe foreground content color (dark coastal ink vs. chalky alabaster)
-     * for icons and typography rendered atop a given sea-glass tint.
+     * Computes a contrast-safe, hue-harmonized deep tonal ink color (for light/pastel sea glass)
+     * or luminous frosted chalk-alabaster color (for dark smoked sea glass) for icons and typography.
+     *
+     * Models the rich tonal ink of ocean-tumbled sea-glass iconography (e.g. deep terracotta-maroon
+     * on coral-peach glass, deep royal plum on orchid-lavender glass, deep indigo-navy on periwinkle
+     * blue glass, and deep emerald-teal on seafoam mint glass) rather than desaturated charcoal black.
      */
     fun optimalContentColorFor(tintArgb: Int, tintDensity: Float = 0.55f): Int {
         val lab = argbToOklab(tintArgb)
+        val chroma = sqrt(lab.a * lab.a + lab.b * lab.b)
         val hue = kotlin.math.atan2(lab.b, lab.a)
-        val subtleChroma = min(0.045f, sqrt(lab.a * lab.a + lab.b * lab.b) * 0.4f)
         return if (lab.l >= 0.48f || tintDensity < 0.35f) {
-            // Deep coastal slate-ink harmonized with the glass hue
+            val tonalChroma = if (chroma < 0.025f) {
+                0.038f
+            } else {
+                (chroma * 0.96f).coerceIn(0.072f, 0.132f)
+            }
             oklabToArgb(
                 OklabColor(
-                    l = 0.19f,
-                    a = subtleChroma * cos(hue),
-                    b = subtleChroma * sin(hue),
+                    l = 0.29f,
+                    a = tonalChroma * cos(hue),
+                    b = tonalChroma * sin(hue),
                     alpha = 1f
                 )
             )
         } else {
-            // Luminous frosted chalk-white harmonized with the glass hue
+            val subtleChroma = min(0.048f, chroma * 0.45f)
             oklabToArgb(
                 OklabColor(
                     l = 0.96f,
@@ -242,6 +250,45 @@ object SeaGlassColorMath {
                 )
             )
         }
+    }
+
+    /**
+     * Computes the richer, deeper Beer-Lambert volumetric core color for the interior of a tumbled
+     * sea-glass piece where physical slab thickness is greatest (never bleaching the center to white).
+     */
+    fun computeDeepVolumetricCoreColor(tintArgb: Int, tintDensity: Float = 0.65f): Int {
+        val lab = argbToOklab(tintArgb)
+        val chroma = sqrt(lab.a * lab.a + lab.b * lab.b)
+        val hue = kotlin.math.atan2(lab.b, lab.a)
+        val density = tintDensity.coerceIn(0f, 1f)
+        val coreL = if (lab.l >= 0.48f) {
+            (lab.l - 0.045f * density).coerceIn(0.42f, 0.88f)
+        } else {
+            (lab.l - 0.035f * density).coerceIn(0.12f, 0.46f)
+        }
+        val coreChroma = (chroma * (1.08f + 0.18f * density)).coerceIn(0.02f, 0.20f)
+        return oklabToArgb(
+            OklabColor(
+                l = coreL,
+                a = coreChroma * cos(hue),
+                b = coreChroma * sin(hue),
+                alpha = 1f
+            )
+        )
+    }
+
+    /**
+     * Computes the milky, chalk-frosted perimeter rind color produced by ocean sand and pebble
+     * abrasion along the curved edges of tumbled sea glass.
+     */
+    fun computeFrostedRindColor(
+        tintArgb: Int,
+        coarseness: Float = 0.45f,
+        rindWhiteness: Float = 0.64f
+    ): Int {
+        val grit = coarseness.coerceIn(0f, 1f)
+        val blend = (rindWhiteness + 0.16f * grit).coerceIn(0.25f, 0.90f)
+        return lerpOklab(tintArgb, 0xFFFAFCFF.toInt(), blend)
     }
 
     /**

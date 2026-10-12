@@ -671,4 +671,45 @@ class SeaGlassCoreTest {
         )
         assertEquals(sheetRadii.topLeftPx, sheetRadii.bottomLeftPx, 0.01f)
     }
+
+    @Test
+    fun reverseRimFrostedRindVolumetricCoreTonalInkAndOrganicPebbleVerify() {
+        val peachTint = 0xFFF7A89A.toInt()
+        val orchidTint = 0xFFEA96FF.toInt()
+        val periwinkleTint = 0xFF9AB8FF.toInt()
+
+        // 1. Tonal ink preserves rich hue-family chroma rather than collapsing to grey-black
+        for (tint in listOf(peachTint, orchidTint, periwinkleTint)) {
+            val inkArgb = SeaGlassColorMath.optimalContentColorFor(tint, tintDensity = 0.70f)
+            val inkLab = SeaGlassColorMath.argbToOklab(inkArgb)
+            val inkChroma = sqrt(inkLab.a * inkLab.a + inkLab.b * inkLab.b)
+            assertTrue("Tonal ink lightness (${inkLab.l}) must be in [0.22..0.36]", inkLab.l in 0.22f..0.36f)
+            assertTrue("Tonal ink chroma ($inkChroma) must preserve hue saturation >= 0.06", inkChroma >= 0.06f)
+        }
+
+        // 2. Deep volumetric core deepens chroma without bleaching lightness toward white
+        val baseLab = SeaGlassColorMath.argbToOklab(orchidTint)
+        val coreArgb = SeaGlassColorMath.computeDeepVolumetricCoreColor(orchidTint, tintDensity = 0.72f)
+        val coreLab = SeaGlassColorMath.argbToOklab(coreArgb)
+        val baseChroma = sqrt(baseLab.a * baseLab.a + baseLab.b * baseLab.b)
+        val coreChroma = sqrt(coreLab.a * coreLab.a + coreLab.b * coreLab.b)
+        assertTrue("Volumetric core must not bleach toward white (${coreLab.l} <= ${baseLab.l})", coreLab.l <= baseLab.l)
+        assertTrue("Volumetric core must deepen chroma ($coreChroma >= $baseChroma)", coreChroma >= baseChroma)
+
+        // 3. Milky-frosted perimeter rind increases lightness with coarseness
+        val rindLow = SeaGlassColorMath.argbToOklab(
+            SeaGlassColorMath.computeFrostedRindColor(periwinkleTint, coarseness = 0.20f, rindWhiteness = 0.60f)
+        )
+        val rindHigh = SeaGlassColorMath.argbToOklab(
+            SeaGlassColorMath.computeFrostedRindColor(periwinkleTint, coarseness = 0.85f, rindWhiteness = 0.60f)
+        )
+        assertTrue("Higher sand coarseness must produce a milkier frosted rind (${rindHigh.l} > ${rindLow.l})", rindHigh.l > rindLow.l)
+
+        // 4. Shader dialects include frostRind & rindStipple reverse-rim transition
+        for (dialect in ShaderDialect.entries) {
+            val src = SeaGlassShaderCompiler.compileForDialect(dialect).seaGlassCompositeFragmentSource
+            assertTrue("Dialect $dialect must include frostRind bevel transition", src.contains("frostRind"))
+            assertTrue("Dialect $dialect must include rindStipple micro-facet modulation", src.contains("rindStipple"))
+        }
+    }
 }

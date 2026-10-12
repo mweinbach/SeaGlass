@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Shader
 import kotlin.math.cos
+import kotlin.math.pow
 import kotlin.math.sin
 
 /**
@@ -16,7 +17,7 @@ import kotlin.math.sin
  */
 object SeaGlassSandGrainTexture {
 
-    private const val TILE_SIZE = 128
+    private const val TILE_SIZE = 256
 
     @Volatile
     private var cachedShader: BitmapShader? = null
@@ -40,26 +41,28 @@ object SeaGlassSandGrainTexture {
 
         for (y in 0 until TILE_SIZE) {
             for (x in 0 until TILE_SIZE) {
-                // Toroidal multi-octave hash (periodic mod TILE_SIZE) for an isotropic velvet finish
+                // Multi-frequency toroidal stipple hash (periodic mod TILE_SIZE):
+                // Combines razor-crisp 1px salt-crystal micro-facets with 2px-3px sand-abrasion clusters
                 val hFineA = hash2d(x, y, 101)
-                val hFineB = hash2d((x + 37) and (TILE_SIZE - 1), (y + 73) and (TILE_SIZE - 1), 179)
-                val hMed = bilinearPeriodicHash(x * 0.5f, y * 0.5f, 64, 211)
+                val hFineB = hash2d((x + 59) and (TILE_SIZE - 1), (y + 113) and (TILE_SIZE - 1), 179)
+                val hFineC = hash2d((x * 3 + 17) and (TILE_SIZE - 1), (y * 3 + 43) and (TILE_SIZE - 1), 263)
+                val hMed = bilinearPeriodicHash(x * 0.5f, y * 0.5f, 128, 211)
 
-                // High-frequency isotropic velvet micro-facet distribution (82% fine velvet + 18% sub-grain)
-                val combined = hFineA * 0.46f + hFineB * 0.36f + hMed * 0.18f
+                // High-frequency isotropic particulate stipple distribution
+                val combined = hFineA * 0.44f + hFineB * 0.28f + hFineC * 0.14f + hMed * 0.14f
 
-                val argb = if (combined >= 0.50f) {
-                    // Velvety sand-abraded micro-facet highlight (soft pearlescent sheen)
-                    val intensity = ((combined - 0.50f) * 2.0f).coerceIn(0f, 1f)
-                    val softVelvet = intensity * (1.15f - 0.15f * intensity)
-                    val alpha = (softVelvet * 76f).toInt().coerceIn(0, 82)
-                    (alpha shl 24) or 0x00F6FAFD
+                val argb = if (combined >= 0.48f) {
+                    // Powdery chalk-white sand-abraded micro-facet stipple (screens glass tint to milky frost under OVERLAY)
+                    val norm = ((combined - 0.48f) / 0.52f).coerceIn(0f, 1f)
+                    val sparkle = norm.pow(0.72f)
+                    val alpha = (sparkle * 195f).toInt().coerceIn(0, 210)
+                    (alpha shl 24) or 0x00FFFFFF
                 } else {
-                    // Subtle micro-facet valley (gives tactile velvet depth without dark blotches)
-                    val valley = ((0.50f - combined) * 2.0f).coerceIn(0f, 1f)
-                    val softValley = valley * valley
-                    val alpha = (softValley * 36f).toInt().coerceIn(0, 42)
-                    (alpha shl 24) or 0x000E2434
+                    // Fine micro-pore valley (multiplies glass tint to deeper tonal chroma under OVERLAY, zero grey mud!)
+                    val valley = ((0.48f - combined) / 0.48f).coerceIn(0f, 1f)
+                    val pore = valley.pow(0.78f)
+                    val alpha = (pore * 135f).toInt().coerceIn(0, 148)
+                    (alpha shl 24) or 0x00000000
                 }
 
                 pixels[y * TILE_SIZE + x] = argb

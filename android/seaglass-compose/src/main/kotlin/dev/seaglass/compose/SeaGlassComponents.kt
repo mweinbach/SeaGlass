@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -56,16 +58,19 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seaglass.core.SeaGlassColorMath
+import dev.seaglass.core.SeaGlassContourPathBuilder
 import dev.seaglass.core.SeaGlassCornerAdaptationConfig
 import dev.seaglass.core.SeaGlassCornerAdaptationMode
 import dev.seaglass.core.SeaGlassCornerAdaptationSolver
 import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassMaterial
+import dev.seaglass.core.SeaGlassPalette
 import dev.seaglass.core.SeaGlassSdfEngine
 import kotlin.math.max
 import kotlin.math.min
@@ -823,20 +828,31 @@ fun SeaGlassFluidBar(
                 Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.56f)
             } else {
                 Color(
-                    SeaGlassColorMath.lerpOklab(
-                        indicatorMaterial.tintColorArgb,
-                        0xFFFFFFFF.toInt(),
-                        0.32f
+                    SeaGlassColorMath.computeFrostedRindColor(
+                        barMaterial.tintColorArgb,
+                        barMaterial.coarseness,
+                        0.72f
                     )
-                ).copy(alpha = 0.68f)
+                ).copy(alpha = 0.46f)
             }
             val pillBottomColor = if (isDarkBar) {
                 Color(0xFF0A1E30).copy(alpha = 0.40f)
             } else {
-                Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.52f)
+                Color(
+                    SeaGlassColorMath.computeFrostedRindColor(
+                        barMaterial.tintColorArgb,
+                        barMaterial.coarseness,
+                        0.58f
+                    )
+                ).copy(alpha = 0.36f)
+            }
+            val pillRimColor = if (isDarkBar) {
+                Color.White.copy(alpha = 0.32f)
+            } else {
+                Color.White.copy(alpha = 0.38f)
             }
 
-            // Dual-Edge Lead/Trail Liquid Glass Active Tab Lozenge Pill
+            // Dual-Edge Lead/Trail Milky-Frosted Sea-Glass Active Tab Lozenge Pill
             Box(
                 modifier = Modifier
                     .offset { IntOffset(x = indicatorOffsetX, y = 0) }
@@ -851,6 +867,7 @@ fun SeaGlassFluidBar(
                             colors = listOf(pillTopColor, pillBottomColor)
                         )
                     )
+                    .border(1.dp, pillRimColor, RoundedCornerShape(30.dp))
             )
 
             Row(
@@ -1068,6 +1085,408 @@ private fun NavBarTabVectorIcon(
                     end = Offset(w * 0.88f, h * 0.88f),
                     strokeWidth = strokeW * 1.2f,
                     cap = StrokeCap.Round
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Ocean-tumbled circular/pebble SeaGlass medallion button (modeled after the Coral-Peach "G"
+ * pebble in the SeaGlass concept triad).
+ *
+ * Uses [SeaGlassContourPathBuilder.buildOrganicPebblePath] for an authentic beach-tumbled
+ * silhouette, a rich Beer-Lambert volumetric core, a wide powdery chalk-frosted bevel rind,
+ * high-frequency sand-stipple texture, and deep tonal iconography.
+ */
+@Composable
+fun SeaGlassPebbleOrb(
+    onClick: () -> Unit,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
+    modifier: Modifier = Modifier,
+    size: Dp = 68.dp,
+    glyph: SeaGlassGlyph = SeaGlassGlyph.BrandG,
+    material: SeaGlassMaterial = SeaGlassMaterial(
+        tintColorArgb = 0xFFF7A89A.toInt(),
+        tintDensity = 0.72f,
+        coarseness = 0.58f,
+        frostRadiusDp = 26f,
+        ior = 1.54f,
+        chromaticDispersion = 0.22f,
+        rimChalkiness = 0.90f,
+        thicknessDp = 18f,
+        cornerRadiusDp = size.value * 0.5f,
+        cornerSmoothing = 2.4f,
+        transparency = 0.52f
+    ),
+    contentColorOverride: Color? = null
+) {
+    val motion = LocalSeaGlassMotionScheme.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressFraction by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = motion.fastSpatial,
+        label = "pebbleOrbPress"
+    )
+    val expandScale = 1f + 0.04f * pressFraction
+
+    val contentColor = contentColorOverride ?: remember(material.tintColorArgb, material.tintDensity) {
+        Color(SeaGlassColorMath.optimalContentColorFor(material.tintColorArgb, material.tintDensity))
+    }
+
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = modifier
+                .size(size)
+                .graphicsLayer {
+                    scaleX = expandScale
+                    scaleY = expandScale
+                }
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick
+                )
+                .seaGlass(
+                    stageState = stageState,
+                    material = material.copy(cornerRadiusDp = size.value * 0.5f),
+                    touchIntensity = pressFraction,
+                    contentRole = SeaGlassContentRole.TEXT_AND_ICONS
+                )
+        ) {
+            SeaGlassIcon(
+                glyph = glyph,
+                modifier = Modifier.size(size * 0.48f),
+                tint = contentColor
+            )
+        }
+    }
+}
+
+/**
+ * Tumbled SeaGlass Inline Pill Navigation Bar (modeled after the Orchid-Lavender
+ * `Photos | Collections | Create` concept bar).
+ *
+ * Renders an ocean-tumbled capsule with a rich pastel volumetric core, a wide powdery
+ * chalk-frosted bevel rind, fine sand-stipple grain, and an elastically gliding
+ * milky-frosted sea-glass inlay capsule around the active tab's inline icon and label.
+ */
+@Composable
+fun SeaGlassPillNavBar(
+    items: List<Pair<SeaGlassGlyph?, String>>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
+    modifier: Modifier = Modifier,
+    material: SeaGlassMaterial = SeaGlassMaterial(
+        tintColorArgb = 0xFFEA96FF.toInt(),
+        tintDensity = 0.72f,
+        coarseness = 0.58f,
+        frostRadiusDp = 28f,
+        ior = 1.54f,
+        chromaticDispersion = 0.22f,
+        rimChalkiness = 0.90f,
+        thicknessDp = 18f,
+        cornerRadiusDp = 30f,
+        cornerSmoothing = 2.5f,
+        transparency = 0.52f
+    )
+) {
+    val density = LocalDensity.current
+    val count = items.size.coerceAtLeast(1)
+    val targetIdx = selectedIndex.coerceIn(0, count - 1).toFloat()
+
+    val leadIdx by animateFloatAsState(
+        targetValue = targetIdx,
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 520f),
+        label = "pillNavLead"
+    )
+    val trailIdx by animateFloatAsState(
+        targetValue = targetIdx,
+        animationSpec = spring(dampingRatio = 0.74f, stiffness = 310f),
+        label = "pillNavTrail"
+    )
+
+    var barWidthPx by remember { mutableFloatStateOf(900f) }
+    val barHeight = 60.dp
+
+    val contentColor = remember(material.tintColorArgb, material.tintDensity) {
+        Color(SeaGlassColorMath.optimalContentColorFor(material.tintColorArgb, material.tintDensity))
+    }
+
+    val isDarkBar = remember(material.tintColorArgb) {
+        SeaGlassColorMath.argbToOklab(material.tintColorArgb).l < 0.48f
+    }
+    val inlayTopColor = if (isDarkBar) {
+        Color(material.tintColorArgb).copy(alpha = 0.56f)
+    } else {
+        Color(
+            SeaGlassColorMath.computeFrostedRindColor(material.tintColorArgb, material.coarseness, 0.74f)
+        ).copy(alpha = 0.48f)
+    }
+    val inlayBottomColor = if (isDarkBar) {
+        Color(0xFF0A1E30).copy(alpha = 0.42f)
+    } else {
+        Color(
+            SeaGlassColorMath.computeFrostedRindColor(material.tintColorArgb, material.coarseness, 0.60f)
+        ).copy(alpha = 0.38f)
+    }
+    val inlayRimColor = if (isDarkBar) {
+        Color.White.copy(alpha = 0.32f)
+    } else {
+        Color.White.copy(alpha = 0.38f)
+    }
+
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(barHeight)
+                .onSizeChanged { barWidthPx = it.width.toFloat().coerceAtLeast(1f) }
+                .seaGlass(
+                    stageState = stageState,
+                    material = material.copy(cornerRadiusDp = 30f),
+                    contentRole = SeaGlassContentRole.NAVIGATION_CHROME
+                )
+                .padding(horizontal = 6.dp, vertical = 6.dp)
+        ) {
+            val innerW = (barWidthPx - with(density) { 12.dp.toPx() }).coerceAtLeast(1f)
+            val slotW = innerW / count
+            val leftTab = min(leadIdx, trailIdx)
+            val rightTab = max(leadIdx, trailIdx) + 1f
+            val stretch = kotlin.math.abs(leadIdx - trailIdx).coerceIn(0f, 1.5f)
+            val offsetX = (leftTab * slotW).roundToInt()
+            val pillW = with(density) { ((rightTab - leftTab) * slotW).toDp() }
+
+            // Milky-Frosted Sea-Glass Inlay Capsule (matches the active "Photos" pill in reference)
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(offsetX, 0) }
+                    .width(pillW)
+                    .fillMaxHeight()
+                    .graphicsLayer {
+                        scaleY = 1f - stretch * 0.08f
+                    }
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Brush.verticalGradient(listOf(inlayTopColor, inlayBottomColor)))
+                    .border(0.8.dp, inlayRimColor, RoundedCornerShape(24.dp))
+            )
+
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                items.forEachIndexed { idx, (glyph, title) ->
+                    val selected = idx == selectedIndex
+                    val itemTint = if (selected) contentColor else contentColor.copy(alpha = 0.86f)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { onSelect(idx) }
+                            )
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            if (glyph != null && (selected || idx == 0)) {
+                                SeaGlassIcon(
+                                    glyph = glyph,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = itemTint
+                                )
+                            }
+                            Text(
+                                text = title,
+                                color = itemTint,
+                                maxLines = 1,
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                                    fontSize = 15.sp,
+                                    letterSpacing = (-0.1).sp
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Tumbled SeaGlass Prompt & Voice Capsule Bar (modeled after the Periwinkle-Blue
+ * `+ Ask Gemini  🎤  ( ||| )` concept bar).
+ *
+ * Features an ocean-tumbled capsule contour, rich volumetric core, wide powdery chalk-frosted
+ * bevel rind, fine sand stipple, leading `+` action, tonal prompt label, inline microphone button,
+ * and a nested circular milky-frosted sea-glass voice waveform medallion on the right.
+ */
+@Composable
+fun SeaGlassPromptBar(
+    promptText: String = "Ask Gemini",
+    onPromptClick: () -> Unit = {},
+    onPlusClick: () -> Unit = {},
+    onMicClick: () -> Unit = {},
+    onVoiceWaveClick: () -> Unit = {},
+    isVoiceActive: Boolean = false,
+    stageState: SeaGlassStageState? = LocalSeaGlassStageState.current,
+    modifier: Modifier = Modifier,
+    material: SeaGlassMaterial = SeaGlassMaterial(
+        tintColorArgb = 0xFF9AB8FF.toInt(),
+        tintDensity = 0.72f,
+        coarseness = 0.58f,
+        frostRadiusDp = 28f,
+        ior = 1.54f,
+        chromaticDispersion = 0.22f,
+        rimChalkiness = 0.90f,
+        thicknessDp = 18f,
+        cornerRadiusDp = 31f,
+        cornerSmoothing = 2.5f,
+        transparency = 0.52f
+    )
+) {
+    val density = LocalDensity.current
+    val motion = LocalSeaGlassMotionScheme.current
+    val waveScale by animateFloatAsState(
+        targetValue = if (isVoiceActive) 1.07f else 1.0f,
+        animationSpec = motion.fastSpatial,
+        label = "voiceMedallionPulse"
+    )
+
+    val contentColor = remember(material.tintColorArgb, material.tintDensity) {
+        Color(SeaGlassColorMath.optimalContentColorFor(material.tintColorArgb, material.tintDensity))
+    }
+
+    val isDarkBar = remember(material.tintColorArgb) {
+        SeaGlassColorMath.argbToOklab(material.tintColorArgb).l < 0.48f
+    }
+    val medallionTopColor = if (isDarkBar) {
+        Color(material.tintColorArgb).copy(alpha = 0.58f)
+    } else {
+        Color(
+            SeaGlassColorMath.computeFrostedRindColor(material.tintColorArgb, material.coarseness, 0.74f)
+        ).copy(alpha = 0.50f)
+    }
+    val medallionBottomColor = if (isDarkBar) {
+        Color(0xFF0A1E30).copy(alpha = 0.44f)
+    } else {
+        Color(
+            SeaGlassColorMath.computeFrostedRindColor(material.tintColorArgb, material.coarseness, 0.60f)
+        ).copy(alpha = 0.40f)
+    }
+    val medallionRimColor = if (isDarkBar) {
+        Color.White.copy(alpha = 0.34f)
+    } else {
+        Color.White.copy(alpha = 0.40f)
+    }
+
+    ProvideSeaGlassLegibleContent(contentColor = contentColor) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .seaGlass(
+                    stageState = stageState,
+                    material = material.copy(cornerRadiusDp = 31f),
+                    contentRole = SeaGlassContentRole.NAVIGATION_CHROME
+                )
+                .padding(start = 18.dp, end = 7.dp)
+        ) {
+            // Leading "+" button
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onPlusClick
+                    )
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.Plus,
+                    modifier = Modifier.size(20.dp),
+                    tint = contentColor
+                )
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            // Tonal prompt text ("Ask Gemini")
+            Box(
+                contentAlignment = Alignment.CenterStart,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onPromptClick
+                    )
+            ) {
+                Text(
+                    text = promptText,
+                    color = contentColor,
+                    maxLines = 1,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        letterSpacing = (-0.1).sp
+                    )
+                )
+            }
+
+            // Inline Microphone button
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onMicClick
+                    )
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.Microphone,
+                    modifier = Modifier.size(20.dp),
+                    tint = contentColor
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Nested Circular Milky-Frosted Sea-Glass Voice Waveform Medallion
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(48.dp)
+                    .graphicsLayer {
+                        scaleX = waveScale
+                        scaleY = waveScale
+                    }
+                    .clip(CircleShape)
+                    .background(Brush.verticalGradient(listOf(medallionTopColor, medallionBottomColor)))
+                    .border(0.8.dp, medallionRimColor, CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onVoiceWaveClick
+                    )
+            ) {
+                SeaGlassIcon(
+                    glyph = SeaGlassGlyph.AudioWave,
+                    modifier = Modifier.size(21.dp),
+                    tint = contentColor
                 )
             }
         }

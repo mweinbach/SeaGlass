@@ -410,6 +410,40 @@ public static class SeaGlassContourPathBuilder
         float insetPx = 0f) =>
         BuildCoalescingScenePath([nodeA, nodeB], smoothRadiusPx, outPath, insetPx);
 
+    /// <summary>
+    /// Builds a smooth circular/capsule sea-glass medallion contour with zero edge waviness.
+    /// </summary>
+    public static void BuildOrganicPebblePath(
+        float widthPx,
+        float heightPx,
+        SeaGlassVectorPath2D outPath,
+        float organicIrregularity = 0.0f,
+        float phaseSeedRad = 0.0f)
+    {
+        outPath.Reset();
+        float w = MathF.Max(2f, widthPx);
+        float h = MathF.Max(2f, heightPx);
+        float r = MathF.Min(w, h) * 0.5f;
+        outPath.AddRoundRect(0f, 0f, w, h, r, r, r, r);
+    }
+
+    /// <summary>
+    /// Builds a smooth stadium capsule/pill contour with zero edge waviness.
+    /// </summary>
+    public static void BuildTumbledCapsulePath(
+        float widthPx,
+        float heightPx,
+        SeaGlassVectorPath2D outPath,
+        float organicWavePx = 0.0f,
+        float phaseSeedRad = 0.0f)
+    {
+        outPath.Reset();
+        float w = MathF.Max(2f, widthPx);
+        float h = MathF.Max(2f, heightPx);
+        float r = MathF.Min(w, h) * 0.5f;
+        outPath.AddRoundRect(0f, 0f, w, h, r, r, r, r);
+    }
+
     private static void TraceConnectedStadiumIsosurface(
         SeaGlassSdfEngine.SdfNode nodeA,
         SeaGlassSdfEngine.SdfNode nodeB,

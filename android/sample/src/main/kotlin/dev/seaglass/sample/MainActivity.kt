@@ -115,7 +115,10 @@ import dev.seaglass.compose.SeaGlassMorphMode
 import dev.seaglass.compose.SeaGlassMorphingButton
 import dev.seaglass.compose.SeaGlassMorphingContextMenu
 import dev.seaglass.compose.SeaGlassNotificationStack
+import dev.seaglass.compose.SeaGlassPebbleOrb
 import dev.seaglass.compose.SeaGlassPill
+import dev.seaglass.compose.SeaGlassPillNavBar
+import dev.seaglass.compose.SeaGlassPromptBar
 import dev.seaglass.compose.SeaGlassRadioButton
 import dev.seaglass.compose.SeaGlassSearchBar
 import dev.seaglass.compose.SeaGlassSegmentedButtonRow
@@ -170,6 +173,7 @@ fun SeaGlassShowcaseApp() {
     var showIosContextMenu by remember { mutableStateOf(false) }
     var showIosActionSheet by remember { mutableStateOf(false) }
     var sheetMorphAnimation by remember { mutableStateOf(true) }
+    var porcelainDaylightBackdrop by remember { mutableStateOf(true) }
 
     // Live adjustable optical parameters initialized for strong sea-glass tint + transparent frosted glass
     var transparency by remember(activePalette) {
@@ -260,6 +264,7 @@ fun SeaGlassShowcaseApp() {
             ) {
                 ExpressiveTidalBackdrop(
                     palette = activePalette,
+                    porcelainDaylight = porcelainDaylightBackdrop,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -340,6 +345,8 @@ fun SeaGlassShowcaseApp() {
                                     thicknessDp = thicknessDp
                                 ),
                                 surfaceMaterial = customSurfaceMaterial,
+                                porcelainDaylight = porcelainDaylightBackdrop,
+                                onTogglePorcelainDaylight = { porcelainDaylightBackdrop = !porcelainDaylightBackdrop },
                                 activeCornerProfile = deviceCornerProfile,
                                 onSelectCornerProfile = { deviceCornerProfile = it },
                                 transparency = transparency,
@@ -726,6 +733,8 @@ private fun OpticsLabSection(
     primaryMaterial: SeaGlassMaterial,
     tertiaryMaterial: SeaGlassMaterial,
     surfaceMaterial: SeaGlassMaterial,
+    porcelainDaylight: Boolean = false,
+    onTogglePorcelainDaylight: () -> Unit = {},
     activeCornerProfile: SeaGlassDeviceHardwareProfile,
     onSelectCornerProfile: (SeaGlassDeviceHardwareProfile) -> Unit,
     transparency: Float,
@@ -745,6 +754,125 @@ private fun OpticsLabSection(
     onApplyPreset: (Float, Float, Float, Float, Float, Float, Float) -> Unit
 ) {
     val density = LocalDensity.current
+
+    // 0. SeaGlass Concept Reference Triad (Coral-Peach "G" Pebble + Orchid "Photos | Collections | Create" + Periwinkle "Ask Gemini")
+    var conceptNavTab by remember { mutableIntStateOf(0) }
+    var conceptVoiceActive by remember { mutableStateOf(false) }
+    var conceptPromptIdx by remember { mutableIntStateOf(0) }
+    val conceptPrompts = remember {
+        listOf("Ask Gemini", "Tumbled Sea Glass Optics", "Sand-Frosted Oklab Rind")
+    }
+
+    val peachPebbleMaterial = remember(coarseness, transparency, frostRadiusDp, tintDensity, thicknessDp, ior) {
+        SeaGlassMaterial(
+            tintColorArgb = 0xFFF7A89A.toInt(),
+            tintDensity = (tintDensity * 1.05f).coerceIn(0.42f, 0.92f),
+            coarseness = (coarseness * 1.15f).coerceIn(0.32f, 0.95f),
+            frostRadiusDp = frostRadiusDp,
+            ior = ior,
+            chromaticDispersion = 0.20f,
+            rimChalkiness = 0.90f,
+            thicknessDp = thicknessDp,
+            cornerRadiusDp = 32f,
+            cornerSmoothing = 2.4f,
+            transparency = (transparency * 0.85f).coerceIn(0.28f, 0.85f)
+        )
+    }
+
+    val orchidPillMaterial = remember(coarseness, transparency, frostRadiusDp, tintDensity, thicknessDp, ior) {
+        SeaGlassMaterial(
+            tintColorArgb = 0xFFEA96FF.toInt(),
+            tintDensity = (tintDensity * 1.04f).coerceIn(0.42f, 0.92f),
+            coarseness = (coarseness * 1.15f).coerceIn(0.32f, 0.95f),
+            frostRadiusDp = frostRadiusDp,
+            ior = ior,
+            chromaticDispersion = 0.22f,
+            rimChalkiness = 0.90f,
+            thicknessDp = thicknessDp,
+            cornerRadiusDp = 30f,
+            cornerSmoothing = 2.5f,
+            transparency = (transparency * 0.85f).coerceIn(0.28f, 0.85f)
+        )
+    }
+
+    val periwinklePromptMaterial = remember(coarseness, transparency, frostRadiusDp, tintDensity, thicknessDp, ior) {
+        SeaGlassMaterial(
+            tintColorArgb = 0xFF9AB8FF.toInt(),
+            tintDensity = (tintDensity * 1.04f).coerceIn(0.42f, 0.92f),
+            coarseness = (coarseness * 1.15f).coerceIn(0.32f, 0.95f),
+            frostRadiusDp = frostRadiusDp,
+            ior = ior,
+            chromaticDispersion = 0.22f,
+            rimChalkiness = 0.90f,
+            thicknessDp = thicknessDp,
+            cornerRadiusDp = 31f,
+            cornerSmoothing = 2.5f,
+            transparency = (transparency * 0.85f).coerceIn(0.28f, 0.85f)
+        )
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SeaGlassPill(
+                label = if (porcelainDaylight) "☀ Porcelain Studio" else "🌊 Coastal Stage",
+                selected = porcelainDaylight,
+                onClick = onTogglePorcelainDaylight,
+                stageState = stageState,
+                selectedMaterial = primaryMaterial,
+                unselectedMaterial = surfaceMaterial
+            )
+            SeaGlassPebbleOrb(
+                onClick = onTogglePorcelainDaylight,
+                stageState = stageState,
+                size = 64.dp,
+                glyph = SeaGlassGlyph.BrandG,
+                material = peachPebbleMaterial
+            )
+            SeaGlassPill(
+                label = "Concept Triad",
+                selected = !porcelainDaylight,
+                onClick = {
+                    onApplyPreset(0.56f, 0.58f, 28f, 0.72f, 18f, 1.54f, 0.22f)
+                },
+                stageState = stageState,
+                selectedMaterial = primaryMaterial,
+                unselectedMaterial = surfaceMaterial
+            )
+        }
+
+        SeaGlassPillNavBar(
+            items = listOf(
+                SeaGlassGlyph.PhotoMountain to "Photos",
+                null to "Collections",
+                null to "Create"
+            ),
+            selectedIndex = conceptNavTab,
+            onSelect = { conceptNavTab = it },
+            stageState = stageState,
+            material = orchidPillMaterial
+        )
+
+        SeaGlassPromptBar(
+            promptText = conceptPrompts[conceptPromptIdx % conceptPrompts.size],
+            onPromptClick = { conceptPromptIdx = (conceptPromptIdx + 1) % conceptPrompts.size },
+            onPlusClick = { conceptPromptIdx = (conceptPromptIdx + 1) % conceptPrompts.size },
+            onMicClick = { conceptVoiceActive = !conceptVoiceActive },
+            onVoiceWaveClick = { conceptVoiceActive = !conceptVoiceActive },
+            isVoiceActive = conceptVoiceActive,
+            stageState = stageState,
+            material = periwinklePromptMaterial
+        )
+    }
 
     // 1. Flagship Material 3 Expressive × Liquid Sea Glass Coalescing Media & Soundscape Deck
     var isPlaying by remember { mutableStateOf(true) }
@@ -2722,6 +2850,7 @@ private fun BackendArchitectureSection(
 @Composable
 private fun ExpressiveTidalBackdrop(
     palette: SeaGlassPalette,
+    porcelainDaylight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "tidalBackdrop")
@@ -2735,11 +2864,11 @@ private fun ExpressiveTidalBackdrop(
         label = "tidalPhase"
     )
 
-    val isDark = palette == SeaGlassPalette.ObsidianTide
-    val bgTop = if (isDark) {
-        Color(0xFF07121E)
-    } else {
-        Color(
+    val isDark = palette == SeaGlassPalette.ObsidianTide && !porcelainDaylight
+    val bgTop = when {
+        porcelainDaylight -> Color(0xFFFBFDFF)
+        isDark -> Color(0xFF07121E)
+        else -> Color(
             SeaGlassColorMath.lerpOklab(
                 palette.primaryGlass.tintColorArgb,
                 0xFF102A44.toInt(),
@@ -2747,10 +2876,10 @@ private fun ExpressiveTidalBackdrop(
             )
         )
     }
-    val bgMid = if (isDark) {
-        Color(0xFF0C1F34)
-    } else {
-        Color(
+    val bgMid = when {
+        porcelainDaylight -> Color(0xFFF6F9FD)
+        isDark -> Color(0xFF0C1F34)
+        else -> Color(
             SeaGlassColorMath.lerpOklab(
                 palette.tertiaryGlass.tintColorArgb,
                 0xFF163858.toInt(),
@@ -2758,10 +2887,10 @@ private fun ExpressiveTidalBackdrop(
             )
         )
     }
-    val bgBottom = if (isDark) {
-        Color(0xFF112A44)
-    } else {
-        Color(
+    val bgBottom = when {
+        porcelainDaylight -> Color(0xFFF1F5FB)
+        isDark -> Color(0xFF112A44)
+        else -> Color(
             SeaGlassColorMath.lerpOklab(
                 palette.secondaryGlass.tintColorArgb,
                 0xFF0E2942.toInt(),
@@ -2776,6 +2905,7 @@ private fun ExpressiveTidalBackdrop(
     val sunlitPeach = Color(0xFFFF8E6E)
     val goldenSand = Color(0xFFFFCA58)
     val aquaCaustic = Color(0xFF68F4FF)
+    val glowScale = if (porcelainDaylight) 0.22f else 1.0f
 
     Canvas(modifier = modifier) {
         val w = size.width
@@ -2793,7 +2923,7 @@ private fun ExpressiveTidalBackdrop(
         // Soft glowing atmospheric bokeh spheres behind the glass
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(primaryGlow.copy(alpha = 0.78f), Color.Transparent),
+                colors = listOf(primaryGlow.copy(alpha = 0.78f * glowScale), Color.Transparent),
                 center = Offset(w * 0.20f + dx, h * 0.18f + dy),
                 radius = w * 0.58f
             ),
@@ -2803,7 +2933,7 @@ private fun ExpressiveTidalBackdrop(
 
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(sunlitPeach.copy(alpha = 0.72f), Color.Transparent),
+                colors = listOf(sunlitPeach.copy(alpha = 0.72f * glowScale), Color.Transparent),
                 center = Offset(w * 0.82f - dx * 0.7f, h * 0.34f - dy),
                 radius = w * 0.52f
             ),
@@ -2813,7 +2943,7 @@ private fun ExpressiveTidalBackdrop(
 
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(tertiaryGlow.copy(alpha = 0.76f), Color.Transparent),
+                colors = listOf(tertiaryGlow.copy(alpha = 0.76f * glowScale), Color.Transparent),
                 center = Offset(w * 0.24f - dy, h * 0.62f + dx * 0.5f),
                 radius = w * 0.56f
             ),
@@ -2823,7 +2953,7 @@ private fun ExpressiveTidalBackdrop(
 
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(goldenSand.copy(alpha = 0.70f), Color.Transparent),
+                colors = listOf(goldenSand.copy(alpha = 0.70f * glowScale), Color.Transparent),
                 center = Offset(w * 0.78f + dy, h * 0.84f - dx * 0.4f),
                 radius = w * 0.50f
             ),
@@ -2836,9 +2966,9 @@ private fun ExpressiveTidalBackdrop(
             drawRoundRect(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        primaryGlow.copy(alpha = 0.88f),
-                        goldenSand.copy(alpha = 0.86f),
-                        tertiaryGlow.copy(alpha = 0.88f)
+                        primaryGlow.copy(alpha = 0.88f * glowScale),
+                        goldenSand.copy(alpha = 0.86f * glowScale),
+                        tertiaryGlow.copy(alpha = 0.88f * glowScale)
                     )
                 ),
                 topLeft = Offset(-w * 0.25f + dx * 0.35f, h * 0.15f),
@@ -2851,9 +2981,9 @@ private fun ExpressiveTidalBackdrop(
             drawRoundRect(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        tertiaryGlow.copy(alpha = 0.86f),
-                        sunlitPeach.copy(alpha = 0.84f),
-                        secondaryGlow.copy(alpha = 0.88f)
+                        tertiaryGlow.copy(alpha = 0.86f * glowScale),
+                        sunlitPeach.copy(alpha = 0.84f * glowScale),
+                        secondaryGlow.copy(alpha = 0.88f * glowScale)
                     )
                 ),
                 topLeft = Offset(-w * 0.25f - dx * 0.30f, h * 0.42f),
@@ -2866,9 +2996,9 @@ private fun ExpressiveTidalBackdrop(
             drawRoundRect(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        sunlitPeach.copy(alpha = 0.82f),
-                        primaryGlow.copy(alpha = 0.88f),
-                        aquaCaustic.copy(alpha = 0.84f)
+                        sunlitPeach.copy(alpha = 0.82f * glowScale),
+                        primaryGlow.copy(alpha = 0.88f * glowScale),
+                        aquaCaustic.copy(alpha = 0.84f * glowScale)
                     )
                 ),
                 topLeft = Offset(-w * 0.25f + dx * 0.25f, h * 0.70f),
@@ -2879,31 +3009,31 @@ private fun ExpressiveTidalBackdrop(
 
         // Luminous Pebbles & Rings for Refraction & Frost Calibration
         drawCircle(
-            color = goldenSand.copy(alpha = 0.88f),
+            color = goldenSand.copy(alpha = 0.88f * glowScale),
             radius = 44.dp.toPx(),
             center = Offset(w * 0.26f - dx * 0.4f, h * 0.29f + dy)
         )
         drawCircle(
-            color = Color.White.copy(alpha = 0.38f),
+            color = Color.White.copy(alpha = 0.38f * glowScale),
             radius = 56.dp.toPx(),
             center = Offset(w * 0.26f - dx * 0.4f, h * 0.29f + dy),
             style = Stroke(width = 2.5.dp.toPx())
         )
 
         drawCircle(
-            color = sunlitPeach.copy(alpha = 0.86f),
+            color = sunlitPeach.copy(alpha = 0.86f * glowScale),
             radius = 48.dp.toPx(),
             center = Offset(w * 0.74f + dx * 0.35f, h * 0.52f - dy)
         )
         drawCircle(
-            color = Color.White.copy(alpha = 0.38f),
+            color = Color.White.copy(alpha = 0.38f * glowScale),
             radius = 62.dp.toPx(),
             center = Offset(w * 0.74f + dx * 0.35f, h * 0.52f - dy),
             style = Stroke(width = 2.5.dp.toPx())
         )
 
         drawCircle(
-            color = aquaCaustic.copy(alpha = 0.84f),
+            color = aquaCaustic.copy(alpha = 0.84f * glowScale),
             radius = 44.dp.toPx(),
             center = Offset(w * 0.30f + dy, h * 0.82f)
         )

@@ -506,6 +506,42 @@ object SeaGlassContourPathBuilder {
         )
     }
 
+    /**
+     * Builds a smooth circular/capsule sea-glass medallion contour with zero edge waviness.
+     */
+    fun buildOrganicPebblePath(
+        widthPx: Float,
+        heightPx: Float,
+        outPath: Path,
+        organicIrregularity: Float = 0.0f,
+        phaseSeedRad: Float = 0.0f
+    ) {
+        outPath.reset()
+        val w = widthPx.coerceAtLeast(2f)
+        val h = heightPx.coerceAtLeast(2f)
+        val r = min(w, h) * 0.5f
+        scratchRect.set(0f, 0f, w, h)
+        outPath.addRoundRect(scratchRect, r, r, Path.Direction.CW)
+    }
+
+    /**
+     * Builds a smooth stadium capsule/pill contour with zero edge waviness.
+     */
+    fun buildTumbledCapsulePath(
+        widthPx: Float,
+        heightPx: Float,
+        outPath: Path,
+        organicWavePx: Float = 0.0f,
+        phaseSeedRad: Float = 0.0f
+    ) {
+        outPath.reset()
+        val w = widthPx.coerceAtLeast(2f)
+        val h = heightPx.coerceAtLeast(2f)
+        val r = min(w, h) * 0.5f
+        scratchRect.set(0f, 0f, w, h)
+        outPath.addRoundRect(scratchRect, r, r, Path.Direction.CW)
+    }
+
     private fun evaluateCombinedDistance(
         px: Float,
         py: Float,

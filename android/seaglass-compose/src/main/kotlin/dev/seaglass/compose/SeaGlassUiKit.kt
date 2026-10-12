@@ -131,7 +131,10 @@ enum class SeaGlassGlyph {
     Fork,
     Export,
     ChevronRight,
-    DotGrid
+    DotGrid,
+    PhotoMountain,
+    Microphone,
+    BrandG
 }
 
 /**
@@ -498,6 +501,95 @@ fun SeaGlassIcon(
                     }
                 }
             }
+
+            SeaGlassGlyph.PhotoMountain -> {
+                // Filled rounded square photo icon with cut-out mountain peaks (matches the "Photos" pill icon)
+                val frame = Path().apply {
+                    addRoundRect(
+                        androidx.compose.ui.geometry.RoundRect(
+                            left = w * 0.10f,
+                            top = h * 0.10f,
+                            right = w * 0.90f,
+                            bottom = h * 0.90f,
+                            cornerRadius = CornerRadius(w * 0.18f, h * 0.18f)
+                        )
+                    )
+                }
+                val mountains = Path().apply {
+                    moveTo(w * 0.18f, h * 0.78f)
+                    lineTo(w * 0.40f, h * 0.48f)
+                    lineTo(w * 0.56f, h * 0.68f)
+                    lineTo(w * 0.68f, h * 0.54f)
+                    lineTo(w * 0.84f, h * 0.78f)
+                    close()
+                }
+                val combined = Path.combine(androidx.compose.ui.graphics.PathOperation.Difference, frame, mountains)
+                drawPath(combined, color = tint)
+            }
+
+            SeaGlassGlyph.Microphone -> {
+                // Capsule microphone head + U-shaped cradle + base stem (matches "Ask Gemini" mic)
+                val micHeadR = w * 0.14f
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(w * 0.50f - micHeadR, h * 0.12f),
+                    size = Size(micHeadR * 2f, h * 0.44f),
+                    cornerRadius = CornerRadius(micHeadR, micHeadR),
+                    style = stroke
+                )
+                drawArc(
+                    color = tint,
+                    startAngle = 0f,
+                    sweepAngle = 180f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.24f, h * 0.26f),
+                    size = Size(w * 0.52f, h * 0.46f),
+                    style = stroke
+                )
+                drawLine(
+                    color = tint,
+                    start = Offset(w * 0.50f, h * 0.72f),
+                    end = Offset(w * 0.50f, h * 0.88f),
+                    strokeWidth = sw,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            SeaGlassGlyph.BrandG -> {
+                // Bold geometric Google-style "G" emblem matching the reference peach sea-glass pebble:
+                // Clipped to the exact outer circular boundary so the horizontal crossbar and right arc
+                // form a single seamless circular contour with zero protruding corner.
+                val gStroke = (min(w, h) * 0.195f).coerceAtLeast(2.8.dp.toPx())
+                val radius = min(w, h) * 0.35f
+                val outerR = radius + gStroke * 0.5f
+                val outerCircle = Path().apply {
+                    addOval(
+                        androidx.compose.ui.geometry.Rect(
+                            left = w * 0.50f - outerR,
+                            top = h * 0.50f - outerR,
+                            right = w * 0.50f + outerR,
+                            bottom = h * 0.50f + outerR
+                        )
+                    )
+                }
+                drawContext.canvas.save()
+                drawContext.canvas.clipPath(outerCircle)
+                drawArc(
+                    color = tint,
+                    startAngle = -10f,
+                    sweepAngle = 322f,
+                    useCenter = false,
+                    topLeft = Offset(w * 0.50f - radius, h * 0.50f - radius),
+                    size = Size(radius * 2f, radius * 2f),
+                    style = Stroke(width = gStroke, cap = StrokeCap.Butt)
+                )
+                drawRect(
+                    color = tint,
+                    topLeft = Offset(w * 0.50f - gStroke * 0.08f, h * 0.50f - gStroke * 0.46f),
+                    size = Size(outerR + gStroke * 0.2f, gStroke * 0.92f)
+                )
+                drawContext.canvas.restore()
+            }
         }
     }
 }
@@ -726,12 +818,19 @@ fun SeaGlassSearchBar(
             }
 
             if (query.isNotEmpty()) {
+                val clearFrostTop = Color(
+                    SeaGlassColorMath.computeFrostedRindColor(activeMaterial.tintColorArgb, activeMaterial.coarseness, 0.68f)
+                ).copy(alpha = 0.78f)
+                val clearFrostBot = Color(
+                    SeaGlassColorMath.computeFrostedRindColor(activeMaterial.tintColorArgb, activeMaterial.coarseness, 0.52f)
+                ).copy(alpha = 0.68f)
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(26.dp)
+                        .size(28.dp)
                         .clip(CircleShape)
-                        .background(contentColor.copy(alpha = 0.14f))
+                        .background(Brush.verticalGradient(listOf(clearFrostTop, clearFrostBot)))
+                        .border(1.1.dp, Color.White.copy(alpha = 0.72f), CircleShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -745,12 +844,19 @@ fun SeaGlassSearchBar(
                     )
                 }
             } else if (trailingGlyph != null && onTrailingClick != null) {
+                val medFrostTop = Color(
+                    SeaGlassColorMath.computeFrostedRindColor(activeMaterial.tintColorArgb, activeMaterial.coarseness, 0.68f)
+                ).copy(alpha = 0.78f)
+                val medFrostBot = Color(
+                    SeaGlassColorMath.computeFrostedRindColor(activeMaterial.tintColorArgb, activeMaterial.coarseness, 0.52f)
+                ).copy(alpha = 0.68f)
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(30.dp)
+                        .size(34.dp)
                         .clip(CircleShape)
-                        .background(contentColor.copy(alpha = 0.12f))
+                        .background(Brush.verticalGradient(listOf(medFrostTop, medFrostBot)))
+                        .border(1.2.dp, Color.White.copy(alpha = 0.76f), CircleShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -759,7 +865,7 @@ fun SeaGlassSearchBar(
                 ) {
                     SeaGlassIcon(
                         glyph = trailingGlyph,
-                        modifier = Modifier.size(15.dp),
+                        modifier = Modifier.size(16.dp),
                         tint = contentColor
                     )
                 }
@@ -1184,16 +1290,37 @@ fun SeaGlassSegmentedButtonRow(
         SeaGlassColorMath.argbToOklab(containerMaterial.tintColorArgb).l < 0.48f
     }
     val pillTopColor = if (isDarkBar) {
-        Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.56f)
+        Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.58f)
     } else {
         Color(
-            SeaGlassColorMath.lerpOklab(indicatorMaterial.tintColorArgb, 0xFFFFFFFF.toInt(), 0.34f)
-        ).copy(alpha = 0.66f)
+            SeaGlassColorMath.computeFrostedRindColor(
+                indicatorMaterial.tintColorArgb,
+                indicatorMaterial.coarseness,
+                0.66f
+            )
+        ).copy(alpha = 0.76f)
     }
     val pillBottomColor = if (isDarkBar) {
-        Color(0xFF0A1E30).copy(alpha = 0.38f)
+        Color(0xFF0A1E30).copy(alpha = 0.42f)
     } else {
-        Color(indicatorMaterial.tintColorArgb).copy(alpha = 0.48f)
+        Color(
+            SeaGlassColorMath.computeFrostedRindColor(
+                indicatorMaterial.tintColorArgb,
+                indicatorMaterial.coarseness,
+                0.50f
+            )
+        ).copy(alpha = 0.68f)
+    }
+    val pillRimColor = if (isDarkBar) {
+        Color.White.copy(alpha = 0.36f)
+    } else {
+        Color(
+            SeaGlassColorMath.computeFrostedRindColor(
+                indicatorMaterial.tintColorArgb,
+                indicatorMaterial.coarseness,
+                0.86f
+            )
+        ).copy(alpha = 0.84f)
     }
 
     val segStretchMalleability = abs(leadSegIndex - trailSegIndex).coerceIn(0f, 1f) * 0.78f
@@ -1232,7 +1359,7 @@ fun SeaGlassSegmentedButtonRow(
                     }
                     .clip(RoundedCornerShape(19.dp))
                     .background(Brush.verticalGradient(listOf(pillTopColor, pillBottomColor)))
-                    .border(1.dp, Color.White.copy(alpha = 0.52f), RoundedCornerShape(19.dp))
+                    .border(1.2.dp, pillRimColor, RoundedCornerShape(19.dp))
             )
 
             Row(

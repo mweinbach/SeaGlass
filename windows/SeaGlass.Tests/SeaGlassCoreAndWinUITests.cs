@@ -782,6 +782,22 @@ public sealed class SeaGlassCoreAndWinUITests
         morph.StepAndEvaluate(1f / 60f);
         Assert.True(morph.SpatialWidthProgress > morph.SpatialHeightProgress,
             "Horizontal width spring (k=420) must lead vertical height spring (k=340) during expansion");
+
+        // 4. Verify reverse-rim frosted rind, volumetric core, tonal ink, and organic pebble/capsule contours
+        int orchidTint = unchecked((int)0xFFEA96FF);
+        int inkArgb = SeaGlassColorMath.OptimalContentColorFor(orchidTint, 0.70f);
+        SeaGlassColorMath.OklabColor inkLab = SeaGlassColorMath.ArgbToOklab(inkArgb);
+        float inkChroma = MathF.Sqrt(inkLab.A * inkLab.A + inkLab.B * inkLab.B);
+        Assert.InRange(inkLab.L, 0.22f, 0.36f);
+        Assert.True(inkChroma >= 0.06f);
+
+        SeaGlassVectorPath2D pebblePath = new();
+        SeaGlassContourPathBuilder.BuildOrganicPebblePath(68f, 68f, pebblePath);
+        Assert.StartsWith("F1 M", pebblePath.ToXamlPathData());
+
+        SeaGlassVectorPath2D capsulePath = new();
+        SeaGlassContourPathBuilder.BuildTumbledCapsulePath(320f, 60f, capsulePath);
+        Assert.StartsWith("F1 M", capsulePath.ToXamlPathData());
     }
 }
 

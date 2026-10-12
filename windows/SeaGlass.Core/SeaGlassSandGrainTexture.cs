@@ -11,13 +11,13 @@ namespace SeaGlass.Core;
 /// </summary>
 public static class SeaGlassSandGrainTexture
 {
-    public const int TileSize = 128;
+    public const int TileSize = 256;
 
     private static byte[]? _cachedBgraPixels;
     private static readonly object SyncRoot = new();
 
     /// <summary>
-    /// Returns the shared 128×128×4 premultiplied BGRA32 pixel array for hardware texture/brush upload.
+    /// Returns the shared 256×256×4 premultiplied BGRA32 pixel array for hardware texture/brush upload.
     /// </summary>
     public static byte[] ObtainBgra32Pixels()
     {
@@ -38,34 +38,34 @@ public static class SeaGlassSandGrainTexture
         {
             for (int x = 0; x < TileSize; x++)
             {
-                // Toroidal multi-octave hash (periodic mod TileSize) for an isotropic velvet finish
+                // Multi-frequency toroidal stipple hash (periodic mod TileSize)
                 float hFineA = Hash2D(x, y, 101);
-                float hFineB = Hash2D((x + 37) & (TileSize - 1), (y + 73) & (TileSize - 1), 179);
-                float hMed = BilinearPeriodicHash(x * 0.5f, y * 0.5f, 64, 211);
+                float hFineB = Hash2D((x + 59) & (TileSize - 1), (y + 113) & (TileSize - 1), 179);
+                float hFineC = Hash2D((x * 3 + 17) & (TileSize - 1), (y * 3 + 43) & (TileSize - 1), 263);
+                float hMed = BilinearPeriodicHash(x * 0.5f, y * 0.5f, 128, 211);
 
-                // High-frequency isotropic velvet micro-facet distribution (82% fine velvet + 18% sub-grain)
-                float combined = hFineA * 0.46f + hFineB * 0.36f + hMed * 0.18f;
+                float combined = hFineA * 0.44f + hFineB * 0.28f + hFineC * 0.14f + hMed * 0.14f;
 
                 byte r, g, b, a;
-                if (combined >= 0.50f)
+                if (combined >= 0.46f)
                 {
-                    // Velvety sand-abraded micro-facet highlight (soft pearlescent sheen 0xF6FAFD)
-                    float intensity = Math.Clamp((combined - 0.50f) * 2.0f, 0f, 1f);
-                    float softVelvet = intensity * (1.15f - 0.15f * intensity);
-                    a = (byte)Math.Clamp((int)(softVelvet * 76f), 0, 82);
-                    r = 0xF6;
-                    g = 0xFA;
-                    b = 0xFD;
+                    // Powdery chalk-white sand-abraded micro-facet stipple (0xFFFFFF)
+                    float norm = Math.Clamp((combined - 0.46f) / 0.54f, 0f, 1f);
+                    float sparkle = norm * (0.80f + 0.55f * norm);
+                    a = (byte)Math.Clamp((int)(sparkle * 168f), 0, 182);
+                    r = 0xFF;
+                    g = 0xFF;
+                    b = 0xFF;
                 }
                 else
                 {
-                    // Subtle micro-facet valley (tactile velvet depth without dark blotches 0x0E2434)
-                    float valley = Math.Clamp((0.50f - combined) * 2.0f, 0f, 1f);
-                    float softValley = valley * valley;
-                    a = (byte)Math.Clamp((int)(softValley * 36f), 0, 42);
-                    r = 0x0E;
-                    g = 0x24;
-                    b = 0x34;
+                    // Subtle micro-facet pore relief (0x142638)
+                    float valley = Math.Clamp((0.46f - combined) / 0.46f, 0f, 1f);
+                    float pore = valley * valley;
+                    a = (byte)Math.Clamp((int)(pore * 36f), 0, 40);
+                    r = 0x14;
+                    g = 0x26;
+                    b = 0x38;
                 }
 
                 // Premultiply for WPF / Direct2D Pbgra32

@@ -305,57 +305,77 @@ public static class SeaGlassXamlRenderer
                 };
                 pastelBodyBrush.Freeze();
                 dc.DrawRectangle(pastelBodyBrush, null, new Rect(0, 0, width, height));
+
+                // Organic Tumbled Volumetric Core Swell (deeper Beer-Lambert chroma in interior, tapering to 0 at rim)
+                float coreDepthAlpha = Math.Clamp(bodyAlpha * (0.26f + 0.22f * mat.TintDensity), 0.0f, 0.42f);
+                if (coreDepthAlpha > 0.01f)
+                {
+                    int deepCoreArgb = SeaGlassColorMath.ComputeDeepVolumetricCoreColor(primaryTintArgb, mat.TintDensity);
+                    double coreRx = Math.Max(12.0, width * 0.46);
+                    double coreRy = Math.Max(12.0, height * 0.52);
+                    Point corePt = new(width * 0.45, height * 0.40);
+                    RadialGradientBrush coreBrush = new(
+                        new GradientStopCollection
+                        {
+                            new GradientStop(ToRgbColor(deepCoreArgb, coreDepthAlpha), 0.0),
+                            new GradientStop(ToRgbColor(primaryTintArgb, coreDepthAlpha * 0.45f), 0.55),
+                            new GradientStop(Color.FromArgb(0, 255, 255, 255), 1.0)
+                        })
+                    {
+                        Center = corePt,
+                        GradientOrigin = corePt,
+                        RadiusX = coreRx,
+                        RadiusY = coreRy,
+                        MappingMode = BrushMappingMode.Absolute
+                    };
+                    coreBrush.Freeze();
+                    dc.DrawRectangle(coreBrush, null, new Rect(0, 0, width, height));
+                }
             }
         }
 
-        // Pass 3: Velvet Sand-Tumbled Surface Texture + Feathered Glass-Authentic Oklab Bevel Slope
-        float velvetProgress = MathF.Pow(Math.Clamp(mat.Coarseness, 0f, 1f), 0.85f);
-        float grainOpacity = Math.Clamp(velvetProgress * (0.38f + 0.62f * sandWear) * 0.61f, 0f, 0.61f);
-        if (grainOpacity > 0.01f)
-        {
-            dc.PushOpacity(grainOpacity);
-            dc.DrawRectangle(ObtainSandGrainBrush(), null, new Rect(0, 0, width, height));
-            dc.Pop();
-        }
-
+        // Pass 3: Multi-Step Feathered Milky-Pastel Frosted Bevel Rind + Powdery Sand-Stipple Texture
         float rimLight = Math.Clamp(
-            (0.28f + mat.RimChalkiness * 0.44f) * (0.55f + 0.45f * sandWear),
-            0.16f,
-            0.78f);
+            (0.44f + mat.RimChalkiness * 0.50f) * (0.55f + 0.45f * sandWear),
+            0.24f,
+            0.92f);
         float effectiveDispersion = Math.Clamp(
             mat.ChromaticDispersion * (1.0f - 0.72f * mat.Coarseness),
             0.0f,
             0.65f);
 
-        // Glass-authentic Oklab bevel colors (harmonized with the glass tint instead of neon cyan/pink)
-        int windwardCrestRgb = SeaGlassColorMath.LerpOklab(
+        int windwardCrestRgb = SeaGlassColorMath.ComputeFrostedRindColor(
             primaryTintArgb,
-            unchecked((int)0xFFFFFFFF),
-            0.72f - 0.16f * mat.Coarseness) & 0x00FFFFFF;
-        int leewardCausticRgb = SeaGlassColorMath.LerpOklab(
+            mat.Coarseness,
+            0.70f) & 0x00FFFFFF;
+        int leewardCausticRgb = SeaGlassColorMath.ComputeFrostedRindColor(
             secondaryTintArgb,
-            unchecked((int)0xFFFFFFFF),
-            0.42f - 0.12f * mat.Coarseness) & 0x00FFFFFF;
+            mat.Coarseness,
+            0.62f) & 0x00FFFFFF;
         int coolDispersionRgb = SeaGlassColorMath.LerpOklab(
             primaryTintArgb,
-            unchecked((int)0xFFB8F2FF),
-            0.35f * effectiveDispersion + 0.20f) & 0x00FFFFFF;
+            unchecked((int)0xFFEAF7FF),
+            0.56f + 0.18f * effectiveDispersion) & 0x00FFFFFF;
         int warmDispersionRgb = SeaGlassColorMath.LerpOklab(
             secondaryTintArgb,
-            unchecked((int)0xFFFFE4C4),
-            0.35f * effectiveDispersion + 0.20f) & 0x00FFFFFF;
+            unchecked((int)0xFFFFF4EC),
+            0.56f + 0.18f * effectiveDispersion) & 0x00FFFFFF;
+        int milkyRindRgb = SeaGlassColorMath.ComputeFrostedRindColor(
+            primaryTintArgb,
+            mat.Coarseness,
+            0.78f) & 0x00FFFFFF;
 
         LinearGradientBrush BuildChromaticSlopeBrush(float passAlpha)
         {
             LinearGradientBrush b = new(
                 new GradientStopCollection
                 {
-                    new GradientStop(ToRgbColor(windwardCrestRgb, rimLight * 0.56f * passAlpha), 0.00),
-                    new GradientStop(ToRgbColor(warmDispersionRgb, rimLight * 0.36f * passAlpha), 0.20),
-                    new GradientStop(ToRgbColor(windwardCrestRgb, 0.04f * passAlpha), 0.45),
-                    new GradientStop(ToRgbColor(coolDispersionRgb, rimLight * 0.38f * passAlpha), 0.68),
-                    new GradientStop(ToRgbColor(warmDispersionRgb, rimLight * 0.32f * passAlpha), 0.85),
-                    new GradientStop(ToRgbColor(leewardCausticRgb, rimLight * 0.48f * passAlpha), 1.00)
+                    new GradientStop(ToRgbColor(windwardCrestRgb, rimLight * 0.62f * passAlpha), 0.00),
+                    new GradientStop(ToRgbColor(warmDispersionRgb, rimLight * 0.68f * passAlpha), 0.22),
+                    new GradientStop(ToRgbColor(windwardCrestRgb, rimLight * 0.48f * passAlpha), 0.48),
+                    new GradientStop(ToRgbColor(coolDispersionRgb, rimLight * 0.72f * passAlpha), 0.72),
+                    new GradientStop(ToRgbColor(warmDispersionRgb, rimLight * 0.76f * passAlpha), 0.88),
+                    new GradientStop(ToRgbColor(leewardCausticRgb, rimLight * 0.82f * passAlpha), 1.00)
                 },
                 new Point(0.0, 0.0),
                 new Point(1.0, 1.0));
@@ -363,34 +383,44 @@ public static class SeaGlassXamlRenderer
             return b;
         }
 
-        // Multi-step feathered inner bevel slope (tapers smoothly into interior with zero step seam)
-        Pen slope10 = new(BuildChromaticSlopeBrush(0.24f), 9.5) { LineJoin = PenLineJoin.Round };
-        slope10.Freeze();
-        dc.DrawGeometry(null, slope10, outerGeometry);
+        // Wide multi-step feathered milky-pastel bevel rind (tapers smoothly into interior)
+        Pen slope14 = new(BuildChromaticSlopeBrush(0.36f), 14.5) { LineJoin = PenLineJoin.Round };
+        slope14.Freeze();
+        dc.DrawGeometry(null, slope14, outerGeometry);
 
-        Pen slope6 = new(BuildChromaticSlopeBrush(0.42f), 5.6) { LineJoin = PenLineJoin.Round };
-        slope6.Freeze();
-        dc.DrawGeometry(null, slope6, outerGeometry);
+        Pen slope9 = new(BuildChromaticSlopeBrush(0.54f), 9.0) { LineJoin = PenLineJoin.Round };
+        slope9.Freeze();
+        dc.DrawGeometry(null, slope9, outerGeometry);
 
-        Pen slope3 = new(BuildChromaticSlopeBrush(0.62f), 2.8) { LineJoin = PenLineJoin.Round };
-        slope3.Freeze();
-        dc.DrawGeometry(null, slope3, outerGeometry);
+        Pen slope5 = new(BuildChromaticSlopeBrush(0.72f), 4.8) { LineJoin = PenLineJoin.Round };
+        slope5.Freeze();
+        dc.DrawGeometry(null, slope5, outerGeometry);
 
-        // Soft Fresnel Edge Contact Lip on outermost 1.2dp (clipped inside outerGeometry)
-        float lipPeakAlpha = Math.Clamp(rimLight * (0.64f - 0.18f * mat.Coarseness), 0.16f, 0.68f);
+        // Powdery Sand-Stipple Texture overlaid across both body and frosted bevel rind
+        float velvetProgress = MathF.Pow(Math.Clamp(mat.Coarseness, 0f, 1f), 0.80f);
+        float grainOpacity = Math.Clamp(velvetProgress * (0.48f + 0.52f * sandWear) * 0.78f, 0f, 0.78f);
+        if (grainOpacity > 0.01f)
+        {
+            dc.PushOpacity(grainOpacity);
+            dc.DrawRectangle(ObtainSandGrainBrush(), null, new Rect(0, 0, width, height));
+            dc.Pop();
+        }
+
+        // Soft Tumbled Edge Lip on outermost 2.0dp (clipped inside outerGeometry)
+        float lipPeakAlpha = Math.Clamp(rimLight * (0.74f - 0.12f * mat.Coarseness), 0.28f, 0.80f);
         LinearGradientBrush contactLipBrush = new(
             new GradientStopCollection
             {
-                new GradientStop(ToRgbColor(0x00FFFFFF, lipPeakAlpha), 0.00),
-                new GradientStop(ToRgbColor(windwardCrestRgb, rimLight * 0.44f), 0.25),
-                new GradientStop(ToRgbColor(windwardCrestRgb, 0.05f), 0.50),
-                new GradientStop(ToRgbColor(leewardCausticRgb, rimLight * 0.32f), 0.75),
-                new GradientStop(ToRgbColor(leewardCausticRgb, rimLight * 0.48f), 1.00)
+                new GradientStop(ToRgbColor(milkyRindRgb, lipPeakAlpha), 0.00),
+                new GradientStop(ToRgbColor(windwardCrestRgb, rimLight * 0.58f), 0.25),
+                new GradientStop(ToRgbColor(milkyRindRgb, rimLight * 0.44f), 0.50),
+                new GradientStop(ToRgbColor(leewardCausticRgb, rimLight * 0.66f), 0.75),
+                new GradientStop(ToRgbColor(leewardCausticRgb, rimLight * 0.76f), 1.00)
             },
             new Point(0.0, 0.0),
             new Point(1.0, 1.0));
         contactLipBrush.Freeze();
-        Pen contactLipPen = new(contactLipBrush, 1.4) { LineJoin = PenLineJoin.Round };
+        Pen contactLipPen = new(contactLipBrush, 2.0) { LineJoin = PenLineJoin.Round };
         contactLipPen.Freeze();
         dc.DrawGeometry(null, contactLipPen, outerGeometry);
 
@@ -655,6 +685,36 @@ public static class SeaGlassXamlRenderer
                 }
                 g.Freeze();
                 dc.DrawGeometry(null, stroke, g);
+                break;
+            }
+            case SeaGlassGlyph.PhotoMountain:
+            {
+                dc.DrawRoundedRectangle(null, stroke, new Rect(ox + w * 0.10, oy + h * 0.10, w * 0.80, h * 0.80), w * 0.18, h * 0.18);
+                StreamGeometry g = new();
+                using (StreamGeometryContext ctx = g.Open())
+                {
+                    ctx.BeginFigure(P(0.18, 0.78), true, true);
+                    ctx.LineTo(P(0.40, 0.48), true, true);
+                    ctx.LineTo(P(0.56, 0.68), true, true);
+                    ctx.LineTo(P(0.68, 0.54), true, true);
+                    ctx.LineTo(P(0.84, 0.78), true, true);
+                }
+                g.Freeze();
+                dc.DrawGeometry(fill, null, g);
+                break;
+            }
+            case SeaGlassGlyph.Microphone:
+            {
+                double micR = w * 0.14;
+                dc.DrawRoundedRectangle(null, stroke, new Rect(ox + w * 0.50 - micR, oy + h * 0.12, micR * 2.0, h * 0.44), micR, micR);
+                dc.DrawEllipse(null, stroke, P(0.50, 0.48), w * 0.26, h * 0.24);
+                dc.DrawLine(stroke, P(0.50, 0.72), P(0.50, 0.88));
+                break;
+            }
+            case SeaGlassGlyph.BrandG:
+            {
+                dc.DrawEllipse(null, stroke, P(0.50, 0.50), w * 0.36, h * 0.36);
+                dc.DrawLine(stroke, P(0.50, 0.50), P(0.86, 0.50));
                 break;
             }
             default:

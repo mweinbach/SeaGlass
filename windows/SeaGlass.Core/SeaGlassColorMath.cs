@@ -189,31 +189,71 @@ public static class SeaGlassColorMath
     }
 
     /// <summary>
-    /// Computes a contrast-safe foreground content color (dark coastal ink vs. chalky alabaster)
-    /// for icons and typography rendered atop a given sea-glass tint (|\Delta L| >= 0.48).
+    /// Computes a contrast-safe, hue-harmonized deep tonal ink color (for light/pastel sea glass)
+    /// or luminous frosted chalk-alabaster color (for dark smoked sea glass) for icons and typography.
     /// </summary>
     public static int OptimalContentColorFor(int tintArgb, float tintDensity = 0.55f)
     {
         OklabColor lab = ArgbToOklab(tintArgb);
+        float chroma = MathF.Sqrt(lab.A * lab.A + lab.B * lab.B);
         float hue = MathF.Atan2(lab.B, lab.A);
-        float subtleChroma = MathF.Min(0.045f, MathF.Sqrt(lab.A * lab.A + lab.B * lab.B) * 0.4f);
 
         if (lab.L >= 0.48f || tintDensity < 0.35f)
         {
+            float tonalChroma = chroma < 0.025f
+                ? 0.038f
+                : Math.Clamp(chroma * 0.96f, 0.072f, 0.132f);
             return OklabToArgb(new OklabColor(
-                L: 0.19f,
-                A: subtleChroma * MathF.Cos(hue),
-                B: subtleChroma * MathF.Sin(hue),
+                L: 0.29f,
+                A: tonalChroma * MathF.Cos(hue),
+                B: tonalChroma * MathF.Sin(hue),
                 Alpha: 1f
             ));
         }
 
+        float subtleChroma = MathF.Min(0.048f, chroma * 0.45f);
         return OklabToArgb(new OklabColor(
             L: 0.96f,
             A: subtleChroma * 0.5f * MathF.Cos(hue),
             B: subtleChroma * MathF.Sin(hue),
             Alpha: 1f
         ));
+    }
+
+    /// <summary>
+    /// Computes the richer, deeper Beer-Lambert volumetric core color for the interior of a tumbled
+    /// sea-glass piece where physical slab thickness is greatest (never bleaching the center to white).
+    /// </summary>
+    public static int ComputeDeepVolumetricCoreColor(int tintArgb, float tintDensity = 0.65f)
+    {
+        OklabColor lab = ArgbToOklab(tintArgb);
+        float chroma = MathF.Sqrt(lab.A * lab.A + lab.B * lab.B);
+        float hue = MathF.Atan2(lab.B, lab.A);
+        float density = Math.Clamp(tintDensity, 0f, 1f);
+        float coreL = lab.L >= 0.48f
+            ? Math.Clamp(lab.L - 0.045f * density, 0.42f, 0.88f)
+            : Math.Clamp(lab.L - 0.035f * density, 0.12f, 0.46f);
+        float coreChroma = Math.Clamp(chroma * (1.08f + 0.18f * density), 0.02f, 0.20f);
+        return OklabToArgb(new OklabColor(
+            L: coreL,
+            A: coreChroma * MathF.Cos(hue),
+            B: coreChroma * MathF.Sin(hue),
+            Alpha: 1f
+        ));
+    }
+
+    /// <summary>
+    /// Computes the milky, chalk-frosted perimeter rind color produced by ocean sand and pebble
+    /// abrasion along the curved edges of tumbled sea glass.
+    /// </summary>
+    public static int ComputeFrostedRindColor(
+        int tintArgb,
+        float coarseness = 0.45f,
+        float rindWhiteness = 0.64f)
+    {
+        float grit = Math.Clamp(coarseness, 0f, 1f);
+        float blend = Math.Clamp(rindWhiteness + 0.16f * grit, 0.25f, 0.90f);
+        return LerpOklab(tintArgb, unchecked((int)0xFFFAFCFF), blend);
     }
 
     /// <summary>

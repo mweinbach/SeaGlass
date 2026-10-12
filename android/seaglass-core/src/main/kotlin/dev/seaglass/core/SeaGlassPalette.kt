@@ -98,8 +98,8 @@ data class SeaGlassPalette(
             transparency = 0.62f
         ),
         accentRimArgb = 0xFFE8FFF9.toInt(),
-        onPrimaryGlassArgb = 0xFF06261E.toInt(),
-        onSurfaceGlassArgb = 0xFF092E25.toInt()
+        onPrimaryGlassArgb = 0xFF0A4236.toInt(),
+        onSurfaceGlassArgb = 0xFF0E4A3D.toInt()
     )
 
     val CobaltTide = SeaGlassPalette(
@@ -109,89 +109,89 @@ data class SeaGlassPalette(
         primaryGlass = SeaGlassMaterial(
             tintColorArgb = 0xFF4A82FF.toInt(),
             tintDensity = 0.70f,
-            coarseness = 0.38f,
+            coarseness = 0.44f,
             frostRadiusDp = 24f,
             ior = 1.56f,
             chromaticDispersion = 0.32f,
-            rimChalkiness = 0.76f,
+            rimChalkiness = 0.82f,
             thicknessDp = 16f,
             cornerRadiusDp = 28f,
             cornerSmoothing = 2.5f,
-            transparency = 0.64f
+            transparency = 0.62f
         ),
         secondaryGlass = SeaGlassMaterial(
             tintColorArgb = 0xFF76A4FF.toInt(),
             tintDensity = 0.58f,
-            coarseness = 0.42f,
+            coarseness = 0.46f,
             frostRadiusDp = 21f,
             ior = 1.51f,
             chromaticDispersion = 0.24f,
-            rimChalkiness = 0.72f,
+            rimChalkiness = 0.78f,
             thicknessDp = 13f,
             cornerRadiusDp = 24f,
             cornerSmoothing = 2.4f,
-            transparency = 0.66f
+            transparency = 0.64f
         ),
         tertiaryGlass = SeaGlassMaterial(
             tintColorArgb = 0xFF9E6BFF.toInt(),
             tintDensity = 0.72f,
-            coarseness = 0.36f,
+            coarseness = 0.42f,
             frostRadiusDp = 24f,
             ior = 1.58f,
             chromaticDispersion = 0.34f,
-            rimChalkiness = 0.80f,
+            rimChalkiness = 0.84f,
             thicknessDp = 16f,
             cornerRadiusDp = 26f,
             cornerSmoothing = 2.5f,
-            transparency = 0.68f
+            transparency = 0.64f
         ),
         surfaceGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFF8AB4FF.toInt(),
-            tintDensity = 0.54f,
-            coarseness = 0.46f,
+            tintColorArgb = 0xFF94B8FF.toInt(),
+            tintDensity = 0.56f,
+            coarseness = 0.48f,
             frostRadiusDp = 28f,
             ior = 1.50f,
             chromaticDispersion = 0.20f,
-            rimChalkiness = 0.78f,
+            rimChalkiness = 0.84f,
             thicknessDp = 14f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.68f
+            transparency = 0.64f
         ),
         elevatedGlass = SeaGlassMaterial(
             tintColorArgb = 0xFF6498FF.toInt(),
             tintDensity = 0.66f,
-            coarseness = 0.40f,
+            coarseness = 0.44f,
             frostRadiusDp = 32f,
             ior = 1.54f,
             chromaticDispersion = 0.26f,
-            rimChalkiness = 0.82f,
+            rimChalkiness = 0.86f,
             thicknessDp = 18f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.62f
+            transparency = 0.60f
         ),
         accentRimArgb = 0xFFEEF5FF.toInt(),
-        onPrimaryGlassArgb = 0xFF07193B.toInt(),
-        onSurfaceGlassArgb = 0xFF0B2046.toInt()
+        onPrimaryGlassArgb = 0xFF1A3876.toInt(),
+        onSurfaceGlassArgb = 0xFF1D3E80.toInt()
     )
 
     val BeachAmber = SeaGlassPalette(
         id = "beach_amber",
         displayName = "Beach Amber",
-        tagline = "Sun-warmed honey and driftwood amber glass with fine sand grit",
+        tagline = "Sun-warmed coral peach and driftwood amber glass with fine sand grit",
         primaryGlass = SeaGlassMaterial(
             tintColorArgb = 0xFFFFA038.toInt(),
             tintDensity = 0.68f,
-            coarseness = 0.44f,
+            coarseness = 0.46f,
             frostRadiusDp = 22f,
             ior = 1.54f,
             chromaticDispersion = 0.26f,
-            rimChalkiness = 0.78f,
+            rimChalkiness = 0.82f,
             thicknessDp = 16f,
             cornerRadiusDp = 28f,
             cornerSmoothing = 2.5f,
-            transparency = 0.64f
+            transparency = 0.62f
         ),
         secondaryGlass = SeaGlassMaterial(
             tintColorArgb = 0xFFFFBC68.toInt(),
@@ -200,128 +200,128 @@ data class SeaGlassPalette(
             frostRadiusDp = 20f,
             ior = 1.50f,
             chromaticDispersion = 0.20f,
-            rimChalkiness = 0.74f,
+            rimChalkiness = 0.78f,
             thicknessDp = 13f,
             cornerRadiusDp = 24f,
             cornerSmoothing = 2.4f,
-            transparency = 0.66f
+            transparency = 0.64f
         ),
         tertiaryGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFFF6E58.toInt(),
+            tintColorArgb = 0xFFF79C8E.toInt(),
             tintDensity = 0.66f,
-            coarseness = 0.40f,
+            coarseness = 0.46f,
             frostRadiusDp = 22f,
             ior = 1.54f,
             chromaticDispersion = 0.28f,
-            rimChalkiness = 0.76f,
+            rimChalkiness = 0.82f,
             thicknessDp = 16f,
             cornerRadiusDp = 26f,
             cornerSmoothing = 2.5f,
-            transparency = 0.64f
+            transparency = 0.62f
         ),
         surfaceGlass = SeaGlassMaterial(
             tintColorArgb = 0xFFFFC982.toInt(),
-            tintDensity = 0.52f,
+            tintDensity = 0.54f,
             coarseness = 0.50f,
             frostRadiusDp = 26f,
             ior = 1.49f,
             chromaticDispersion = 0.18f,
-            rimChalkiness = 0.80f,
+            rimChalkiness = 0.84f,
             thicknessDp = 14f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.68f
+            transparency = 0.64f
         ),
         elevatedGlass = SeaGlassMaterial(
             tintColorArgb = 0xFFFFB254.toInt(),
             tintDensity = 0.64f,
-            coarseness = 0.44f,
+            coarseness = 0.46f,
             frostRadiusDp = 30f,
             ior = 1.52f,
             chromaticDispersion = 0.22f,
-            rimChalkiness = 0.82f,
+            rimChalkiness = 0.86f,
             thicknessDp = 18f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.62f
+            transparency = 0.60f
         ),
         accentRimArgb = 0xFFFFF8F0.toInt(),
-        onPrimaryGlassArgb = 0xFF331A02.toInt(),
-        onSurfaceGlassArgb = 0xFF381E04.toInt()
+        onPrimaryGlassArgb = 0xFF6C2418.toInt(),
+        onSurfaceGlassArgb = 0xFF722A1C.toInt()
     )
 
     val SeaLavender = SeaGlassPalette(
         id = "sea_lavender",
         displayName = "Sea Lavender",
-        tagline = "Sun-purpled manganese amethyst glass with velvety matte diffusion",
+        tagline = "Sun-purpled manganese orchid-amethyst glass with powdery matte frost",
         primaryGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFB072FF.toInt(),
+            tintColorArgb = 0xFFD98EFF.toInt(),
             tintDensity = 0.68f,
-            coarseness = 0.42f,
+            coarseness = 0.46f,
             frostRadiusDp = 23f,
             ior = 1.54f,
             chromaticDispersion = 0.28f,
-            rimChalkiness = 0.78f,
+            rimChalkiness = 0.84f,
             thicknessDp = 16f,
             cornerRadiusDp = 28f,
             cornerSmoothing = 2.5f,
-            transparency = 0.64f
+            transparency = 0.62f
         ),
         secondaryGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFC898FF.toInt(),
+            tintColorArgb = 0xFFE6ADFF.toInt(),
             tintDensity = 0.58f,
-            coarseness = 0.46f,
+            coarseness = 0.48f,
             frostRadiusDp = 20f,
             ior = 1.50f,
             chromaticDispersion = 0.22f,
-            rimChalkiness = 0.74f,
+            rimChalkiness = 0.80f,
             thicknessDp = 13f,
             cornerRadiusDp = 24f,
             cornerSmoothing = 2.4f,
-            transparency = 0.66f
+            transparency = 0.64f
         ),
         tertiaryGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFFF72C4.toInt(),
+            tintColorArgb = 0xFF9EB8FF.toInt(),
             tintDensity = 0.66f,
-            coarseness = 0.38f,
+            coarseness = 0.44f,
             frostRadiusDp = 23f,
             ior = 1.54f,
             chromaticDispersion = 0.28f,
-            rimChalkiness = 0.76f,
+            rimChalkiness = 0.82f,
             thicknessDp = 16f,
             cornerRadiusDp = 26f,
             cornerSmoothing = 2.5f,
-            transparency = 0.64f
+            transparency = 0.62f
         ),
         surfaceGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFD2ACFF.toInt(),
-            tintDensity = 0.52f,
-            coarseness = 0.48f,
+            tintColorArgb = 0xFFECB8FF.toInt(),
+            tintDensity = 0.56f,
+            coarseness = 0.50f,
             frostRadiusDp = 27f,
             ior = 1.49f,
             chromaticDispersion = 0.18f,
-            rimChalkiness = 0.80f,
+            rimChalkiness = 0.86f,
             thicknessDp = 14f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.68f
+            transparency = 0.64f
         ),
         elevatedGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFBE8AFF.toInt(),
+            tintColorArgb = 0xFFE29EFF.toInt(),
             tintDensity = 0.64f,
-            coarseness = 0.42f,
+            coarseness = 0.46f,
             frostRadiusDp = 31f,
             ior = 1.52f,
             chromaticDispersion = 0.24f,
-            rimChalkiness = 0.82f,
+            rimChalkiness = 0.88f,
             thicknessDp = 18f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.62f
+            transparency = 0.60f
         ),
-        accentRimArgb = 0xFFFBF6FF.toInt(),
-        onPrimaryGlassArgb = 0xFF230B42.toInt(),
-        onSurfaceGlassArgb = 0xFF2A114B.toInt()
+        accentRimArgb = 0xFFFDF8FF.toInt(),
+        onPrimaryGlassArgb = 0xFF561A74.toInt(),
+        onSurfaceGlassArgb = 0xFF5C1E7A.toInt()
     )
 
     val RoseQuartzShell = SeaGlassPalette(
@@ -329,73 +329,73 @@ data class SeaGlassPalette(
         displayName = "Rose Quartz Shell",
         tagline = "Rare coral-pink and cranberry tumbled glass with pearlescent bevel",
         primaryGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFFF6EA0.toInt(),
+            tintColorArgb = 0xFFFF82AA.toInt(),
             tintDensity = 0.68f,
-            coarseness = 0.40f,
+            coarseness = 0.44f,
             frostRadiusDp = 22f,
             ior = 1.54f,
             chromaticDispersion = 0.28f,
-            rimChalkiness = 0.78f,
+            rimChalkiness = 0.82f,
             thicknessDp = 16f,
             cornerRadiusDp = 28f,
             cornerSmoothing = 2.5f,
-            transparency = 0.64f
+            transparency = 0.62f
         ),
         secondaryGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFFF96BA.toInt(),
+            tintColorArgb = 0xFFFFA2C0.toInt(),
             tintDensity = 0.58f,
-            coarseness = 0.44f,
+            coarseness = 0.46f,
             frostRadiusDp = 20f,
             ior = 1.50f,
             chromaticDispersion = 0.22f,
-            rimChalkiness = 0.74f,
+            rimChalkiness = 0.78f,
             thicknessDp = 13f,
             cornerRadiusDp = 24f,
             cornerSmoothing = 2.4f,
-            transparency = 0.66f
+            transparency = 0.64f
         ),
         tertiaryGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFFF9668.toInt(),
+            tintColorArgb = 0xFFF8A698.toInt(),
             tintDensity = 0.64f,
-            coarseness = 0.38f,
+            coarseness = 0.44f,
             frostRadiusDp = 22f,
             ior = 1.52f,
             chromaticDispersion = 0.24f,
-            rimChalkiness = 0.76f,
+            rimChalkiness = 0.82f,
             thicknessDp = 16f,
             cornerRadiusDp = 26f,
             cornerSmoothing = 2.5f,
-            transparency = 0.64f
+            transparency = 0.62f
         ),
         surfaceGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFFFADC9.toInt(),
-            tintDensity = 0.52f,
+            tintColorArgb = 0xFFFFB4CE.toInt(),
+            tintDensity = 0.54f,
             coarseness = 0.48f,
             frostRadiusDp = 26f,
             ior = 1.49f,
             chromaticDispersion = 0.18f,
-            rimChalkiness = 0.78f,
+            rimChalkiness = 0.84f,
             thicknessDp = 14f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.68f
+            transparency = 0.64f
         ),
         elevatedGlass = SeaGlassMaterial(
-            tintColorArgb = 0xFFFF85B0.toInt(),
+            tintColorArgb = 0xFFFF92B6.toInt(),
             tintDensity = 0.64f,
-            coarseness = 0.42f,
+            coarseness = 0.44f,
             frostRadiusDp = 30f,
             ior = 1.52f,
             chromaticDispersion = 0.24f,
-            rimChalkiness = 0.82f,
+            rimChalkiness = 0.86f,
             thicknessDp = 18f,
             cornerRadiusDp = 32f,
             cornerSmoothing = 2.6f,
-            transparency = 0.62f
+            transparency = 0.60f
         ),
         accentRimArgb = 0xFFFFF5F8.toInt(),
-        onPrimaryGlassArgb = 0xFF3B091D.toInt(),
-        onSurfaceGlassArgb = 0xFF420E23.toInt()
+        onPrimaryGlassArgb = 0xFF72162E.toInt(),
+        onSurfaceGlassArgb = 0xFF781B34.toInt()
     )
 
     val KelpForest = SeaGlassPalette(
@@ -468,8 +468,8 @@ data class SeaGlassPalette(
             transparency = 0.62f
         ),
         accentRimArgb = 0xFFF0FFF6.toInt(),
-        onPrimaryGlassArgb = 0xFF062615.toInt(),
-        onSurfaceGlassArgb = 0xFF0A2E1B.toInt()
+        onPrimaryGlassArgb = 0xFF104426.toInt(),
+        onSurfaceGlassArgb = 0xFF144B2B.toInt()
     )
 
     val MilkGlassFrost = SeaGlassPalette(
@@ -542,8 +542,8 @@ data class SeaGlassPalette(
             transparency = 0.58f
         ),
         accentRimArgb = 0xFFFFFFFF.toInt(),
-        onPrimaryGlassArgb = 0xFF0E2030.toInt(),
-        onSurfaceGlassArgb = 0xFF122638.toInt()
+        onPrimaryGlassArgb = 0xFF183652.toInt(),
+        onSurfaceGlassArgb = 0xFF1C3E5C.toInt()
     )
 
     val ObsidianTide = SeaGlassPalette(

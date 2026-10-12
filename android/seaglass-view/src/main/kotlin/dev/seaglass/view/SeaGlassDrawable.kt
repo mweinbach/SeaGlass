@@ -185,38 +185,43 @@ class SeaGlassDrawable(
             Shader.TileMode.CLAMP
         )
 
-        val grainScale = (density * 0.42f).coerceIn(0.65f, 1.65f)
+        val grainScale = (density * 0.29f).coerceIn(0.58f, 0.98f)
         grainMatrix.reset()
         grainMatrix.setScale(grainScale, grainScale)
         sandGrainPaint.shader?.setLocalMatrix(grainMatrix)
-        sandGrainPaint.alpha = (material.coarseness * (0.38f + 0.62f * sandWear) * 155f)
+        sandGrainPaint.alpha = (material.coarseness * (0.48f + 0.52f * sandWear) * 200f)
             .toInt()
-            .coerceIn(0, 155)
+            .coerceIn(0, 200)
 
         val cx = bounds.exactCenterX()
         val cy = bounds.exactCenterY()
-        val rimLight = (0.36f + material.rimChalkiness * 0.52f).coerceIn(0.20f, 0.92f)
+        val rimLight = (0.44f + material.rimChalkiness * 0.50f).coerceIn(0.28f, 0.96f)
         val effectiveDispersion = (material.chromaticDispersion * (1f - 0.72f * material.coarseness))
             .coerceIn(0f, 0.85f)
-        val windwardRim = SeaGlassColorMath.lerpOklab(
+        val windwardRim = SeaGlassColorMath.computeFrostedRindColor(
             primaryTint,
-            0xFFFFFFFF.toInt(),
-            0.72f - 0.16f * material.coarseness
+            material.coarseness,
+            0.70f
         ) and 0x00FFFFFF
-        val leewardRim = SeaGlassColorMath.lerpOklab(
+        val leewardRim = SeaGlassColorMath.computeFrostedRindColor(
             secondaryTint,
-            0xFFFFFFFF.toInt(),
-            0.42f - 0.12f * material.coarseness
+            material.coarseness,
+            0.62f
         ) and 0x00FFFFFF
         val coolDispersion = SeaGlassColorMath.lerpOklab(
             primaryTint,
-            0xFFB8F2FF.toInt(),
-            0.35f * effectiveDispersion + 0.20f
+            0xFFEAF7FF.toInt(),
+            0.56f + 0.18f * effectiveDispersion
         ) and 0x00FFFFFF
         val warmDispersion = SeaGlassColorMath.lerpOklab(
             secondaryTint,
-            0xFFFFE4C4.toInt(),
-            0.35f * effectiveDispersion + 0.20f
+            0xFFFFF4EC.toInt(),
+            0.56f + 0.18f * effectiveDispersion
+        ) and 0x00FFFFFF
+        val milkyRind = SeaGlassColorMath.computeFrostedRindColor(
+            primaryTint,
+            material.coarseness,
+            0.78f
         ) and 0x00FFFFFF
 
         fun argb(rgb: Int, aFloat: Float): Int {
@@ -224,35 +229,35 @@ class SeaGlassDrawable(
             return (a shl 24) or rgb
         }
 
-        innerSlopePaint.strokeWidth = 6.2f * density
+        innerSlopePaint.strokeWidth = 11.5f * density
         innerSlopePaint.shader = SweepGradient(
             cx,
             cy,
             intArrayOf(
-                argb(coolDispersion, rimLight * 0.28f),
-                argb(warmDispersion, rimLight * 0.36f),
-                argb(leewardRim, rimLight * 0.48f),
-                argb(windwardRim, 0.04f),
-                argb(coolDispersion, rimLight * 0.38f),
-                argb(windwardRim, rimLight * 0.56f),
-                argb(windwardRim, 0.04f),
-                argb(coolDispersion, rimLight * 0.28f)
+                argb(coolDispersion, rimLight * 0.62f),
+                argb(warmDispersion, rimLight * 0.72f),
+                argb(leewardRim, rimLight * 0.82f),
+                argb(windwardRim, rimLight * 0.48f),
+                argb(coolDispersion, rimLight * 0.66f),
+                argb(windwardRim, rimLight * 0.78f),
+                argb(windwardRim, rimLight * 0.46f),
+                argb(coolDispersion, rimLight * 0.62f)
             ),
             floatArrayOf(0.0f, 0.10f, 0.20f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
         )
 
-        rimPaint.strokeWidth = 1.3f * density
+        rimPaint.strokeWidth = 2.2f * density
         rimPaint.shader = SweepGradient(
             cx,
             cy,
             intArrayOf(
-                argb(windwardRim, rimLight * 0.52f),
-                argb(leewardRim, rimLight * 0.56f),
-                argb(windwardRim, 0.05f),
-                argb(windwardRim, rimLight * 0.58f),
-                argb(0x00FFFFFF, (rimLight * (0.72f - 0.18f * material.coarseness)).coerceIn(0.18f, 0.78f)),
-                argb(windwardRim, 0.05f),
-                argb(windwardRim, rimLight * 0.52f)
+                argb(milkyRind, rimLight * 0.62f),
+                argb(leewardRim, rimLight * 0.72f),
+                argb(windwardRim, rimLight * 0.42f),
+                argb(windwardRim, rimLight * 0.68f),
+                argb(milkyRind, (rimLight * (0.76f - 0.12f * material.coarseness)).coerceIn(0.32f, 0.82f)),
+                argb(milkyRind, rimLight * 0.44f),
+                argb(milkyRind, rimLight * 0.62f)
             ),
             floatArrayOf(0.0f, 0.15f, 0.375f, 0.50f, 0.625f, 0.875f, 1.0f)
         )
@@ -262,11 +267,11 @@ class SeaGlassDrawable(
         canvas.drawPath(contourPath, bodyPaint)
         canvas.save()
         canvas.clipPath(contourPath)
+        innerSlopePaint.alpha = 148
+        canvas.drawPath(contourPath, innerSlopePaint)
         if (sandGrainPaint.alpha > 4) {
             canvas.drawRect(bounds, sandGrainPaint)
         }
-        innerSlopePaint.alpha = 48
-        canvas.drawPath(contourPath, innerSlopePaint)
         canvas.drawPath(contourPath, rimPaint)
         canvas.restore()
     }

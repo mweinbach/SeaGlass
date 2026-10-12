@@ -30,7 +30,10 @@ public enum SeaGlassGlyph
     Menu,
     Info,
     Layers,
-    AudioWave
+    AudioWave,
+    PhotoMountain,
+    Microphone,
+    BrandG
 }
 
 /// <summary>
@@ -60,6 +63,9 @@ public static class SeaGlassIcon
         SeaGlassGlyph.Info => "ⓘ",
         SeaGlassGlyph.Layers => "❖",
         SeaGlassGlyph.AudioWave => "ılı",
+        SeaGlassGlyph.PhotoMountain => "⛰",
+        SeaGlassGlyph.Microphone => "🎤",
+        SeaGlassGlyph.BrandG => "G",
         _ => "✦"
     };
 
