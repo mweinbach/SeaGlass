@@ -423,10 +423,14 @@ public static class SeaGlassShapeMorph
         float velocityEnergy = Math.Clamp(MathF.Abs(velocityPxPerSec) / 1800f, 0f, 1f);
         float totalEnergy = Math.Clamp(MathF.Max(morphEnergy, velocityEnergy * 0.75f), 0f, 1f);
         float scaleFactor = MathF.Sqrt(Math.Clamp(areaExpansionRatio, 0.5f, 4.0f));
-        SeaGlassMaterial deagedBase = baseMat.Deaged(totalEnergy);
+        float melt = Math.Clamp(totalEnergy * (1.35f - 0.35f * totalEnergy), 0f, 1f);
+        float targetClearTransparency = MathF.Max(baseMat.Transparency, 0.92f);
 
-        return deagedBase with
+        return baseMat with
         {
+            Coarseness = Math.Clamp(baseMat.Coarseness * (1f - 0.88f * melt), 0f, 1f),
+            Transparency = Math.Clamp(baseMat.Transparency + (targetClearTransparency - baseMat.Transparency) * 0.80f * melt, 0f, 1f),
+            FrostRadiusDp = MathF.Max(0f, baseMat.FrostRadiusDp * (1f - 0.82f * melt) + 2.0f * melt),
             Ior = Math.Clamp(baseMat.Ior + 0.10f * totalEnergy + 0.04f * (scaleFactor - 1f), 1.0f, 1.95f),
             ChromaticDispersion = Math.Clamp(baseMat.ChromaticDispersion + 0.22f * totalEnergy, 0f, 1f),
             RimChalkiness = Math.Clamp(baseMat.RimChalkiness + 0.16f * totalEnergy, 0f, 1f),

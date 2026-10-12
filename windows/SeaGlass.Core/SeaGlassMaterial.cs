@@ -114,44 +114,16 @@ public sealed record SeaGlassMaterial
 
     /// <summary>
     /// Evaluates Temporal De-Aging &amp; Solidification on this material during motion or morphing:
-    /// while the glass is malleable and moving (<paramref name="malleability"/> -&gt; 1.0), it reverses
-    /// its sand-tumbled state in time—shedding its coarse sand texture (<c>Coarseness -&gt; 0</c>),
-    /// clarifying its body (<c>Transparency -&gt; 0.92</c>, <c>FrostRadiusDp -&gt; 2.0dp</c>), and boosting
-    /// refractive lensing. As the animation settles (<paramref name="malleability"/> -&gt; 0.0), the glass
-    /// solidifies and re-crystallizes its full sand-frosted surface treatment.
+    /// preserves the glass's exact tint, transparency, and coarseness so dragging or morphing
+    /// a control, slider, or sheet never shifts its tint or opacity.
     /// </summary>
-    public SeaGlassMaterial Deaged(float malleability)
-    {
-        float m = Math.Clamp(malleability, 0f, 1f);
-        if (m <= 0.005f) return this;
-        float melt = Math.Clamp(m * (1.35f - 0.35f * m), 0f, 1f);
-        float targetClearTransparency = MathF.Max(Transparency, 0.92f);
-        return this with
-        {
-            Coarseness = Math.Clamp(Coarseness * (1f - 0.88f * melt), 0f, 1f),
-            Transparency = Math.Clamp(Transparency + (targetClearTransparency - Transparency) * 0.80f * melt, 0f, 1f),
-            FrostRadiusDp = MathF.Max(0f, FrostRadiusDp * (1f - 0.82f * melt) + 2.0f * melt),
-            Ior = Math.Clamp(Ior + 0.08f * melt, 1.0f, 2.0f),
-            ChromaticDispersion = Math.Clamp(ChromaticDispersion + 0.16f * melt, 0f, 1f)
-        };
-    }
+    public SeaGlassMaterial Deaged(float malleability) => this;
 
     /// <summary>
-    /// Returns a physically compressed state of this material for touch/pointer press interactions:
-    /// pressing the glass increases refractive rim light and volumetric tint saturation.
+    /// Returns the pressed state of this material for touch/pointer press interactions without altering
+    /// its tint density or optical opacity.
     /// </summary>
-    public SeaGlassMaterial Pressed(float pressProgress = 1f)
-    {
-        float p = Math.Clamp(pressProgress, 0f, 1f);
-        if (p == 0f) return this;
-        return this with
-        {
-            TintDensity = Math.Clamp(TintDensity + 0.08f * p, 0f, 1f),
-            RimChalkiness = Math.Clamp(RimChalkiness + 0.16f * p, 0f, 1f),
-            ThicknessDp = MathF.Min(ThicknessDp * (1f + 0.18f * p), 36f),
-            CornerRadiusDp = MathF.Max(CornerRadiusDp * (1f - 0.10f * p), 8f)
-        };
-    }
+    public SeaGlassMaterial Pressed(float pressProgress = 1f) => this;
 
     /// <summary>
     /// Returns an elevated/expanded state of this material with deeper subsurface frost

@@ -34,14 +34,15 @@ internal static class StudioLayout
 public enum StudioCanvasMode
 {
     Artwork,
+    PorcelainStudio,
     CodeEditor
 }
 
 /// <summary>
 /// Desktop window backdrop for the SeaGlass Studio stage. Renders the real window layer stack —
 /// a Mica-style tinted window material, the edge-to-edge content layer (top-left 8px corner), and
-/// the document canvas (a sea-glass beach artwork or a code editor surface) — so every SeaGlass
-/// surface refracts the exact pixels that sit under it. Static layers are cached into a
+/// the document canvas (a sea-glass beach artwork, porcelain studio daylight stage, or code editor surface) —
+/// so every SeaGlass surface refracts the exact pixels that sit under it. Static layers are cached into a
 /// <see cref="DrawingGroup"/> and only the shoreline wave layer animates via a reused transform.
 /// </summary>
 public sealed class StudioWindowBackdrop : FrameworkElement
@@ -140,6 +141,10 @@ public sealed class StudioWindowBackdrop : FrameworkElement
             {
                 DrawBeachArtwork(dc, canvas, isDark, primary, secondary, tertiary);
             }
+            else if (CanvasMode == StudioCanvasMode.PorcelainStudio)
+            {
+                DrawPorcelainStudio(dc, canvas, primary, secondary, tertiary);
+            }
             else
             {
                 Color editorBg = isDark ? Color.FromRgb(0x1A, 0x1C, 0x21) : Color.FromRgb(0x1E, 0x22, 0x2A);
@@ -160,6 +165,26 @@ public sealed class StudioWindowBackdrop : FrameworkElement
         Rect c = CanvasRectFor(w, h);
         _waveLayer = BuildWaveLayer(c, isDark);
         _foamLayer = BuildFoamLayer(c, isDark);
+    }
+
+    private static void DrawPorcelainStudio(DrawingContext dc, Rect c, int primary, int secondary, int tertiary)
+    {
+        LinearGradientBrush studioBg = new()
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(0, 1)
+        };
+        studioBg.GradientStops.Add(new GradientStop(Color.FromRgb(0xFB, 0xFD, 0xFF), 0.0));
+        studioBg.GradientStops.Add(new GradientStop(Color.FromRgb(0xF6, 0xF9, 0xFD), 0.52));
+        studioBg.GradientStops.Add(new GradientStop(Color.FromRgb(0xF1, 0xF5, 0xFB), 1.0));
+        studioBg.Freeze();
+        dc.DrawRectangle(studioBg, null, c);
+
+        // Soft diffused daylight pastel pools so refraction and frosted bevel rinds pop cleanly
+        DrawSoftPool(dc, new Point(c.X + c.Width * 0.24, c.Y + c.Height * 0.22), c.Width * 0.48, primary, 0.18);
+        DrawSoftPool(dc, new Point(c.X + c.Width * 0.78, c.Y + c.Height * 0.34), c.Width * 0.44, unchecked((int)0xFFFF8E6E), 0.16);
+        DrawSoftPool(dc, new Point(c.X + c.Width * 0.28, c.Y + c.Height * 0.64), c.Width * 0.48, tertiary, 0.17);
+        DrawSoftPool(dc, new Point(c.X + c.Width * 0.74, c.Y + c.Height * 0.80), c.Width * 0.42, secondary, 0.15);
     }
 
     private static void DrawBeachArtwork(DrawingContext dc, Rect c, bool isDark, int primary, int secondary, int tertiary)
@@ -755,9 +780,15 @@ public sealed class MainWindow : Window
         ("Oceanic Bloom", "Bonobo")
     ];
     private int _miniTrackIndex;
+    private int _conceptPromptIndex;
+    private bool _porcelainDaylight;
+    private static readonly string[] ConceptPrompts = ["Ask Gemini", "Tumbled Sea Glass Optics", "Sand-Frosted Oklab Rind"];
     private ShaderDialect _selectedDialect = ShaderDialect.HlslSm50;
 
     // Persistent component instances
+    private readonly SeaGlassPebbleOrb _pebbleOrb;
+    private readonly SeaGlassPillNavBar _pillNavBar;
+    private readonly SeaGlassPromptBar _promptBar;
     private readonly SeaGlassChoreographedShapeOrb _shapeOrb;
     private readonly SeaGlassBuddingCluster _buddingCluster;
     private readonly SeaGlassMorphingButton _morphBtn0;
@@ -832,6 +863,45 @@ public sealed class MainWindow : Window
         _stageState.BindBackdropTarget("StudioWindowBackdrop", Vector2.Zero, new Vector2(1440f, 920f));
 
         SizeChanged += (_, _) => MarkAllControlsOriginDirty();
+
+        // Initialize Concept Reference Triad (Coral-Peach "G" Pebble + Orchid Pill Nav Bar + Periwinkle Prompt Bar)
+        _pebbleOrb = new SeaGlassPebbleOrb(
+            onClick: () =>
+            {
+                _porcelainDaylight = !_porcelainDaylight;
+                RebuildUI();
+            },
+            stageState: _stageState,
+            sizeDp: 68f,
+            glyph: SeaGlassGlyph.BrandG);
+
+        _pillNavBar = new SeaGlassPillNavBar(
+            items:
+            [
+                (SeaGlassGlyph.PhotoMountain, "Photos"),
+                (null, "Collections"),
+                (null, "Create")
+            ],
+            selectedIndex: 0,
+            onSelect: _ => { },
+            stageState: _stageState);
+
+        _promptBar = new SeaGlassPromptBar(
+            promptText: ConceptPrompts[0],
+            onPromptClick: () =>
+            {
+                _conceptPromptIndex = (_conceptPromptIndex + 1) % ConceptPrompts.Length;
+                _promptBar!.PromptText = ConceptPrompts[_conceptPromptIndex];
+            },
+            onPlusClick: () =>
+            {
+                _conceptPromptIndex = (_conceptPromptIndex + 1) % ConceptPrompts.Length;
+                _promptBar!.PromptText = ConceptPrompts[_conceptPromptIndex];
+            },
+            onMicClick: () => _promptBar!.ToggleVoiceActive(),
+            onVoiceWaveClick: () => _promptBar!.ToggleVoiceActive(),
+            isVoiceActive: false,
+            stageState: _stageState);
 
         // Initialize stateful components
         _shapeOrb = new SeaGlassChoreographedShapeOrb(_stageState);
@@ -1020,6 +1090,8 @@ public sealed class MainWindow : Window
                 _autoCycleTimer = 0;
                 _heroFlowState = (_heroFlowState + 1) % 3;
                 _coalescedPreset = !_coalescedPreset;
+                _pillNavBar.SelectTab((_pillNavBar.SelectedIndex + 1) % _pillNavBar.Items.Count);
+                _promptBar.ToggleVoiceActive();
                 _shapeOrb.AdvanceTo(_shapeOrb.TargetStageIndex + 1);
                 _morphBtn0.ToggleActive();
                 _morphBtn1.ToggleActive();
@@ -1067,21 +1139,21 @@ public sealed class MainWindow : Window
         };
 
     /// <summary>
-    /// Architectural Desktop Card Material: uses a clean 12px desktop corner radius
-    /// and neutral-weighted frosted acrylic/glass so interactive controls pop against the card.
+    /// Tumbled SeaGlass Surface Material: preserves full reverse-rim frosted rind,
+    /// volumetric Beer-Lambert core tint, and powdery sand-stipple coarseness.
     /// </summary>
     private SeaGlassMaterial DesktopCardMaterial =>
         SeaGlassTheme.Current.Palette.SurfaceGlass with
         {
-            CornerRadiusDp = 12f,
-            Transparency = Math.Clamp(_transparency + 0.04f, 0f, 0.95f),
-            Coarseness = Math.Clamp(_coarseness * 0.65f, 0f, 1f),
+            CornerRadiusDp = 24f,
+            Transparency = _transparency,
+            Coarseness = _coarseness,
             FrostRadiusDp = MathF.Min(56f, _frostRadiusDp + 4f),
-            TintDensity = Math.Clamp(_tintDensity * 0.72f, 0.20f, 0.85f),
-            ThicknessDp = 12f,
+            TintDensity = _tintDensity,
+            ThicknessDp = _thicknessDp,
             Ior = _ior,
-            ChromaticDispersion = _chromaticDispersion * 0.5f,
-            RimChalkiness = 0.72f
+            ChromaticDispersion = _chromaticDispersion,
+            RimChalkiness = _rimChalkiness
         };
 
     private SeaGlassMaterial CustomTertiaryMaterial =>
@@ -1092,8 +1164,48 @@ public sealed class MainWindow : Window
             FrostRadiusDp = _frostRadiusDp,
             Ior = _ior,
             ChromaticDispersion = _chromaticDispersion,
-            ThicknessDp = _thicknessDp
+            ThicknessDp = _thicknessDp,
+            RimChalkiness = _rimChalkiness
         };
+
+    private SeaGlassMaterial PeachPebbleMaterial => new(
+        tintColorArgb: unchecked((int)0xFFF7A89A),
+        tintDensity: Math.Clamp(_tintDensity * 1.05f, 0.42f, 0.92f),
+        coarseness: Math.Clamp(_coarseness * 1.15f, 0.32f, 0.95f),
+        frostRadiusDp: _frostRadiusDp,
+        ior: _ior,
+        chromaticDispersion: 0.20f,
+        rimChalkiness: 0.90f,
+        thicknessDp: _thicknessDp,
+        cornerRadiusDp: 34f,
+        cornerSmoothing: 2.4f,
+        transparency: Math.Clamp(_transparency * 0.85f, 0.28f, 0.85f));
+
+    private SeaGlassMaterial OrchidPillMaterial => new(
+        tintColorArgb: unchecked((int)0xFFEA96FF),
+        tintDensity: Math.Clamp(_tintDensity * 1.04f, 0.42f, 0.92f),
+        coarseness: Math.Clamp(_coarseness * 1.15f, 0.32f, 0.95f),
+        frostRadiusDp: _frostRadiusDp,
+        ior: _ior,
+        chromaticDispersion: 0.22f,
+        rimChalkiness: 0.90f,
+        thicknessDp: _thicknessDp,
+        cornerRadiusDp: 30f,
+        cornerSmoothing: 2.5f,
+        transparency: Math.Clamp(_transparency * 0.85f, 0.28f, 0.85f));
+
+    private SeaGlassMaterial PeriwinklePromptMaterial => new(
+        tintColorArgb: unchecked((int)0xFF9AB8FF),
+        tintDensity: Math.Clamp(_tintDensity * 1.04f, 0.42f, 0.92f),
+        coarseness: Math.Clamp(_coarseness * 1.15f, 0.32f, 0.95f),
+        frostRadiusDp: _frostRadiusDp,
+        ior: _ior,
+        chromaticDispersion: 0.22f,
+        rimChalkiness: 0.90f,
+        thicknessDp: _thicknessDp,
+        cornerRadiusDp: 31f,
+        cornerSmoothing: 2.5f,
+        transparency: Math.Clamp(_transparency * 0.85f, 0.28f, 0.85f));
 
     public void SelectPalette(SeaGlassPalette palette)
     {
@@ -1126,18 +1238,25 @@ public sealed class MainWindow : Window
         SeaGlassMaterial surf = DesktopCardMaterial;
         SeaGlassMaterial tert = CustomTertiaryMaterial;
 
+        _pebbleOrb.BaseMaterial = PeachPebbleMaterial;
+        _pebbleOrb.SnapMaterial(_pebbleOrb.BaseMaterial);
+        _pillNavBar.BarMaterial = OrchidPillMaterial;
+        _pillNavBar.SnapMaterial(_pillNavBar.BarMaterial);
+        _promptBar.BarMaterial = PeriwinklePromptMaterial;
+        _promptBar.SnapMaterial(_promptBar.BarMaterial);
+
         _shapeOrb.PrimaryMaterial = prim;
         _shapeOrb.SecondaryMaterial = tert;
         _buddingCluster.AnchorMaterial = prim;
         _buddingCluster.SatelliteMaterial = tert;
-        _morphBtn0.RestingMaterial = prim with { CornerRadiusDp = 10f };
-        _morphBtn0.ActiveMaterial = tert with { CornerRadiusDp = 16f };
-        _morphBtn1.RestingMaterial = tert with { CornerRadiusDp = 10f };
-        _morphBtn1.ActiveMaterial = prim with { CornerRadiusDp = 18f };
-        _morphBtn2.RestingMaterial = prim with { CornerRadiusDp = 10f };
-        _morphBtn2.ActiveMaterial = tert with { CornerRadiusDp = 16f };
-        _twoElementMorph.CollapsedMaterial = prim with { CornerRadiusDp = 24f };
-        _twoElementMorph.ExpandedMaterial = surf with { CornerRadiusDp = 16f };
+        _morphBtn0.RestingMaterial = prim with { CornerRadiusDp = 16f };
+        _morphBtn0.ActiveMaterial = tert with { CornerRadiusDp = 24f };
+        _morphBtn1.RestingMaterial = tert with { CornerRadiusDp = 16f };
+        _morphBtn1.ActiveMaterial = prim with { CornerRadiusDp = 24f };
+        _morphBtn2.RestingMaterial = prim with { CornerRadiusDp = 16f };
+        _morphBtn2.ActiveMaterial = tert with { CornerRadiusDp = 24f };
+        _twoElementMorph.CollapsedMaterial = prim with { CornerRadiusDp = 28f };
+        _twoElementMorph.ExpandedMaterial = surf with { CornerRadiusDp = 24f };
         _contextMenuMorph.CollapsedMaterial = prim;
         _contextMenuMorph.ExpandedMaterial = surf;
         _cascadedModelMorph.PillMaterial = surf;
@@ -1145,21 +1264,21 @@ public sealed class MainWindow : Window
         _contextRingMorph.CollapsedMaterial = surf;
         _contextRingMorph.ExpandedMaterial = surf;
 
-        _segmentedRow.ContainerMaterial = surf with { CornerRadiusDp = 9f };
-        _segmentedRow.IndicatorMaterial = prim with { CornerRadiusDp = 7f };
+        _segmentedRow.ContainerMaterial = surf with { CornerRadiusDp = 18f };
+        _segmentedRow.IndicatorMaterial = prim with { CornerRadiusDp = 14f };
         _floatingToolbar.BarMaterial = surf with { CornerRadiusDp = 24f };
         _floatingToolbar.FabMaterial = prim with { CornerRadiusDp = 24f };
-        _extendedFab.SetExpanded(_extendedFab.Expanded, prim with { CornerRadiusDp = 10f });
+        _extendedFab.SetExpanded(_extendedFab.Expanded, prim with { CornerRadiusDp = 19f });
         _switchA.CheckedMaterial = prim; _switchA.UncheckedMaterial = surf;
         _switchB.CheckedMaterial = tert; _switchB.UncheckedMaterial = surf;
-        _checkA.CheckedMaterial = prim with { CornerRadiusDp = 7f }; _checkA.UncheckedMaterial = surf with { CornerRadiusDp = 7f };
-        _checkB.CheckedMaterial = tert with { CornerRadiusDp = 7f }; _checkB.UncheckedMaterial = surf with { CornerRadiusDp = 7f };
+        _checkA.CheckedMaterial = prim with { CornerRadiusDp = 8f }; _checkA.UncheckedMaterial = surf with { CornerRadiusDp = 8f };
+        _checkB.CheckedMaterial = tert with { CornerRadiusDp = 8f }; _checkB.UncheckedMaterial = surf with { CornerRadiusDp = 8f };
         _radioA.SelectedMaterial = prim; _radioA.UnselectedMaterial = surf;
         _radioB.SelectedMaterial = prim; _radioB.UnselectedMaterial = surf;
-        _circularProgress.Material = surf with { CornerRadiusDp = 22f, ThicknessDp = 12f };
+        _circularProgress.Material = surf with { CornerRadiusDp = 23f, ThicknessDp = 14f };
         _linearProgress.TrackMaterial = surf;
         _linearProgress.FillMaterial = prim;
-        _miniPlayerBar.Material = surf with { CornerRadiusDp = 12f, ThicknessDp = 14f };
+        _miniPlayerBar.Material = surf with { CornerRadiusDp = 24f, ThicknessDp = 16f };
 
         foreach (Action sync in _materialSyncCallbacks)
         {
@@ -1258,7 +1377,9 @@ public sealed class MainWindow : Window
         _materialSyncCallbacks.Clear();
         SyncComponentMaterials();
 
-        StudioCanvasMode mode = _page == 3 ? StudioCanvasMode.CodeEditor : StudioCanvasMode.Artwork;
+        StudioCanvasMode mode = _page == 3
+            ? StudioCanvasMode.CodeEditor
+            : (_porcelainDaylight ? StudioCanvasMode.PorcelainStudio : StudioCanvasMode.Artwork);
         if (_sharpBackdropCanvas.CanvasMode != mode)
         {
             _sharpBackdropCanvas.CanvasMode = mode;
@@ -1620,21 +1741,28 @@ public sealed class MainWindow : Window
                 UIElement toolbar = BuildFloatingToolbarControl();
                 canvas.Children.Add(toolbar);
 
-                // Material-preview specimen locked to the artwork horizon (44% / 38%) so refraction is legible.
+                // Concept Reference Triad (Coral-Peach "G" Pebble + Orchid Pill Nav Bar + Periwinkle Prompt Bar)
+                FrameworkElement triad = BuildConceptReferenceTriad();
+                triad.HorizontalAlignment = HorizontalAlignment.Center;
+                triad.VerticalAlignment = VerticalAlignment.Top;
+                triad.Margin = new Thickness(0, 92, 0, 0);
+                canvas.Children.Add(triad);
+
+                // Material-preview specimen locked to the lower artwork horizon so refraction is legible.
                 Canvas specimenHost = new();
-                FrameworkElement specimen = BuildSpecimenLens(300, 196);
+                FrameworkElement specimen = BuildSpecimenLens(310, 156);
                 specimenHost.Children.Add(specimen);
                 specimenHost.SizeChanged += (_, e) =>
                 {
-                    Canvas.SetLeft(specimen, Math.Round(e.NewSize.Width * 0.38 - 150));
-                    Canvas.SetTop(specimen, Math.Round(e.NewSize.Height * 0.44 - 98));
+                    Canvas.SetLeft(specimen, Math.Round(e.NewSize.Width * 0.50 - 155));
+                    Canvas.SetTop(specimen, Math.Round(Math.Max(264, e.NewSize.Height * 0.58 - 78)));
                     MarkAllControlsOriginDirty();
                 };
                 canvas.Children.Add(specimenHost);
 
                 FrameworkElement deck = BuildMediaDeckControl();
                 deck.VerticalAlignment = VerticalAlignment.Bottom;
-                deck.Margin = new Thickness(0, 0, 0, 32);
+                deck.Margin = new Thickness(0, 0, 0, 28);
                 canvas.Children.Add(deck);
                 break;
             }
@@ -1659,8 +1787,8 @@ public sealed class MainWindow : Window
                 UIElement fab = BuildInteractiveExtendedFabControl();
                 if (fab is FrameworkElement feFab)
                 {
-                    feFab.Width = 104;
-                    feFab.Height = 38;
+                    feFab.Width = 108;
+                    feFab.Height = 40;
                     feFab.HorizontalAlignment = HorizontalAlignment.Right;
                     feFab.VerticalAlignment = VerticalAlignment.Bottom;
                     feFab.Margin = new Thickness(0, 0, 24, 24);
@@ -1673,6 +1801,213 @@ public sealed class MainWindow : Window
                 break;
         }
         return canvas;
+    }
+
+    private FrameworkElement BuildConceptReferenceTriad()
+    {
+        StackPanel root = new()
+        {
+            Orientation = Orientation.Vertical,
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        StackPanel topRow = new()
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 12)
+        };
+
+        FrameworkElement pebbleCtrl = BuildPebbleOrbControl(68);
+        pebbleCtrl.Margin = new Thickness(0, 0, 14, 0);
+        pebbleCtrl.VerticalAlignment = VerticalAlignment.Center;
+        topRow.Children.Add(pebbleCtrl);
+
+        FrameworkElement pillNavCtrl = BuildPillNavBarControl(420, 60);
+        pillNavCtrl.VerticalAlignment = VerticalAlignment.Center;
+        topRow.Children.Add(pillNavCtrl);
+
+        root.Children.Add(topRow);
+
+        FrameworkElement promptCtrl = BuildPromptBarControl(502, 62);
+        promptCtrl.HorizontalAlignment = HorizontalAlignment.Center;
+        root.Children.Add(promptCtrl);
+
+        return root;
+    }
+
+    private FrameworkElement BuildPebbleOrbControl(double size)
+    {
+        SeaGlassVisualControl ctrl = new(
+            surfaceModel: _pebbleOrb,
+            stageBackdrop: _stageBackdropVisuals,
+            stageCoordinateRoot: _stageRootGrid,
+            customStepEvaluator: dt => _pebbleOrb.StepAndEvaluate(dt, SeaGlassTheme.Current),
+            customOverlayPainter: (dc, frame, w, h) =>
+            {
+                double gSize = Math.Min(w, h) * 0.48;
+                SeaGlassXamlRenderer.DrawGlyph(
+                    dc,
+                    _pebbleOrb.Glyph,
+                    new Rect((w - gSize) * 0.5, (h - gSize) * 0.5, gSize, gSize),
+                    frame.OptimalContentColorArgb);
+            },
+            customStateSignature: () => HashCode.Combine((int)(_pebbleOrb.ExpandScale * 500f), GlobalOpticsRevision),
+            interactiveHoverLift: true)
+        {
+            Width = size,
+            Height = size
+        };
+        _activeControls.Add(ctrl);
+        return ctrl;
+    }
+
+    private FrameworkElement BuildPillNavBarControl(double width, double height)
+    {
+        SeaGlassVisualControl ctrl = null!;
+        ctrl = new(
+            surfaceModel: _pillNavBar,
+            stageBackdrop: _stageBackdropVisuals,
+            stageCoordinateRoot: _stageRootGrid,
+            customStepEvaluator: dt => _pillNavBar.StepAndEvaluate(dt, SeaGlassTheme.Current),
+            customOverlayPainter: (dc, frame, w, h) =>
+            {
+                int c = frame.OptimalContentColorArgb;
+                int count = Math.Max(1, _pillNavBar.Items.Count);
+                double pad = 6.0;
+                double innerW = Math.Max(1.0, w - pad * 2.0);
+                double innerH = Math.Max(1.0, h - pad * 2.0);
+                double slotW = innerW / count;
+                double offsetX = pad + _pillNavBar.LeftEdgeTab * slotW;
+                double pillW = Math.Max(slotW * 0.85, _pillNavBar.LozengeSpan * slotW);
+                double scaleY = 1.0 - _pillNavBar.StretchSpan * 0.08;
+                double pillH = innerH * scaleY;
+                double offsetY = pad + (innerH - pillH) * 0.5;
+
+                // Milky-Frosted Sea-Glass Inlay Capsule (matches the active "Photos" pill in reference)
+                var (topArgb, topA, botArgb, botA, rimA) = _pillNavBar.ComputeInlayColors();
+                LinearGradientBrush inlayBrush = new(
+                    SeaGlassXamlRenderer.ToMediaColor(topArgb, topA),
+                    SeaGlassXamlRenderer.ToMediaColor(botArgb, botA),
+                    new Point(0, 0),
+                    new Point(0, 1));
+                inlayBrush.Freeze();
+                Pen inlayRim = Stroke(unchecked((int)0xFFFFFFFF), rimA, 1.0);
+                dc.DrawRoundedRectangle(inlayBrush, inlayRim, new Rect(offsetX, offsetY, pillW, pillH), pillH * 0.5, pillH * 0.5);
+
+                for (int i = 0; i < count; i++)
+                {
+                    var (glyph, title) = _pillNavBar.Items[i];
+                    bool selected = i == _pillNavBar.SelectedIndex;
+                    float alpha = selected ? 1.0f : 0.86f;
+                    double slotCenterX = pad + (i + 0.5) * slotW;
+                    double centerY = h * 0.5;
+
+                    FormattedText ft = StudioText.Get(title, 14.5, c, selected ? StudioText.Style.Semibold : StudioText.Style.Regular, alpha);
+                    if (glyph is { } g && (selected || i == 0))
+                    {
+                        const double iconSz = 18.0;
+                        const double gap = 7.0;
+                        double totalW = iconSz + gap + ft.Width;
+                        double startX = slotCenterX - totalW * 0.5;
+                        SeaGlassXamlRenderer.DrawGlyph(dc, g, new Rect(startX, centerY - iconSz * 0.5, iconSz, iconSz), c, alpha);
+                        dc.DrawText(ft, new Point(startX + iconSz + gap, centerY - ft.Height * 0.5));
+                    }
+                    else
+                    {
+                        dc.DrawText(ft, new Point(slotCenterX - ft.Width * 0.5, centerY - ft.Height * 0.5));
+                    }
+                }
+            },
+            customStateSignature: () => HashCode.Combine(
+                (int)(_pillNavBar.LeadIndex * 500f),
+                (int)(_pillNavBar.TrailIndex * 500f),
+                _pillNavBar.SelectedIndex,
+                GlobalOpticsRevision),
+            interactiveHoverLift: true)
+        {
+            Width = width,
+            Height = height
+        };
+
+        ctrl.MouseLeftButtonUp += (_, e) =>
+        {
+            Point pt = e.GetPosition(ctrl);
+            int count = Math.Max(1, _pillNavBar.Items.Count);
+            double slotW = Math.Max(1.0, (ctrl.ActualWidth - 12.0) / count);
+            int idx = Math.Clamp((int)((pt.X - 6.0) / slotW), 0, count - 1);
+            _pillNavBar.SelectTab(idx);
+        };
+
+        _activeControls.Add(ctrl);
+        return ctrl;
+    }
+
+    private FrameworkElement BuildPromptBarControl(double width, double height)
+    {
+        SeaGlassVisualControl ctrl = null!;
+        ctrl = new(
+            surfaceModel: _promptBar,
+            stageBackdrop: _stageBackdropVisuals,
+            stageCoordinateRoot: _stageRootGrid,
+            customStepEvaluator: dt => _promptBar.StepAndEvaluate(dt, SeaGlassTheme.Current),
+            customOverlayPainter: (dc, frame, w, h) =>
+            {
+                int c = frame.OptimalContentColorArgb;
+                double cy = h * 0.5;
+
+                // 1. Leading "+" button
+                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Plus, new Rect(22, cy - 10, 20, 20), c);
+
+                // 2. Tonal prompt text ("Ask Gemini")
+                StudioText.DrawInRow(dc, _promptBar.PromptText, 54, 0, h, 15.5, c, StudioText.Style.Semibold);
+
+                // 3. Inline Microphone button
+                double medallionSize = 48.0 * _promptBar.WaveScale;
+                double medallionCenterX = w - 7.0 - 24.0;
+                double micCenterX = medallionCenterX - 24.0 - 6.0 - 19.0;
+                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Microphone, new Rect(micCenterX - 10, cy - 10, 20, 20), c);
+
+                // 4. Nested Circular Milky-Frosted Sea-Glass Voice Waveform Medallion
+                var (topArgb, topA, botArgb, botA, rimA) = _promptBar.ComputeMedallionColors();
+                LinearGradientBrush medBrush = new(
+                    SeaGlassXamlRenderer.ToMediaColor(topArgb, topA),
+                    SeaGlassXamlRenderer.ToMediaColor(botArgb, botA),
+                    new Point(0, 0),
+                    new Point(0, 1));
+                medBrush.Freeze();
+                Pen medRim = Stroke(unchecked((int)0xFFFFFFFF), rimA, 1.0);
+                double medR = medallionSize * 0.5;
+                dc.DrawEllipse(medBrush, medRim, new Point(medallionCenterX, cy), medR, medR);
+                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.AudioWave, new Rect(medallionCenterX - 10.5, cy - 10.5, 21, 21), c);
+            },
+            customStateSignature: () => HashCode.Combine(
+                _promptBar.PromptText,
+                _promptBar.IsVoiceActive,
+                (int)(_promptBar.WaveScale * 500f),
+                GlobalOpticsRevision),
+            interactiveHoverLift: true)
+        {
+            Width = width,
+            Height = height
+        };
+
+        ctrl.MouseLeftButtonUp += (_, e) =>
+        {
+            Point pt = e.GetPosition(ctrl);
+            if (pt.X >= ctrl.ActualWidth - 105)
+            {
+                _promptBar.ToggleVoiceActive();
+            }
+            else
+            {
+                _conceptPromptIndex = (_conceptPromptIndex + 1) % ConceptPrompts.Length;
+                _promptBar.PromptText = ConceptPrompts[_conceptPromptIndex];
+            }
+        };
+
+        _activeControls.Add(ctrl);
+        return ctrl;
     }
 
     private UIElement BuildFloatingToolbarControl()
@@ -1730,7 +2065,7 @@ public sealed class MainWindow : Window
 
     private FrameworkElement BuildDropletArena(double width, double height, float scale, float morph = 0.2f)
     {
-        SeaGlassSurface arenaSurface = new(_stageState, CustomPrimaryMaterial);
+        SeaGlassSurface arenaSurface = new(_stageState, CustomPrimaryMaterial, contentRole: SeaGlassContentRole.PureOpticalLens);
         _materialSyncCallbacks.Add(() => arenaSurface.Material = CustomPrimaryMaterial);
         float rA = 44f * scale;
         float rB = 40f * scale;
@@ -1807,7 +2142,7 @@ public sealed class MainWindow : Window
 
     private FrameworkElement BuildSpecimenLens(double width, double height)
     {
-        SeaGlassSurface specimenSurface = new(_stageState, CustomPrimaryMaterial);
+        SeaGlassSurface specimenSurface = new(_stageState, CustomPrimaryMaterial, contentRole: SeaGlassContentRole.PureOpticalLens);
         _materialSyncCallbacks.Add(() => specimenSurface.Material = CustomPrimaryMaterial);
 
         IReadOnlyList<SeaGlassSdfEngine.SdfNode> ComputeSpecimenNodes(double w, double h)
@@ -1955,11 +2290,11 @@ public sealed class MainWindow : Window
     {
         const double fw = 372;
         const double fh = 500;
-        SeaGlassSurface flyout = new(_stageState, DesktopCardMaterial with { CornerRadiusDp = 12f }, contentRole: SeaGlassContentRole.NavigationChrome)
+        SeaGlassSurface flyout = new(_stageState, DesktopCardMaterial with { CornerRadiusDp = 26f }, contentRole: SeaGlassContentRole.NavigationChrome)
         {
             CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed
         };
-        _materialSyncCallbacks.Add(() => flyout.SnapMaterial(DesktopCardMaterial with { CornerRadiusDp = 12f }));
+        _materialSyncCallbacks.Add(() => flyout.SnapMaterial(DesktopCardMaterial with { CornerRadiusDp = 26f }));
 
         (string Label, double Y)[] labelRows =
         [
@@ -2196,6 +2531,12 @@ public sealed class MainWindow : Window
         {
             case 0:
                 rows.Children.Add(InspectorPaletteSummary(palette));
+                SeaGlassSwitch porcelainSwitch = new(_porcelainDaylight, v =>
+                {
+                    _porcelainDaylight = v;
+                    RebuildUI();
+                }, _stageState, CustomPrimaryMaterial, DesktopCardMaterial);
+                rows.Children.Add(InspectorToggle("Porcelain Studio stage", porcelainSwitch));
                 rows.Children.Add(InspectorHeader("Optics"));
                 rows.Children.Add(InspectorSlider("Transparency", () => $"{_transparency * 100f:F0}%", () => (_transparency - 0.08f) / 0.87f, f => _transparency = 0.08f + f * 0.87f));
                 rows.Children.Add(InspectorSlider("Tint density", () => $"{_tintDensity * 100f:F0}%", () => (_tintDensity - 0.18f) / 0.77f, f => _tintDensity = 0.18f + f * 0.77f));
@@ -2448,7 +2789,7 @@ public sealed class MainWindow : Window
     private UIElement BuildSegmentedControl(double width, double height)
     {
         _segmentedRow.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
-        _segmentedRow.ContainerMaterial = DesktopCardMaterial with { CornerRadiusDp = 8f };
+        _segmentedRow.ContainerMaterial = DesktopCardMaterial with { CornerRadiusDp = 16f };
         _segmentedRow.SnapMaterial(_segmentedRow.ContainerMaterial);
 
         SeaGlassVisualControl segCtrl = new(
@@ -2465,14 +2806,20 @@ public sealed class MainWindow : Window
                 double yInset = 3.0 + _segmentedRow.MotionEnergy * 1.8;
                 double pillH = Math.Max(18.0, h - yInset * 2.0);
 
-                Color pillTop = SeaGlassXamlRenderer.ToMediaColor(
-                    SeaGlassColorMath.LerpOklab(CustomPrimaryMaterial.TintColorArgb, unchecked((int)0xFFFFFFFF), 0.28f), 0.82f);
-                Color pillBot = SeaGlassXamlRenderer.ToMediaColor(CustomPrimaryMaterial.TintColorArgb, 0.68f);
+                // Milky-Frosted Sea-Glass Active Segment Lozenge Pill (matching Android 32f354a)
+                bool isDarkSeg = SeaGlassColorMath.ArgbToOklab(DesktopCardMaterial.TintColorArgb).L < 0.48f;
+                int topArgb = isDarkSeg
+                    ? CustomPrimaryMaterial.TintColorArgb
+                    : SeaGlassColorMath.ComputeFrostedRindColor(CustomPrimaryMaterial.TintColorArgb, CustomPrimaryMaterial.Coarseness, 0.72f);
+                int botArgb = isDarkSeg
+                    ? unchecked((int)0xFF0A1E30)
+                    : SeaGlassColorMath.ComputeFrostedRindColor(CustomPrimaryMaterial.TintColorArgb, CustomPrimaryMaterial.Coarseness, 0.58f);
+                Color pillTop = SeaGlassXamlRenderer.ToMediaColor(topArgb, isDarkSeg ? 0.56f : 0.48f);
+                Color pillBot = SeaGlassXamlRenderer.ToMediaColor(botArgb, isDarkSeg ? 0.40f : 0.38f);
                 LinearGradientBrush pillBrush = new(pillTop, pillBot, new Point(0, 0), new Point(0, 1));
                 pillBrush.Freeze();
-                Pen pillPen = new(new SolidColorBrush(Color.FromArgb(190, 255, 255, 255)), 1.0);
-                pillPen.Freeze();
-                dc.DrawRoundedRectangle(pillBrush, pillPen, new Rect(x, yInset, pillW, pillH), 6.0, 6.0);
+                Pen pillPen = Stroke(unchecked((int)0xFFFFFFFF), isDarkSeg ? 0.32f : 0.38f, 1.0);
+                dc.DrawRoundedRectangle(pillBrush, pillPen, new Rect(x, yInset, pillW, pillH), pillH * 0.5, pillH * 0.5);
 
                 for (int i = 0; i < 3; i++)
                 {
@@ -2527,10 +2874,10 @@ public sealed class MainWindow : Window
 
     private UIElement BuildInteractiveCheckboxControl(SeaGlassCheckbox cb)
     {
-        cb.UseDesktopSquareContour = true;
+        cb.UseDesktopSquareContour = false;
         cb.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
-        cb.CheckedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = 6f };
-        cb.UncheckedMaterial = DesktopCardMaterial with { CornerRadiusDp = 6f };
+        cb.CheckedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = 8f };
+        cb.UncheckedMaterial = DesktopCardMaterial with { CornerRadiusDp = 8f };
         cb.SnapMaterial(cb.Checked ? cb.CheckedMaterial : cb.UncheckedMaterial);
 
         SeaGlassVisualControl ctrl = new(
@@ -2545,7 +2892,7 @@ public sealed class MainWindow : Window
                 {
                     Pen wellPen = new(new SolidColorBrush(SeaGlassXamlRenderer.ToMediaColor(c, 0.36f)), 1.2);
                     wellPen.Freeze();
-                    dc.DrawRoundedRectangle(null, wellPen, new Rect(1.5, 1.5, w - 3, h - 3), 5, 5);
+                    dc.DrawRoundedRectangle(null, wellPen, new Rect(1.5, 1.5, w - 3, h - 3), 7, 7);
                 }
                 else
                 {
@@ -2631,11 +2978,11 @@ public sealed class MainWindow : Window
     private UIElement BuildInteractiveExtendedFabControl()
     {
         _extendedFab.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
-        _extendedFab.SetExpanded(_extendedFab.Expanded, CustomPrimaryMaterial with { CornerRadiusDp = 6f, ThicknessDp = 14f });
+        _extendedFab.SetExpanded(_extendedFab.Expanded, CustomPrimaryMaterial with { CornerRadiusDp = 20f, ThicknessDp = 16f });
         _extendedFab.SnapMaterial(_extendedFab.Material);
         _materialSyncCallbacks.Add(() =>
         {
-            _extendedFab.SetExpanded(_extendedFab.Expanded, CustomPrimaryMaterial with { CornerRadiusDp = 6f, ThicknessDp = 14f });
+            _extendedFab.SetExpanded(_extendedFab.Expanded, CustomPrimaryMaterial with { CornerRadiusDp = 20f, ThicknessDp = 16f });
             _extendedFab.SnapMaterial(_extendedFab.Material);
         });
         SeaGlassVisualControl ctrl = new(
@@ -2646,17 +2993,17 @@ public sealed class MainWindow : Window
             (dc, frame, w, h) =>
             {
                 int c = frame.OptimalContentColorArgb;
-                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Sparkles, new Rect(12, h * 0.5 - 7, 14, 14), c);
+                SeaGlassXamlRenderer.DrawGlyph(dc, SeaGlassGlyph.Sparkles, new Rect(14, h * 0.5 - 7, 14, 14), c);
                 if (_extendedFab.Expanded)
                 {
-                    SeaGlassXamlRenderer.DrawLabel(dc, "Create", new Point(32, h * 0.5 - 7.5), c, 11.0, bold: true, extraBold: true);
+                    SeaGlassXamlRenderer.DrawLabel(dc, "Create", new Point(34, h * 0.5 - 7.5), c, 11.5, bold: true, extraBold: true);
                 }
             },
             customStateSignature: () => _extendedFab.Expanded ? 1 : 0,
             interactiveHoverLift: true)
         {
-            Width = 84,
-            Height = 30
+            Width = 104,
+            Height = 38
         };
         _activeControls.Add(ctrl);
         return ctrl;
@@ -2684,16 +3031,17 @@ public sealed class MainWindow : Window
 
     private UIElement CreateDesktopButtonControl(SeaGlassPill pill, double height = 32, Thickness? margin = null, double? width = null)
     {
+        float pillRadius = (float)(height * 0.5);
         pill.CornerAdaptationMode = SeaGlassCornerAdaptationMode.Fixed;
-        pill.SelectedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = 6f };
-        pill.UnselectedMaterial = DesktopCardMaterial with { CornerRadiusDp = 6f };
+        pill.SelectedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = pillRadius };
+        pill.UnselectedMaterial = DesktopCardMaterial with { CornerRadiusDp = pillRadius };
         pill.SetSelected(pill.Selected);
         pill.SnapMaterial(pill.Material);
 
         _materialSyncCallbacks.Add(() =>
         {
-            pill.SelectedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = 6f };
-            pill.UnselectedMaterial = DesktopCardMaterial with { CornerRadiusDp = 6f };
+            pill.SelectedMaterial = CustomPrimaryMaterial with { CornerRadiusDp = pillRadius };
+            pill.UnselectedMaterial = DesktopCardMaterial with { CornerRadiusDp = pillRadius };
             pill.SetSelected(pill.Selected);
             pill.SnapMaterial(pill.Material);
         });

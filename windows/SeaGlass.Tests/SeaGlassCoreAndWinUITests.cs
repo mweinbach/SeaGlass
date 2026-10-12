@@ -765,8 +765,8 @@ public sealed class SeaGlassCoreAndWinUITests
         segRow.StepAndEvaluate(1f / 60f);
         Assert.True(segRow.LeadIndex > segRow.TrailIndex, "LeadIndex (k=540) must lead TrailIndex (k=310) mid-flight");
         Assert.True(segRow.LozengeSlotSpan > 1.05f, "LozengeSlotSpan must stretch across intermediate slots");
-        Assert.True(segRow.ActiveIndicatorMaterial.Coarseness < segRow.IndicatorMaterial.Coarseness,
-            "ActiveIndicatorMaterial must de-age during motion");
+        Assert.Equal(segRow.IndicatorMaterial.Coarseness, segRow.ActiveIndicatorMaterial.Coarseness, 4);
+        Assert.Equal(segRow.IndicatorMaterial.TintColorArgb, segRow.ActiveIndicatorMaterial.TintColorArgb);
 
         SeaGlassFluidBar fluidBar = new(["Lab", "Kit", "Morph", "Stage"], 0, _ => { });
         fluidBar.SelectTab(3);
@@ -784,12 +784,38 @@ public sealed class SeaGlassCoreAndWinUITests
             "Horizontal width spring (k=420) must lead vertical height spring (k=340) during expansion");
 
         // 4. Verify reverse-rim frosted rind, volumetric core, tonal ink, and organic pebble/capsule contours
+        int peachTint = unchecked((int)0xFFF7A89A);
         int orchidTint = unchecked((int)0xFFEA96FF);
-        int inkArgb = SeaGlassColorMath.OptimalContentColorFor(orchidTint, 0.70f);
-        SeaGlassColorMath.OklabColor inkLab = SeaGlassColorMath.ArgbToOklab(inkArgb);
-        float inkChroma = MathF.Sqrt(inkLab.A * inkLab.A + inkLab.B * inkLab.B);
-        Assert.InRange(inkLab.L, 0.22f, 0.36f);
-        Assert.True(inkChroma >= 0.06f);
+        int periwinkleTint = unchecked((int)0xFF9AB8FF);
+        foreach (int tint in new[] { peachTint, orchidTint, periwinkleTint })
+        {
+            int inkArgb = SeaGlassColorMath.OptimalContentColorFor(tint, 0.70f);
+            SeaGlassColorMath.OklabColor inkLab = SeaGlassColorMath.ArgbToOklab(inkArgb);
+            float inkChroma = MathF.Sqrt(inkLab.A * inkLab.A + inkLab.B * inkLab.B);
+            Assert.InRange(inkLab.L, 0.22f, 0.36f);
+            Assert.True(inkChroma >= 0.06f);
+        }
+
+        SeaGlassColorMath.OklabColor baseLab = SeaGlassColorMath.ArgbToOklab(orchidTint);
+        int coreArgb = SeaGlassColorMath.ComputeDeepVolumetricCoreColor(orchidTint, tintDensity: 0.72f);
+        SeaGlassColorMath.OklabColor coreLab = SeaGlassColorMath.ArgbToOklab(coreArgb);
+        float baseChroma = MathF.Sqrt(baseLab.A * baseLab.A + baseLab.B * baseLab.B);
+        float coreChroma = MathF.Sqrt(coreLab.A * coreLab.A + coreLab.B * coreLab.B);
+        Assert.True(coreLab.L <= baseLab.L, $"Volumetric core must not bleach toward white ({coreLab.L} <= {baseLab.L})");
+        Assert.True(coreChroma >= baseChroma, $"Volumetric core must deepen chroma ({coreChroma} >= {baseChroma})");
+
+        SeaGlassColorMath.OklabColor rindLow = SeaGlassColorMath.ArgbToOklab(
+            SeaGlassColorMath.ComputeFrostedRindColor(periwinkleTint, coarseness: 0.20f, rindWhiteness: 0.60f));
+        SeaGlassColorMath.OklabColor rindHigh = SeaGlassColorMath.ArgbToOklab(
+            SeaGlassColorMath.ComputeFrostedRindColor(periwinkleTint, coarseness: 0.85f, rindWhiteness: 0.60f));
+        Assert.True(rindHigh.L > rindLow.L, $"Higher sand coarseness must produce a milkier frosted rind ({rindHigh.L} > {rindLow.L})");
+
+        foreach (ShaderDialect dialect in Enum.GetValues<ShaderDialect>())
+        {
+            string src = SeaGlassShaderCompiler.CompileForDialect(dialect).SeaGlassCompositeFragmentSource;
+            Assert.Contains("frostRind", src);
+            Assert.Contains("rindStipple", src);
+        }
 
         SeaGlassVectorPath2D pebblePath = new();
         SeaGlassContourPathBuilder.BuildOrganicPebblePath(68f, 68f, pebblePath);
@@ -798,6 +824,39 @@ public sealed class SeaGlassCoreAndWinUITests
         SeaGlassVectorPath2D capsulePath = new();
         SeaGlassContourPathBuilder.BuildTumbledCapsulePath(320f, 60f, capsulePath);
         Assert.StartsWith("F1 M", capsulePath.ToXamlPathData());
+
+        // 5. Verify Concept Reference Triad WinUI components and gesture-bar concentric corner solver
+        SeaGlassPebbleOrb pebbleOrb = new(() => { });
+        Assert.StartsWith("F1 M", pebbleOrb.StepAndEvaluate(1f / 60f).XamlContourPathData);
+
+        SeaGlassPillNavBar pillNav = new([(SeaGlassGlyph.PhotoMountain, "Photos"), (null, "Collections"), (null, "Create")], 0, _ => { });
+        pillNav.SelectTab(2);
+        pillNav.StepAndEvaluate(1f / 60f);
+        pillNav.StepAndEvaluate(1f / 60f);
+        Assert.True(pillNav.LeadIndex > pillNav.TrailIndex);
+        Assert.StartsWith("F1 M", pillNav.StepAndEvaluate(1f / 60f).XamlContourPathData);
+
+        SeaGlassPromptBar promptBar = new("Ask Gemini", isVoiceActive: false);
+        promptBar.ToggleVoiceActive();
+        Assert.True(promptBar.IsVoiceActive);
+        Assert.StartsWith("F1 M", promptBar.StepAndEvaluate(1f / 60f).XamlContourPathData);
+
+        SeaGlassCornerRadiiPx pixelBezel = SeaGlassCornerRadiiPx.Uniform(153f);
+        SeaGlassCornerRadiiPx sheetRadii = SeaGlassCornerAdaptationSolver.SolveElementCornerRadiiPx(
+            elementLeftPx: 30f,
+            elementTopPx: 1500f,
+            elementRightPx: 1314f,
+            elementBottomPx: 2854f,
+            containerWidthPx: 1344f,
+            containerHeightPx: 2992f,
+            containerCornersPx: pixelBezel,
+            baseCornerRadiusPx: 96f,
+            influenceDistancePx: 192f,
+            mode: SeaGlassCornerAdaptationMode.ConcentricProximity,
+            cornerMask: SeaGlassCornerMask.All,
+            allowAsymmetricCorners: false);
+        Assert.True(sheetRadii.BottomLeftPx > 115f);
+        Assert.Equal(sheetRadii.TopLeftPx, sheetRadii.BottomLeftPx, 2);
     }
 }
 

@@ -430,8 +430,8 @@ public static class SeaGlassCornerAdaptationSolver
                     ? MathF.Max(floorPx, MathF.Min(clampedBase, halfMinDimPx * 0.45f))
                     : clampedBase;
             }
-            float dist = MathF.Sqrt(dx * dx + dy * dy);
-            float rawT = Math.Clamp((influenceDistancePx - dist) / transitionSpanPx, 0f, 1f);
+            float edgeDist = MathF.Min(dx, dy);
+            float rawT = Math.Clamp((influenceDistancePx - edgeDist) / transitionSpanPx, 0f, 1f);
             float proximityWeight = rawT * rawT * (3f - 2f * rawT) * strength;
 
             if (proximityWeight <= 0.001f && mode != SeaGlassCornerAdaptationMode.FlushCornerEmbed)
@@ -439,12 +439,12 @@ public static class SeaGlassCornerAdaptationSolver
                 return clampedBase;
             }
 
-            float effectiveInset = MathF.Min(dx, dy) * 0.65f + MathF.Max(dx, dy) * 0.35f;
+            float effectiveInset = edgeDist;
             float rawConcentric = Math.Clamp(outerRadiusPx - effectiveInset, floorPx, maxAsymmetricCornerPx);
 
             if (mode == SeaGlassCornerAdaptationMode.FlushCornerEmbed)
             {
-                return dist < influenceDistancePx * 0.85f
+                return edgeDist < influenceDistancePx * 0.85f
                     ? rawConcentric
                     : MathF.Max(floorPx, MathF.Min(clampedBase, halfMinDimPx * 0.45f));
             }

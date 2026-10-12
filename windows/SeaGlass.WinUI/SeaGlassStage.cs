@@ -14,7 +14,8 @@ public enum SeaGlassContentRole
 {
     StandardSurface,
     TextAndIcons,
-    NavigationChrome
+    NavigationChrome,
+    PureOpticalLens
 }
 
 /// <summary>

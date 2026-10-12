@@ -673,3 +673,227 @@ public sealed class SeaGlassCornerEmbeddedPod : SeaGlassSurface
         BasePaddingPx = new Vector4(14f, 10f, 14f, 10f);
     }
 }
+
+/// <summary>
+/// Ocean-tumbled circular/pebble SeaGlass medallion button (modeled after the Coral-Peach "G"
+/// pebble in the SeaGlass concept triad).
+///
+/// Exact 1:1 parity with <c>dev.seaglass.compose.SeaGlassPebbleOrb</c> on Android.
+/// </summary>
+public sealed class SeaGlassPebbleOrb : SeaGlassSurface
+{
+    private float _expandScale = 1f;
+    private float _expandVel;
+
+    public SeaGlassGlyph Glyph { get; set; }
+    public float OrbSizeDp { get; }
+    public float ExpandScale => _expandScale;
+    public SeaGlassMaterial BaseMaterial
+    {
+        get => Material;
+        set => Material = value;
+    }
+
+    public SeaGlassPebbleOrb(
+        Action onClick,
+        SeaGlassStageState? stageState = null,
+        float sizeDp = 64f,
+        SeaGlassGlyph glyph = SeaGlassGlyph.BrandG,
+        SeaGlassMaterial? material = null)
+        : base(
+            stageState: stageState,
+            material: material ?? new SeaGlassMaterial(
+                tintColorArgb: unchecked((int)0xFFF7A89A),
+                tintDensity: 0.72f,
+                coarseness: 0.58f,
+                frostRadiusDp: 26f,
+                ior: 1.54f,
+                chromaticDispersion: 0.22f,
+                rimChalkiness: 0.90f,
+                thicknessDp: 18f,
+                cornerRadiusDp: sizeDp * 0.5f,
+                cornerSmoothing: 2.4f,
+                transparency: 0.52f),
+            cornerAdaptationMode: SeaGlassCornerAdaptationMode.Fixed,
+            contentRole: SeaGlassContentRole.TextAndIcons,
+            onClick: onClick)
+    {
+        Glyph = glyph;
+        OrbSizeDp = sizeDp;
+        SizePx = new Vector2(sizeDp, sizeDp);
+    }
+
+    public SeaGlassSurfaceFrameState StepAndEvaluate(float dtSeconds = 1f / 60f, SeaGlassTheme? theme = null)
+    {
+        SeaGlassSpringSpec spatialSpring = new(DampingRatio: 0.68f, Stiffness: 460f);
+        spatialSpring.Step(ref _expandScale, ref _expandVel, 1.0f, dtSeconds);
+        return EvaluateFrame(dtSeconds, theme ?? SeaGlassTheme.Current);
+    }
+}
+
+/// <summary>
+/// Tumbled SeaGlass Inline Pill Navigation Bar (modeled after the Orchid-Lavender
+/// <c>Photos | Collections | Create</c> concept bar).
+///
+/// Exact 1:1 parity with <c>dev.seaglass.compose.SeaGlassPillNavBar</c> on Android.
+/// </summary>
+public sealed class SeaGlassPillNavBar : SeaGlassSurface
+{
+    private float _leadIdx;
+    private float _leadVel;
+    private float _trailIdx;
+    private float _trailVel;
+
+    public IReadOnlyList<(SeaGlassGlyph? Glyph, string Title)> Items { get; }
+    public int SelectedIndex { get; private set; }
+    public Action<int> OnSelect { get; }
+    public float LeadIndex => _leadIdx;
+    public float TrailIndex => _trailIdx;
+    public float LeftEdgeSlot => MathF.Min(_leadIdx, _trailIdx);
+    public float RightEdgeSlot => MathF.Max(_leadIdx, _trailIdx) + 1f;
+    public float LeftEdgeTab => LeftEdgeSlot;
+    public float LozengeSpan => RightEdgeSlot - LeftEdgeSlot;
+    public float StretchSpan => Math.Clamp(MathF.Abs(_leadIdx - _trailIdx), 0f, 1.5f);
+    public SeaGlassMaterial BarMaterial
+    {
+        get => Material;
+        set => Material = value;
+    }
+
+    public SeaGlassPillNavBar(
+        IReadOnlyList<(SeaGlassGlyph? Glyph, string Title)> items,
+        int selectedIndex,
+        Action<int> onSelect,
+        SeaGlassStageState? stageState = null,
+        SeaGlassMaterial? material = null)
+        : base(
+            stageState: stageState,
+            material: (material ?? new SeaGlassMaterial(
+                tintColorArgb: unchecked((int)0xFFEA96FF),
+                tintDensity: 0.72f,
+                coarseness: 0.58f,
+                frostRadiusDp: 28f,
+                ior: 1.54f,
+                chromaticDispersion: 0.22f,
+                rimChalkiness: 0.90f,
+                thicknessDp: 18f,
+                cornerRadiusDp: 30f,
+                cornerSmoothing: 2.5f,
+                transparency: 0.52f)) with { CornerRadiusDp = 30f },
+            cornerAdaptationMode: SeaGlassCornerAdaptationMode.Fixed,
+            contentRole: SeaGlassContentRole.NavigationChrome)
+    {
+        Items = items;
+        SelectedIndex = Math.Clamp(selectedIndex, 0, Math.Max(0, items.Count - 1));
+        _leadIdx = SelectedIndex;
+        _trailIdx = SelectedIndex;
+        OnSelect = onSelect;
+        SizePx = new Vector2(440f, 60f);
+    }
+
+    public void SelectTab(int index)
+    {
+        SelectedIndex = Math.Clamp(index, 0, Math.Max(0, Items.Count - 1));
+        OnSelect(SelectedIndex);
+    }
+
+    public (int TopArgb, float TopA, int BotArgb, float BotA, float RimA) ComputeInlayColors()
+    {
+        int frostedRindArgb = SeaGlassColorMath.ComputeFrostedRindColor(Material.TintColorArgb, Material.Coarseness, Material.RimChalkiness);
+        int topArgb = SeaGlassColorMath.LerpOklab(frostedRindArgb, unchecked((int)0xFFFFFFFF), 0.70f);
+        int botArgb = SeaGlassColorMath.LerpOklab(frostedRindArgb, Material.TintColorArgb, 0.22f);
+        return (topArgb, 0.86f, botArgb, 0.72f, 0.65f);
+    }
+
+    public SeaGlassSurfaceFrameState StepAndEvaluate(float dtSeconds = 1f / 60f, SeaGlassTheme? theme = null)
+    {
+        SeaGlassSpringSpec leadSpring = new(DampingRatio: 0.68f, Stiffness: 520f);
+        SeaGlassSpringSpec trailSpring = new(DampingRatio: 0.74f, Stiffness: 310f);
+        leadSpring.Step(ref _leadIdx, ref _leadVel, SelectedIndex, dtSeconds);
+        trailSpring.Step(ref _trailIdx, ref _trailVel, SelectedIndex, dtSeconds);
+        return EvaluateFrame(dtSeconds, theme ?? SeaGlassTheme.Current);
+    }
+}
+
+/// <summary>
+/// Tumbled SeaGlass Prompt &amp; Voice Capsule Bar (modeled after the Periwinkle-Blue
+/// <c>+ Ask Gemini  🎤  ( ||| )</c> concept bar).
+///
+/// Exact 1:1 parity with <c>dev.seaglass.compose.SeaGlassPromptBar</c> on Android.
+/// </summary>
+public sealed class SeaGlassPromptBar : SeaGlassSurface
+{
+    private float _waveScale = 1f;
+    private float _waveVel;
+
+    public string PromptText { get; set; }
+    public bool IsVoiceActive { get; set; }
+    public Action OnPromptClick { get; set; }
+    public Action OnPlusClick { get; set; }
+    public Action OnMicClick { get; set; }
+    public Action OnVoiceWaveClick { get; set; }
+    public float WaveScale => _waveScale;
+    public SeaGlassMaterial BarMaterial
+    {
+        get => Material;
+        set => Material = value;
+    }
+
+    public SeaGlassPromptBar(
+        string promptText = "Ask Gemini",
+        Action? onPromptClick = null,
+        Action? onPlusClick = null,
+        Action? onMicClick = null,
+        Action? onVoiceWaveClick = null,
+        bool isVoiceActive = false,
+        SeaGlassStageState? stageState = null,
+        SeaGlassMaterial? material = null)
+        : base(
+            stageState: stageState,
+            material: (material ?? new SeaGlassMaterial(
+                tintColorArgb: unchecked((int)0xFF9AB8FF),
+                tintDensity: 0.72f,
+                coarseness: 0.58f,
+                frostRadiusDp: 28f,
+                ior: 1.54f,
+                chromaticDispersion: 0.22f,
+                rimChalkiness: 0.90f,
+                thicknessDp: 18f,
+                cornerRadiusDp: 31f,
+                cornerSmoothing: 2.5f,
+                transparency: 0.52f)) with { CornerRadiusDp = 31f },
+            cornerAdaptationMode: SeaGlassCornerAdaptationMode.Fixed,
+            contentRole: SeaGlassContentRole.NavigationChrome,
+            onClick: onPromptClick)
+    {
+        PromptText = promptText;
+        IsVoiceActive = isVoiceActive;
+        OnPromptClick = onPromptClick ?? (() => { });
+        OnPlusClick = onPlusClick ?? (() => { });
+        OnMicClick = onMicClick ?? (() => { });
+        OnVoiceWaveClick = onVoiceWaveClick ?? (() => { });
+        SizePx = new Vector2(440f, 62f);
+    }
+
+    public void ToggleVoiceActive()
+    {
+        IsVoiceActive = !IsVoiceActive;
+        OnVoiceWaveClick();
+    }
+
+    public (int TopArgb, float TopA, int BotArgb, float BotA, float RimA) ComputeMedallionColors()
+    {
+        int frostedRindArgb = SeaGlassColorMath.ComputeFrostedRindColor(Material.TintColorArgb, Material.Coarseness, Material.RimChalkiness);
+        int topArgb = SeaGlassColorMath.LerpOklab(frostedRindArgb, unchecked((int)0xFFFFFFFF), IsVoiceActive ? 0.78f : 0.68f);
+        int botArgb = SeaGlassColorMath.LerpOklab(frostedRindArgb, Material.TintColorArgb, 0.24f);
+        return (topArgb, 0.88f, botArgb, 0.72f, 0.68f);
+    }
+
+    public SeaGlassSurfaceFrameState StepAndEvaluate(float dtSeconds = 1f / 60f, SeaGlassTheme? theme = null)
+    {
+        SeaGlassSpringSpec pulseSpring = new(DampingRatio: 0.66f, Stiffness: 480f);
+        pulseSpring.Step(ref _waveScale, ref _waveVel, IsVoiceActive ? 1.07f : 1.0f, dtSeconds);
+        return EvaluateFrame(dtSeconds, theme ?? SeaGlassTheme.Current);
+    }
+}
+
