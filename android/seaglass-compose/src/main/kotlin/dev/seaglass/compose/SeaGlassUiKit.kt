@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -93,6 +94,7 @@ import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassCornerRadiiPx
 import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassMaterial
+import dev.seaglass.core.SeaGlassPalette
 import dev.seaglass.core.SeaGlassSdfEngine
 import dev.seaglass.core.SeaGlassShapeKind
 import dev.seaglass.core.SeaGlassShapeMorph
@@ -1155,9 +1157,12 @@ fun SeaGlassTextField(
 }
 
 /**
- * Tactile SeaGlass Toggle Switch featuring an optically recessed capsule trough (when unchecked)
- * that fills with rich volumetric Oklab sea-glass color (when checked), paired with a sculpted
- * 3D alabaster milk-glass pebble thumb that glides with lead/trail spatial spring stretch.
+ * Tactile SeaGlass Toggle Switch featuring an inlaid, sand-frosted sea-glass capsule track
+ * (which changes color based on its state—such as coral-red sea glass embedded in green sea glass
+ * when off, morphing in Oklab space to the active sea-glass tint when on) paired with a
+ * **crystal-clear 3D refractive glass lens circle** that transmits the track underneath and
+ * reflects overhead light with a Fresnel meniscus rim, upper-left dome specular glint, and
+ * focused lower-right internal caustic.
  */
 @Composable
 fun SeaGlassSwitch(
@@ -1166,7 +1171,13 @@ fun SeaGlassSwitch(
     stageState: SeaGlassStageState?,
     modifier: Modifier = Modifier,
     checkedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
-    uncheckedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
+    uncheckedMaterial: SeaGlassMaterial = SeaGlassPalette.RoseQuartzShell.primaryGlass.copy(
+        tintColorArgb = 0xFFF06E6A.toInt(),
+        tintDensity = 0.74f,
+        coarseness = 0.48f
+    ),
+    checkedTrackColor: Color? = null,
+    uncheckedTrackColor: Color? = null
 ) {
     val motion = LocalSeaGlassMotionScheme.current
     val density = LocalDensity.current
@@ -1192,164 +1203,279 @@ fun SeaGlassSwitch(
     val rightThumbFrac = max(leadThumb, trailThumb).coerceIn(-0.04f, 1.04f)
     val stretchFrac = (rightThumbFrac - leftThumbFrac).coerceIn(0f, 0.75f)
 
-    val trackWidthDp = 52.dp
-    val trackHeightDp = 30.dp
-    val baseThumbSizeDp = 24.dp
+    val trackWidthDp = 54.dp
+    val trackHeightDp = 31.dp
+    val baseThumbSizeDp = 25.dp
     val padPx = with(density) { 3.dp.toPx() }
     val travelPx = with(density) { (trackWidthDp - baseThumbSizeDp - 6.dp).toPx() }
     val thumbOffsetX = (padPx + travelPx * leftThumbFrac).roundToInt()
     val dynamicThumbWidthDp = baseThumbSizeDp + with(density) { (travelPx * stretchFrac).toDp() }
 
-    val isDarkSurface = remember(uncheckedMaterial.tintColorArgb) {
-        SeaGlassColorMath.argbToOklab(uncheckedMaterial.tintColorArgb).l < 0.48f
-    }
-    val deepActiveArgb = remember(checkedMaterial.tintColorArgb) {
-        SeaGlassColorMath.computeDeepVolumetricCoreColor(checkedMaterial.tintColorArgb, 0.85f)
-    }
-    val causticActiveArgb = remember(checkedMaterial.tintColorArgb, checkedMaterial.coarseness) {
-        SeaGlassColorMath.computeSubsurfaceCausticColor(checkedMaterial.tintColorArgb, checkedMaterial.coarseness)
-    }
-    val checkIconColor = remember(checkedMaterial.tintColorArgb) {
-        Color(SeaGlassColorMath.optimalContentColorFor(checkedMaterial.tintColorArgb, 0.85f))
-    }
-
     val t = tintProgress.coerceIn(0f, 1f)
-    val offTopColor = if (isDarkSurface) Color(0xFF040D18).copy(alpha = 0.52f) else Color(0xFF0A2434).copy(alpha = 0.16f)
-    val offBotColor = if (isDarkSurface) Color(0xFF0A1B2E).copy(alpha = 0.42f) else Color(0xFF0E2D40).copy(alpha = 0.11f)
-    val onTopColor = Color(deepActiveArgb).copy(alpha = 0.88f)
-    val onBotColor = Color(causticActiveArgb).copy(alpha = 0.92f)
+    val offTintArgb = uncheckedTrackColor?.toArgb() ?: uncheckedMaterial.tintColorArgb
+    val onTintArgb = checkedTrackColor?.toArgb() ?: checkedMaterial.tintColorArgb
+    val activeTrackTintArgb = remember(offTintArgb, onTintArgb, t) {
+        SeaGlassColorMath.lerpOklab(offTintArgb, onTintArgb, t)
+    }
+    val activeCoarseness = uncheckedMaterial.coarseness +
+        (checkedMaterial.coarseness - uncheckedMaterial.coarseness) * t
+    val activeDensity = uncheckedMaterial.tintDensity +
+        (checkedMaterial.tintDensity - uncheckedMaterial.tintDensity) * t
 
-    val trackTopColor = androidx.compose.ui.graphics.lerp(offTopColor, onTopColor, t)
-    val trackBotColor = androidx.compose.ui.graphics.lerp(offBotColor, onBotColor, t)
-    val trackTopRim = androidx.compose.ui.graphics.lerp(
-        Color(0xFF061624).copy(alpha = if (isDarkSurface) 0.48f else 0.18f),
-        Color(deepActiveArgb).copy(alpha = 0.45f),
-        t
-    )
-    val trackBotRim = Color.White.copy(alpha = if (isDarkSurface) 0.24f else 0.58f)
+    val deepTopArgb = remember(activeTrackTintArgb, activeDensity) {
+        SeaGlassColorMath.computeDeepVolumetricCoreColor(activeTrackTintArgb, (activeDensity + 0.15f).coerceAtMost(0.95f))
+    }
+    val midBodyArgb = remember(activeTrackTintArgb, activeCoarseness) {
+        SeaGlassColorMath.computeFrostedRindColor(activeTrackTintArgb, activeCoarseness, 0.12f)
+    }
+    val causticBotArgb = remember(activeTrackTintArgb, activeCoarseness) {
+        SeaGlassColorMath.computeSubsurfaceCausticColor(activeTrackTintArgb, activeCoarseness)
+    }
+    val frostedBevelArgb = remember(activeTrackTintArgb, activeCoarseness) {
+        SeaGlassColorMath.computeFrostedRindColor(activeTrackTintArgb, activeCoarseness, 0.68f)
+    }
 
+    val trackPath = remember { android.graphics.Path() }
+    val trackBevelPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+    }
+    val trackSocketPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+    }
+    val trackGrainPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+            isFilterBitmap = false
+            xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.OVERLAY)
+            shader = dev.seaglass.core.SeaGlassSandGrainTexture.obtainShader()
+        }
+    }
+    val trackGrainMatrix = remember { android.graphics.Matrix() }
+
+    val thumbPath = remember { android.graphics.Path() }
     val thumbShadowPaint = remember {
         android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             style = android.graphics.Paint.Style.FILL
         }
     }
-    val thumbPath = remember { android.graphics.Path() }
+    val thumbFresnelPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+    }
+    val thumbRimPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+        }
+    }
 
     Box(
         contentAlignment = Alignment.CenterStart,
         modifier = modifier
             .size(width = trackWidthDp, height = trackHeightDp)
-            .clip(CircleShape)
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(trackTopColor, trackBotColor)
+            .drawWithContent {
+                val w = size.width
+                val h = size.height
+                val r = min(w, h) * 0.5f
+                trackPath.reset()
+                trackPath.addRoundRect(0f, 0f, w, h, r, r, android.graphics.Path.Direction.CW)
+
+                // 1. Embedded Sea-Glass Track Body (Volumetric Top -> Mid Pastel -> Lower Subsurface Caustic)
+                drawRoundRect(
+                    brush = Brush.verticalGradient(
+                        0.00f to Color(deepTopArgb).copy(alpha = 0.90f),
+                        0.52f to Color(midBodyArgb).copy(alpha = 0.88f),
+                        1.00f to Color(causticBotArgb).copy(alpha = 0.94f)
+                    ),
+                    cornerRadius = CornerRadius(r, r)
                 )
-            )
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(trackTopRim, trackBotRim)
-                ),
-                shape = CircleShape
-            )
+
+                val nCanvas = drawContext.canvas.nativeCanvas
+                nCanvas.save()
+                nCanvas.clipPath(trackPath)
+
+                // 2. Embedded Sea-Glass Inner Bevel Cushion & Subsurface Caustic Rim
+                val topBevelInt = (0x58 shl 24) or (frostedBevelArgb and 0x00FFFFFF)
+                val midBevelInt = (0x78 shl 24) or (frostedBevelArgb and 0x00FFFFFF)
+                val botBevelInt = (0xD8 shl 24) or (causticBotArgb and 0x00FFFFFF)
+                trackBevelPaint.strokeWidth = 6.2f * this.density
+                trackBevelPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(2.2f * this.density)
+                trackBevelPaint.shader = android.graphics.LinearGradient(
+                    w * 0.5f,
+                    0f,
+                    w * 0.5f,
+                    h,
+                    intArrayOf(topBevelInt, midBevelInt, botBevelInt),
+                    floatArrayOf(0.0f, 0.45f, 1.0f),
+                    Shader.TileMode.CLAMP
+                )
+                nCanvas.drawPath(trackPath, trackBevelPaint)
+
+                // 3. Authentic Pinpoint Sea-Glass Sand-Pitting on the Embedded Track
+                val grainScale = (this.density * 0.38f).coerceIn(0.78f, 1.22f)
+                trackGrainMatrix.reset()
+                trackGrainMatrix.setScale(grainScale, grainScale)
+                trackGrainPaint.shader?.setLocalMatrix(trackGrainMatrix)
+                trackGrainPaint.alpha = (activeCoarseness.coerceIn(0f, 1f) * 155f).toInt().coerceIn(0, 165)
+                if (trackGrainPaint.alpha > 4) {
+                    nCanvas.drawRect(0f, 0f, w, h, trackGrainPaint)
+                }
+
+                // 4. Inlaid Socket Bevel Rim (recessed top-left inner shadow + frosted bottom socket catch-light)
+                trackSocketPaint.strokeWidth = 1.6f * this.density
+                trackSocketPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.55f * this.density)
+                trackSocketPaint.shader = android.graphics.LinearGradient(
+                    w * 0.5f,
+                    0f,
+                    w * 0.5f,
+                    h,
+                    intArrayOf(0x48061420, 0x38FFFFFF, 0xB8FFFFFF.toInt()),
+                    floatArrayOf(0.0f, 0.48f, 1.0f),
+                    Shader.TileMode.CLAMP
+                )
+                nCanvas.drawPath(trackPath, trackSocketPaint)
+                nCanvas.restore()
+
+                this@drawWithContent.drawContent()
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = { onCheckedChange(!checked) }
             )
     ) {
-        // Sculpted 3D Alabaster Milk-Glass Pebble Thumb with Grounding Shadow
-        val thumbBottomTint = remember(checkedMaterial.tintColorArgb, t) {
-            Color(
-                SeaGlassColorMath.lerpOklab(
-                    0xFFEEF5FA.toInt(),
-                    checkedMaterial.tintColorArgb,
-                    0.12f + 0.14f * t
-                )
-            )
-        }
-
+        // 3D Crystal-Clear Refractive Glass Circle (Thumb) — Zero Checkmark, Pure Clear Lens Reflections
         Box(
-            contentAlignment = Alignment.Center,
             modifier = Modifier
                 .offset { IntOffset(thumbOffsetX, 0) }
                 .size(width = dynamicThumbWidthDp, height = baseThumbSizeDp)
                 .graphicsLayer {
                     scaleY = 1f - 0.10f * stretchFrac
                 }
-                .let { mod ->
-                    mod.then(
-                        Modifier.
-                            // Draw soft grounding shadow + 3D alabaster pebble dome
-                            run {
-                                androidx.compose.ui.Modifier.drawWithContent {
-                                    val w = size.width
-                                    val h = size.height
-                                    val r = min(w, h) * 0.5f
-                                    thumbPath.reset()
-                                    thumbPath.addRoundRect(0f, 0f, w, h, r, r, android.graphics.Path.Direction.CW)
-                                    thumbShadowPaint.color = 0x3D061422
-                                    thumbShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(2.4f * this.density)
+                .drawWithContent {
+                    val w = size.width
+                    val h = size.height
+                    val r = min(w, h) * 0.5f
+                    thumbPath.reset()
+                    thumbPath.addRoundRect(0f, 0f, w, h, r, r, android.graphics.Path.Direction.CW)
 
-                                    val nCanvas = drawContext.canvas.nativeCanvas
-                                    nCanvas.save()
-                                    nCanvas.translate(0f, 1.5f * this.density)
-                                    nCanvas.drawPath(thumbPath, thumbShadowPaint)
-                                    nCanvas.restore()
+                    val nCanvas = drawContext.canvas.nativeCanvas
 
-                                    // 3D Alabaster Milk-Glass Dome Fill
-                                    drawRoundRect(
-                                        brush = Brush.verticalGradient(
-                                            0.00f to Color.White,
-                                            0.62f to Color(0xFFF7FAFD),
-                                            1.00f to thumbBottomTint
-                                        ),
-                                        cornerRadius = CornerRadius(r, r)
-                                    )
-                                    // Upper-left convex dome crown highlight
-                                    drawRoundRect(
-                                        brush = Brush.radialGradient(
-                                            colors = listOf(
-                                                Color.White.copy(alpha = 0.95f),
-                                                Color.Transparent
-                                            ),
-                                            center = Offset(w * 0.36f, h * 0.30f),
-                                            radius = max(w, h) * 0.62f
-                                        ),
-                                        cornerRadius = CornerRadius(r, r)
-                                    )
-                                    // Subtle porcelain edge definition
-                                    drawRoundRect(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(
-                                                Color.White.copy(alpha = 0.92f),
-                                                Color(0xFFDCE8F2).copy(alpha = 0.55f)
-                                            )
-                                        ),
-                                        cornerRadius = CornerRadius(r, r),
-                                        style = Stroke(width = 0.8.dp.toPx())
-                                    )
+                    // Pass 1: Soft contact shadow strictly OUTSIDE the clear glass circle
+                    thumbShadowPaint.color = 0x3E05121E
+                    thumbShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(2.0f * this.density)
+                    nCanvas.save()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        nCanvas.clipOutPath(thumbPath)
+                    }
+                    nCanvas.translate(0.3f * this.density, 1.4f * this.density)
+                    nCanvas.drawPath(thumbPath, thumbShadowPaint)
+                    nCanvas.restore()
 
-                                    this@drawWithContent.drawContent()
-                                }
-                            }
+                    // Pass 2: Crystal-Clear Glass Lens Interior (transmits & clarifies the colored track underneath,
+                    // focusing light into a luminous lower-right internal caustic while keeping the center clear!)
+                    nCanvas.save()
+                    nCanvas.clipPath(thumbPath)
+
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            0.00f to Color.White.copy(alpha = 0.30f),
+                            0.36f to Color.Transparent,
+                            0.68f to Color(causticBotArgb).copy(alpha = 0.28f),
+                            1.00f to Color.White.copy(alpha = 0.62f),
+                            start = Offset(0f, 0f),
+                            end = Offset(w, h)
+                        ),
+                        cornerRadius = CornerRadius(r, r)
+                    )
+
+                    // Focused internal lower-right lens caustic crescent
+                    drawRoundRect(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.62f),
+                                Color(causticBotArgb).copy(alpha = 0.34f),
+                                Color.Transparent
+                            ),
+                            center = Offset(w * 0.68f, h * 0.78f),
+                            radius = max(w, h) * 0.48f
+                        ),
+                        cornerRadius = CornerRadius(r, r)
+                    )
+
+                    // Pass 3: Crisp Clear-Glass Fresnel Meniscus Rim (1.3dp wide inside thumb contour)
+                    thumbFresnelPaint.strokeWidth = 2.8f * this.density
+                    thumbFresnelPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.55f * this.density)
+                    thumbFresnelPaint.shader = android.graphics.LinearGradient(
+                        0f,
+                        0f,
+                        w,
+                        h,
+                        intArrayOf(
+                            0xEBFFFFFF.toInt(),
+                            0x42FFFFFF,
+                            0x68E8FAFF,
+                            0xE0FFFFFF.toInt()
+                        ),
+                        floatArrayOf(0.0f, 0.40f, 0.74f, 1.0f),
+                        Shader.TileMode.CLAMP
+                    )
+                    nCanvas.drawPath(thumbPath, thumbFresnelPaint)
+
+                    thumbRimPaint.strokeWidth = 1.2f * this.density
+                    thumbRimPaint.maskFilter = null
+                    thumbRimPaint.shader = android.graphics.LinearGradient(
+                        0f,
+                        0f,
+                        w,
+                        h,
+                        intArrayOf(
+                            0xF8FFFFFF.toInt(),
+                            0x58FFFFFF,
+                            0xEEFFFFFF.toInt()
+                        ),
+                        floatArrayOf(0.0f, 0.48f, 1.0f),
+                        Shader.TileMode.CLAMP
+                    )
+                    nCanvas.drawPath(thumbPath, thumbRimPaint)
+                    nCanvas.restore()
+
+                    // Pass 4: Curved Upper-Left Convex Lens Specular Reflection Crescent + Lower-Right Glint
+                    val arcInset = 2.7.dp.toPx()
+                    val arcW = (w - arcInset * 2f).coerceAtLeast(2f)
+                    val arcH = (h - arcInset * 2f).coerceAtLeast(2f)
+                    drawArc(
+                        color = Color.White.copy(alpha = 0.90f),
+                        startAngle = 196f,
+                        sweepAngle = 64f,
+                        useCenter = false,
+                        topLeft = Offset(arcInset, arcInset),
+                        size = Size(arcW, arcH),
+                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        color = Color.White.copy(alpha = 0.58f),
+                        startAngle = 18f,
+                        sweepAngle = 48f,
+                        useCenter = false,
+                        topLeft = Offset(arcInset, arcInset),
+                        size = Size(arcW, arcH),
+                        style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round)
                     )
                 }
-        ) {
-            if (t > 0.35f) {
-                SeaGlassIcon(
-                    glyph = SeaGlassGlyph.Check,
-                    modifier = Modifier
-                        .size(12.dp)
-                        .graphicsLayer {
-                            alpha = ((t - 0.35f) / 0.65f).coerceIn(0f, 1f)
-                            scaleX = alpha
-                            scaleY = alpha
-                        },
-                    tint = checkIconColor
-                )
-            }
-        }
+        )
     }
 }
 

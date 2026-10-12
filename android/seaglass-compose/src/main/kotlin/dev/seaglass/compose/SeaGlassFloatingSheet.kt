@@ -987,7 +987,13 @@ fun SeaGlassSheetToggleSection(
     modifier: Modifier = Modifier,
     caption: String? = null,
     checkedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
-    uncheckedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
+    uncheckedMaterial: SeaGlassMaterial = dev.seaglass.core.SeaGlassPalette.RoseQuartzShell.primaryGlass.copy(
+        tintColorArgb = 0xFFF06E6A.toInt(),
+        tintDensity = 0.74f,
+        coarseness = 0.48f
+    ),
+    checkedTrackColor: Color? = null,
+    uncheckedTrackColor: Color? = null
 ) {
     val contentColor = LocalContentColor.current
     Column(
@@ -1021,7 +1027,9 @@ fun SeaGlassSheetToggleSection(
                     onCheckedChange = onCheckedChange,
                     stageState = stageState,
                     checkedMaterial = checkedMaterial,
-                    uncheckedMaterial = uncheckedMaterial
+                    uncheckedMaterial = uncheckedMaterial,
+                    checkedTrackColor = checkedTrackColor,
+                    uncheckedTrackColor = uncheckedTrackColor
                 )
             }
         }
@@ -1210,7 +1218,11 @@ fun SeaGlassInspectorSheetContent(
                     stageState = stageState,
                     caption = "Notify this device whenever a reply finishes, even ones you didn't send from here.",
                     checkedMaterial = palette.primaryGlass,
-                    uncheckedMaterial = palette.surfaceGlass
+                    uncheckedMaterial = dev.seaglass.core.SeaGlassPalette.RoseQuartzShell.primaryGlass.copy(
+                        tintColorArgb = 0xFFF06E6A.toInt(),
+                        tintDensity = 0.74f,
+                        coarseness = 0.48f
+                    )
                 )
 
                 SeaGlassSheetActionButton(
