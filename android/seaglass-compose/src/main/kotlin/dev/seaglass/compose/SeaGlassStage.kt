@@ -108,19 +108,28 @@ private const val AGSL_ETCHED_CONTENT_SHADER_SOURCE = """
     float sgInkMask(float2 coord, float isDark) {
         half4 s = content.eval(coord);
         float sa = float(s.a);
-        if (sa <= 0.34) return 0.0;
+        if (sa <= 0.42) return 0.0;
         float3 sRgb = clamp(float3(s.rgb) / sa, 0.0, 1.0);
         float lum = dot(sRgb, float3(0.299, 0.587, 0.114));
         float inkGate = (isDark > 0.5)
-            ? smoothstep(0.62, 0.80, lum)
-            : (1.0 - smoothstep(0.30, 0.44, lum));
-        return smoothstep(0.34, 0.70, sa) * inkGate;
+            ? smoothstep(0.64, 0.82, lum)
+            : (1.0 - smoothstep(0.28, 0.42, lum));
+        return smoothstep(0.42, 0.76, sa) * inkGate;
     }
 
     half4 main(float2 fragCoord) {
         half4 c = content.eval(fragCoord);
         float a0 = float(c.a);
+        float aTL = float(content.eval(fragCoord - uStepPx).a);
+        float aBR = float(content.eval(fragCoord + uStepPx).a);
         float isDark = uGlassTint.a;
+        float etchStrength = clamp(uLipColor.a, 0.0, 1.0);
+
+        // If surrounding pixels in this layer are already opaque (e.g. inside a nested child button),
+        // skip parent-level etching so child buttons are never double-etched!
+        if (a0 > 0.65 && aTL > 0.65 && aBR > 0.65) {
+            return c;
+        }
 
         float ink0 = sgInkMask(fragCoord, isDark);
         float inkTL = sgInkMask(fragCoord - uStepPx, isDark);
@@ -132,29 +141,29 @@ private const val AGSL_ETCHED_CONTENT_SHADER_SOURCE = """
 
         float3 baseRgb = (a0 > 0.01) ? clamp(float3(c.rgb) / a0, 0.0, 1.0) : uGlassTint.rgb;
 
-        // 1. Inner top-left carved groove cliff (strictly inside the tonal stroke where top-left is outside)
-        float innerCliff = ink0 * clamp(1.0 - inkTL, 0.0, 1.0);
+        // 1. Subtle inner top-left carved groove cliff (only when top-left is transparent background)
+        float bgClearTL = clamp(1.0 - aTL * 1.4, 0.0, 1.0);
+        float innerCliff = ink0 * clamp(1.0 - inkTL, 0.0, 1.0) * bgClearTL;
 
-        // 2. Inner bottom-right translucent glass bevel (strictly inside the tonal stroke where bottom-right is outside)
-        float innerBevel = ink0 * clamp(1.0 - inkBR, 0.0, 1.0);
+        // 2. Subtle inner bottom-right translucent glass bevel
+        float bgClearBR = clamp(1.0 - aBR * 1.4, 0.0, 1.0);
+        float innerBevel = ink0 * clamp(1.0 - inkBR, 0.0, 1.0) * bgClearBR;
 
-        // 3. Outer bottom-right frosted catch-light lip (just below/right of the tonal stroke)
-        float outerLip = clamp(inkTL - ink0, 0.0, 1.0);
+        // 3. Delicate outer bottom-right frosted catch-light lip (only into transparent background)
+        float bgClearCenter = clamp(1.0 - a0 * 1.4, 0.0, 1.0);
+        float outerLip = clamp(inkTL - ink0, 0.0, 1.0) * bgClearCenter;
 
-        // Groove floor blends tonal ink with frosted glass tint so strokes look carved into the glass
-        float3 glassFloorRgb = mix(baseRgb, mix(uGlassTint.rgb, uLipColor.rgb, 0.42), (isDark > 0.5) ? 0.10 : 0.18);
-        float3 cliffRgb = (isDark > 0.5) ? float3(0.01, 0.03, 0.06) : baseRgb * 0.36;
-        float3 innerHighlightRgb = mix(baseRgb, uLipColor.rgb, (isDark > 0.5) ? 0.32 : 0.44);
+        float3 glassFloorRgb = mix(baseRgb, mix(uGlassTint.rgb, uLipColor.rgb, 0.40), ((isDark > 0.5) ? 0.08 : 0.14) * etchStrength);
+        float3 cliffRgb = (isDark > 0.5) ? float3(0.02, 0.05, 0.09) : baseRgb * 0.58;
+        float3 innerHighlightRgb = mix(baseRgb, uLipColor.rgb, ((isDark > 0.5) ? 0.24 : 0.34) * etchStrength);
 
-        float3 etchedInkRgb = mix(glassFloorRgb, cliffRgb, clamp(innerCliff * 0.88, 0.0, 0.92));
-        etchedInkRgb = mix(etchedInkRgb, innerHighlightRgb, clamp(innerBevel * 0.56, 0.0, 0.65));
+        float3 etchedInkRgb = mix(glassFloorRgb, cliffRgb, clamp(innerCliff * 0.52 * etchStrength, 0.0, 0.58));
+        etchedInkRgb = mix(etchedInkRgb, innerHighlightRgb, clamp(innerBevel * 0.42 * etchStrength, 0.0, 0.48));
 
-        // Blend etched ink on ink pixels, preserving non-ink pixels (such as inlay pillows) untouched
-        float3 combinedRgb = mix(baseRgb, etchedInkRgb, clamp(ink0 * 1.15, 0.0, 1.0));
+        float3 combinedRgb = mix(baseRgb, etchedInkRgb, clamp(ink0, 0.0, 1.0));
 
-        // Add crisp directional bottom-right frosted catch-light lip
-        float lipStrength = (isDark > 0.5) ? 0.50 : 0.88;
-        float lipAlpha = clamp(outerLip * lipStrength, 0.0, 0.92);
+        float lipStrength = ((isDark > 0.5) ? 0.36 : 0.62) * etchStrength;
+        float lipAlpha = clamp(outerLip * lipStrength, 0.0, 0.72);
 
         float outAlpha = clamp(a0 + lipAlpha * (1.0 - a0), 0.0, 1.0);
         float3 outRgb = mix(combinedRgb, uLipColor.rgb, lipAlpha * (1.0 - ink0));
@@ -641,15 +650,28 @@ fun Modifier.seaGlass(
                 primaryTintArgb
             }
 
-            // Grounding drop shadow (models physical thickness & 3D elevation beneath the bright bottom bevel)
+            // Size & nesting depth scale: smaller buttons/chips (< 48dp) and buttons nested inside a
+            // parent card use a proportionally lighter, tighter shadow and bevel so they never look heavy.
+            val minDimDp = minDimPx / density
+            val isNestedInCard = parentContainerScope != null &&
+                parentContainerScope.widthPx > widthPx + 8f &&
+                parentContainerScope.heightPx > heightPx + 4f
+            val sizeDepthScale = ((minDimDp - 22f) / 40f).coerceIn(0.34f, 1.0f)
+            val shadowDepthScale = sizeDepthScale * (if (isNestedInCard) 0.42f else 1.0f)
+
+            // Grounding drop shadow (models physical thickness & 3D elevation beneath the bottom bevel)
             val shadowColorArgb = SeaGlassColorMath.lerpOklab(
                 primaryTintArgb,
                 0xFF142030.toInt(),
                 0.74f
             )
-            val shadowAlpha = ((0.22f + sandWear * 0.12f) * 255f).toInt().coerceIn(48, 86)
+            val shadowAlpha = (((0.18f + sandWear * 0.11f) * (0.38f + 0.62f * shadowDepthScale)) * 255f)
+                .toInt()
+                .coerceIn(18, 82)
             ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
-            ambientShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(5.5f * density)
+            ambientShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(
+                (2.2f + 3.3f * shadowDepthScale) * density
+            )
 
             val causticGlowArgb = SeaGlassColorMath.computeSubsurfaceCausticColor(
                 secondaryTintArgb,
@@ -695,15 +717,17 @@ fun Modifier.seaGlass(
             val cx = widthPx * 0.5f
             val cy = heightPx * 0.5f
 
-            // 1. Wide Pillowy 3D Bevel Cushion (reaches ~4.5dp..8.5dp inward, feathered over 5.8dp):
-            // Gentle and tint-harmonized along the top edge so the glass color reaches the top rim,
-            // milky-frosted on the lateral caps, and luminous along the bottom subsurface caustic bevel!
-            innerSlopeChromaticPaint.strokeWidth = min(minDimPx * 0.36f, 17.0f * density).coerceAtLeast(8.5f * density)
-            innerSlopeChromaticPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(5.8f * density)
+            // 1. Wide Pillowy 3D Bevel Cushion (scales proportionally on small/nested elements):
+            val bevelScale = sizeDepthScale * (if (isNestedInCard) 0.72f else 1.0f)
+            innerSlopeChromaticPaint.strokeWidth = (min(minDimPx * 0.32f, 17.0f * density) * bevelScale)
+                .coerceAtLeast(4.5f * density)
+            innerSlopeChromaticPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(
+                (2.2f + 3.6f * bevelScale) * density
+            )
             slopeColors[0] = argbWithAlpha(topBevelRgb, rimLight * 0.22f)
-            slopeColors[1] = argbWithAlpha(sideBevelRgb, rimLight * 0.46f)
-            slopeColors[2] = argbWithAlpha(causticBevelRgb, rimLight * 0.72f)
-            slopeColors[3] = argbWithAlpha(bottomCrestRgb, rimLight * 0.94f)
+            slopeColors[1] = argbWithAlpha(sideBevelRgb, rimLight * 0.44f)
+            slopeColors[2] = argbWithAlpha(causticBevelRgb, rimLight * 0.68f)
+            slopeColors[3] = argbWithAlpha(bottomCrestRgb, rimLight * 0.90f)
             innerSlopeChromaticPaint.shader = AndroidLinearGradient(
                 cx * 0.92f,
                 0f,
@@ -714,12 +738,15 @@ fun Modifier.seaGlass(
                 Shader.TileMode.CLAMP
             )
 
-            // 2. Mid Bevel Cushion (reaches ~2.2dp..4.2dp inward, 3.2dp feather so there is zero white ring line)
-            midFrostRindPaint.strokeWidth = min(minDimPx * 0.18f, 8.4f * density).coerceAtLeast(4.4f * density)
-            midFrostRindPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(3.2f * density)
+            // 2. Mid Bevel Cushion (scales proportionally on small/nested elements)
+            midFrostRindPaint.strokeWidth = (min(minDimPx * 0.16f, 8.4f * density) * bevelScale)
+                .coerceAtLeast(2.4f * density)
+            midFrostRindPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(
+                (1.2f + 2.0f * bevelScale) * density
+            )
             midCrestColors[0] = argbWithAlpha(topBevelRgb, rimLight * 0.14f)
-            midCrestColors[1] = argbWithAlpha(sideBevelRgb, rimLight * 0.36f)
-            midCrestColors[2] = argbWithAlpha(bottomCrestRgb, rimLight * 0.84f)
+            midCrestColors[1] = argbWithAlpha(sideBevelRgb, rimLight * 0.34f)
+            midCrestColors[2] = argbWithAlpha(bottomCrestRgb, rimLight * 0.80f)
             midFrostRindPaint.shader = AndroidLinearGradient(
                 cx,
                 0f,
@@ -731,11 +758,11 @@ fun Modifier.seaGlass(
             )
 
             // 3. Soft Tumbled Edge Lip (subtle on top/sides, luminous catch-light on the bottom rim)
-            outerContactLipPaint.strokeWidth = 1.6f * density
-            outerContactLipPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.85f * density)
-            lipColors[0] = argbWithAlpha(milkyRindRgb, rimLight * 0.16f)
-            lipColors[1] = argbWithAlpha(milkyRindRgb, rimLight * 0.28f)
-            lipColors[2] = argbWithAlpha(bottomCrestRgb, rimLight * 0.74f)
+            outerContactLipPaint.strokeWidth = (1.1f + 0.5f * bevelScale) * density
+            outerContactLipPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.75f * density)
+            lipColors[0] = argbWithAlpha(milkyRindRgb, rimLight * 0.14f)
+            lipColors[1] = argbWithAlpha(milkyRindRgb, rimLight * 0.26f)
+            lipColors[2] = argbWithAlpha(bottomCrestRgb, rimLight * 0.68f)
             outerContactLipPaint.shader = AndroidLinearGradient(
                 cx,
                 0f,
@@ -746,7 +773,8 @@ fun Modifier.seaGlass(
                 Shader.TileMode.CLAMP
             )
 
-            rindStipplePaint.strokeWidth = min(minDimPx * 0.34f, 15.0f * density).coerceAtLeast(7.0f * density)
+            rindStipplePaint.strokeWidth = (min(minDimPx * 0.30f, 15.0f * density) * bevelScale)
+                .coerceAtLeast(4.0f * density)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && etchedRuntimeShader != null) {
                 val isDarkGlass = SeaGlassColorMath.argbToOklab(primaryTintArgb).l < 0.48f
@@ -757,10 +785,15 @@ fun Modifier.seaGlass(
                 val lR = ((lipArgb ushr 16) and 0xFF) / 255f
                 val lG = ((lipArgb ushr 8) and 0xFF) / 255f
                 val lB = (lipArgb and 0xFF) / 255f
+                val etchStrength = (0.45f + 0.55f * bevelScale).coerceIn(0.42f, 1.0f)
 
-                etchedRuntimeShader.setFloatUniform("uStepPx", 0.52f * density, 1.15f * density)
+                etchedRuntimeShader.setFloatUniform(
+                    "uStepPx",
+                    0.34f * density * etchStrength,
+                    0.78f * density * etchStrength
+                )
                 etchedRuntimeShader.setFloatUniform("uGlassTint", tR, tG, tB, if (isDarkGlass) 1f else 0f)
-                etchedRuntimeShader.setFloatUniform("uLipColor", lR, lG, lB, material.coarseness)
+                etchedRuntimeShader.setFloatUniform("uLipColor", lR, lG, lB, etchStrength)
                 etchedContentLayer.compositingStrategy = CompositingStrategy.Offscreen
                 etchedContentLayer.renderEffect = AndroidRenderEffect
                     .createRuntimeShaderEffect(etchedRuntimeShader, "content")
@@ -808,11 +841,11 @@ fun Modifier.seaGlass(
 
                 val nCanvas = drawContext.canvas.nativeCanvas
 
-                // Pass 0: Grounding elevation drop shadow beneath the bottom bevel
+                // Pass 0: Grounding elevation drop shadow beneath the bottom bevel (scaled for element size)
                 nCanvas.save()
                 nCanvas.translate(
-                    -combinedTiltX * 2.0f * density,
-                    (5.2f - combinedTiltY * 1.8f) * density
+                    -combinedTiltX * 1.6f * shadowDepthScale * density,
+                    (1.6f + 3.6f * shadowDepthScale - combinedTiltY * 1.4f * shadowDepthScale) * density
                 )
                 nCanvas.drawPath(outerAndroidPath, ambientShadowPaint)
                 nCanvas.restore()

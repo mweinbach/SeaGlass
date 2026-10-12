@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -69,6 +70,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -1153,8 +1155,9 @@ fun SeaGlassTextField(
 }
 
 /**
- * Tactile Liquid SeaGlass Toggle Switch whose thumb is a 3D water-drop lens that glides
- * across the frosted capsule track with velocity stretch and magnifies the track underneath.
+ * Tactile SeaGlass Toggle Switch featuring an optically recessed capsule trough (when unchecked)
+ * that fills with rich volumetric Oklab sea-glass color (when checked), paired with a sculpted
+ * 3D alabaster milk-glass pebble thumb that glides with lead/trail spatial spring stretch.
  */
 @Composable
 fun SeaGlassSwitch(
@@ -1171,12 +1174,12 @@ fun SeaGlassSwitch(
     val targetSwitchVal = if (checked) 1f else 0f
     val leadThumb by animateFloatAsState(
         targetValue = targetSwitchVal,
-        animationSpec = spring(dampingRatio = 0.64f, stiffness = 560f),
+        animationSpec = spring(dampingRatio = 0.66f, stiffness = 560f),
         label = "switchLeadThumb"
     )
     val trailThumb by animateFloatAsState(
         targetValue = targetSwitchVal,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f),
+        animationSpec = spring(dampingRatio = 0.74f, stiffness = 320f),
         label = "switchTrailThumb"
     )
     val tintProgress by animateFloatAsState(
@@ -1185,73 +1188,165 @@ fun SeaGlassSwitch(
         label = "switchTintEffects"
     )
 
-    val leftThumbFrac = min(leadThumb, trailThumb).coerceIn(-0.08f, 1.08f)
-    val rightThumbFrac = max(leadThumb, trailThumb).coerceIn(-0.08f, 1.08f)
-    val stretchFrac = (rightThumbFrac - leftThumbFrac).coerceIn(0f, 0.85f)
-    val trackMaterial = remember(checkedMaterial, uncheckedMaterial, tintProgress, stretchFrac) {
-        SeaGlassMaterial.lerp(uncheckedMaterial, checkedMaterial, tintProgress.coerceIn(0f, 1f)).copy(
-            cornerRadiusDp = 18f,
-            thicknessDp = 12f
-        ).deaged(stretchFrac * 1.15f)
-    }
-    val trackWidthDp = 56.dp
-    val trackHeightDp = 32.dp
-    val baseThumbWidthDp = 26.dp
-    val thumbHeightDp = 24.dp
-    val padPx = with(density) { 3.dp.toPx() }
-    val travelPx = with(density) { (trackWidthDp - baseThumbWidthDp - 6.dp).toPx() }
-    val thumbOffsetX = (padPx + travelPx * leftThumbFrac).roundToInt()
-    val dynamicThumbWidthDp = baseThumbWidthDp + with(density) { (travelPx * stretchFrac).toDp() }
+    val leftThumbFrac = min(leadThumb, trailThumb).coerceIn(-0.04f, 1.04f)
+    val rightThumbFrac = max(leadThumb, trailThumb).coerceIn(-0.04f, 1.04f)
+    val stretchFrac = (rightThumbFrac - leftThumbFrac).coerceIn(0f, 0.75f)
 
-    val contentColor = remember(trackMaterial.tintColorArgb, trackMaterial.tintDensity) {
-        Color(
-            SeaGlassColorMath.optimalContentColorFor(
-                tintArgb = trackMaterial.tintColorArgb,
-                tintDensity = trackMaterial.tintDensity
-            )
-        )
+    val trackWidthDp = 52.dp
+    val trackHeightDp = 30.dp
+    val baseThumbSizeDp = 24.dp
+    val padPx = with(density) { 3.dp.toPx() }
+    val travelPx = with(density) { (trackWidthDp - baseThumbSizeDp - 6.dp).toPx() }
+    val thumbOffsetX = (padPx + travelPx * leftThumbFrac).roundToInt()
+    val dynamicThumbWidthDp = baseThumbSizeDp + with(density) { (travelPx * stretchFrac).toDp() }
+
+    val isDarkSurface = remember(uncheckedMaterial.tintColorArgb) {
+        SeaGlassColorMath.argbToOklab(uncheckedMaterial.tintColorArgb).l < 0.48f
     }
+    val deepActiveArgb = remember(checkedMaterial.tintColorArgb) {
+        SeaGlassColorMath.computeDeepVolumetricCoreColor(checkedMaterial.tintColorArgb, 0.85f)
+    }
+    val causticActiveArgb = remember(checkedMaterial.tintColorArgb, checkedMaterial.coarseness) {
+        SeaGlassColorMath.computeSubsurfaceCausticColor(checkedMaterial.tintColorArgb, checkedMaterial.coarseness)
+    }
+    val checkIconColor = remember(checkedMaterial.tintColorArgb) {
+        Color(SeaGlassColorMath.optimalContentColorFor(checkedMaterial.tintColorArgb, 0.85f))
+    }
+
+    val t = tintProgress.coerceIn(0f, 1f)
+    val offTopColor = if (isDarkSurface) Color(0xFF040D18).copy(alpha = 0.52f) else Color(0xFF0A2434).copy(alpha = 0.16f)
+    val offBotColor = if (isDarkSurface) Color(0xFF0A1B2E).copy(alpha = 0.42f) else Color(0xFF0E2D40).copy(alpha = 0.11f)
+    val onTopColor = Color(deepActiveArgb).copy(alpha = 0.88f)
+    val onBotColor = Color(causticActiveArgb).copy(alpha = 0.92f)
+
+    val trackTopColor = androidx.compose.ui.graphics.lerp(offTopColor, onTopColor, t)
+    val trackBotColor = androidx.compose.ui.graphics.lerp(offBotColor, onBotColor, t)
+    val trackTopRim = androidx.compose.ui.graphics.lerp(
+        Color(0xFF061624).copy(alpha = if (isDarkSurface) 0.48f else 0.18f),
+        Color(deepActiveArgb).copy(alpha = 0.45f),
+        t
+    )
+    val trackBotRim = Color.White.copy(alpha = if (isDarkSurface) 0.24f else 0.58f)
+
+    val thumbShadowPaint = remember {
+        android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            style = android.graphics.Paint.Style.FILL
+        }
+    }
+    val thumbPath = remember { android.graphics.Path() }
 
     Box(
         contentAlignment = Alignment.CenterStart,
         modifier = modifier
             .size(width = trackWidthDp, height = trackHeightDp)
+            .clip(CircleShape)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(trackTopColor, trackBotColor)
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(trackTopRim, trackBotRim)
+                ),
+                shape = CircleShape
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = { onCheckedChange(!checked) }
             )
-            .seaGlass(
-                stageState = stageState,
-                material = trackMaterial,
-                contentRole = SeaGlassContentRole.TEXT_AND_ICONS
-            )
     ) {
-        // 3D Liquid Lens Thumb with Lead/Trail Droplet Stretch
+        // Sculpted 3D Alabaster Milk-Glass Pebble Thumb with Grounding Shadow
+        val thumbBottomTint = remember(checkedMaterial.tintColorArgb, t) {
+            Color(
+                SeaGlassColorMath.lerpOklab(
+                    0xFFEEF5FA.toInt(),
+                    checkedMaterial.tintColorArgb,
+                    0.12f + 0.14f * t
+                )
+            )
+        }
+
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .offset { IntOffset(thumbOffsetX, 0) }
-                .size(width = dynamicThumbWidthDp, height = thumbHeightDp)
+                .size(width = dynamicThumbWidthDp, height = baseThumbSizeDp)
                 .graphicsLayer {
-                    scaleY = 1f - 0.14f * stretchFrac
+                    scaleY = 1f - 0.10f * stretchFrac
                 }
-                .clip(RoundedCornerShape(14.dp))
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = if (checked) 0.92f else 0.74f),
-                            Color(checkedMaterial.tintColorArgb).copy(alpha = if (checked) 0.58f else 0.28f)
-                        )
+                .let { mod ->
+                    mod.then(
+                        Modifier.
+                            // Draw soft grounding shadow + 3D alabaster pebble dome
+                            run {
+                                androidx.compose.ui.Modifier.drawWithContent {
+                                    val w = size.width
+                                    val h = size.height
+                                    val r = min(w, h) * 0.5f
+                                    thumbPath.reset()
+                                    thumbPath.addRoundRect(0f, 0f, w, h, r, r, android.graphics.Path.Direction.CW)
+                                    thumbShadowPaint.color = 0x3D061422
+                                    thumbShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(2.4f * this.density)
+
+                                    val nCanvas = drawContext.canvas.nativeCanvas
+                                    nCanvas.save()
+                                    nCanvas.translate(0f, 1.5f * this.density)
+                                    nCanvas.drawPath(thumbPath, thumbShadowPaint)
+                                    nCanvas.restore()
+
+                                    // 3D Alabaster Milk-Glass Dome Fill
+                                    drawRoundRect(
+                                        brush = Brush.verticalGradient(
+                                            0.00f to Color.White,
+                                            0.62f to Color(0xFFF7FAFD),
+                                            1.00f to thumbBottomTint
+                                        ),
+                                        cornerRadius = CornerRadius(r, r)
+                                    )
+                                    // Upper-left convex dome crown highlight
+                                    drawRoundRect(
+                                        brush = Brush.radialGradient(
+                                            colors = listOf(
+                                                Color.White.copy(alpha = 0.95f),
+                                                Color.Transparent
+                                            ),
+                                            center = Offset(w * 0.36f, h * 0.30f),
+                                            radius = max(w, h) * 0.62f
+                                        ),
+                                        cornerRadius = CornerRadius(r, r)
+                                    )
+                                    // Subtle porcelain edge definition
+                                    drawRoundRect(
+                                        brush = Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color.White.copy(alpha = 0.92f),
+                                                Color(0xFFDCE8F2).copy(alpha = 0.55f)
+                                            )
+                                        ),
+                                        cornerRadius = CornerRadius(r, r),
+                                        style = Stroke(width = 0.8.dp.toPx())
+                                    )
+
+                                    this@drawWithContent.drawContent()
+                                }
+                            }
                     )
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.82f), RoundedCornerShape(14.dp))
+                }
         ) {
-            if (checked) {
+            if (t > 0.35f) {
                 SeaGlassIcon(
                     glyph = SeaGlassGlyph.Check,
-                    modifier = Modifier.size(13.dp),
-                    tint = contentColor
+                    modifier = Modifier
+                        .size(12.dp)
+                        .graphicsLayer {
+                            alpha = ((t - 0.35f) / 0.65f).coerceIn(0f, 1f)
+                            scaleX = alpha
+                            scaleY = alpha
+                        },
+                    tint = checkIconColor
                 )
             }
         }

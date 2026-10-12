@@ -863,15 +863,28 @@ fun SeaGlassSheetGroup(
 ) {
     val contentColor = LocalContentColor.current
     val isDark = contentColor.red > 0.7f
-    val fillAlpha = if (isDark) 0.12f else 0.07f
-    val borderAlpha = if (isDark) 0.16f else 0.12f
+    val topFill = if (isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.42f)
+    val botFill = if (isDark) Color.White.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.28f)
+    val topRim = if (isDark) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.68f)
+    val midRim = if (isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.28f)
+    val botRim = if (isDark) Color.White.copy(alpha = 0.26f) else Color.White.copy(alpha = 0.76f)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(22.dp))
-            .background(contentColor.copy(alpha = fillAlpha))
-            .border(0.8.dp, contentColor.copy(alpha = borderAlpha), RoundedCornerShape(22.dp)),
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(topFill, botFill)
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(topRim, midRim, botRim)
+                ),
+                shape = RoundedCornerShape(22.dp)
+            ),
         content = content
     )
 }
