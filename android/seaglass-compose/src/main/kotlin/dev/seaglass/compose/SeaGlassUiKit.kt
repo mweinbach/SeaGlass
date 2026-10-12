@@ -1356,7 +1356,21 @@ fun SeaGlassSwitch(
                 onClick = { onCheckedChange(!checked) }
             )
     ) {
-        // 3D Crystal-Clear Refractive Glass Circle (Thumb) — Zero Checkmark, Pure Clear Lens Reflections
+        // 3D Clear-Tinted Sea-Glass Circle (Thumb) — "Clear like no color, but still some tint"
+        // Modeled after the frosted clear-milk "Mail" inlay pill in Reference Image 2:
+        // No intrinsic pigment of its own, yet picks up a soft ~26% Oklab tint from the underlying
+        // sea-glass track, with a 360-degree pillowy frosted bevel, subsurface bottom caustic lift,
+        // and fine sea-glass sand grain (zero glossy soap-bubble arcs!).
+        val clearTintedTop = remember(activeTrackTintArgb, activeCoarseness) {
+            Color(SeaGlassColorMath.computeFrostedRindColor(activeTrackTintArgb, activeCoarseness, 0.78f))
+        }
+        val clearTintedMid = remember(activeTrackTintArgb, activeCoarseness) {
+            Color(SeaGlassColorMath.computeFrostedRindColor(activeTrackTintArgb, activeCoarseness, 0.66f))
+        }
+        val clearTintedBot = remember(causticBotArgb, activeCoarseness) {
+            Color(SeaGlassColorMath.computeFrostedRindColor(causticBotArgb, activeCoarseness, 0.84f))
+        }
+
         Box(
             modifier = Modifier
                 .offset { IntOffset(thumbOffsetX, 0) }
@@ -1373,107 +1387,89 @@ fun SeaGlassSwitch(
 
                     val nCanvas = drawContext.canvas.nativeCanvas
 
-                    // Pass 1: Soft contact shadow strictly OUTSIDE the clear glass circle
-                    thumbShadowPaint.color = 0x3E05121E
-                    thumbShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(2.0f * this.density)
+                    // Pass 1: Soft grounding shadow strictly OUTSIDE the clear-tinted sea-glass circle
+                    thumbShadowPaint.color = 0x36061420
+                    thumbShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(2.2f * this.density)
                     nCanvas.save()
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         nCanvas.clipOutPath(thumbPath)
                     }
-                    nCanvas.translate(0.3f * this.density, 1.4f * this.density)
+                    nCanvas.translate(0.2f * this.density, 1.5f * this.density)
                     nCanvas.drawPath(thumbPath, thumbShadowPaint)
                     nCanvas.restore()
 
-                    // Pass 2: Crystal-Clear Glass Lens Interior (transmits & clarifies the colored track underneath,
-                    // focusing light into a luminous lower-right internal caustic while keeping the center clear!)
+                    // Pass 2: Clear-Tinted Frosted Sea-Glass Body (no color of its own, softly tinted by track)
                     nCanvas.save()
                     nCanvas.clipPath(thumbPath)
 
                     drawRoundRect(
-                        brush = Brush.linearGradient(
-                            0.00f to Color.White.copy(alpha = 0.30f),
-                            0.36f to Color.Transparent,
-                            0.68f to Color(causticBotArgb).copy(alpha = 0.28f),
-                            1.00f to Color.White.copy(alpha = 0.62f),
-                            start = Offset(0f, 0f),
-                            end = Offset(w, h)
+                        brush = Brush.verticalGradient(
+                            0.00f to clearTintedTop.copy(alpha = 0.62f),
+                            0.48f to clearTintedMid.copy(alpha = 0.52f),
+                            1.00f to clearTintedBot.copy(alpha = 0.74f)
                         ),
                         cornerRadius = CornerRadius(r, r)
                     )
 
-                    // Focused internal lower-right lens caustic crescent
+                    // Soft subsurface caustic reflection along the lower third of the circle
                     drawRoundRect(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.62f),
-                                Color(causticBotArgb).copy(alpha = 0.34f),
+                                Color.White.copy(alpha = 0.46f),
+                                clearTintedBot.copy(alpha = 0.28f),
                                 Color.Transparent
                             ),
-                            center = Offset(w * 0.68f, h * 0.78f),
-                            radius = max(w, h) * 0.48f
+                            center = Offset(w * 0.54f, h * 0.78f),
+                            radius = max(w, h) * 0.58f
                         ),
                         cornerRadius = CornerRadius(r, r)
                     )
 
-                    // Pass 3: Crisp Clear-Glass Fresnel Meniscus Rim (1.3dp wide inside thumb contour)
-                    thumbFresnelPaint.strokeWidth = 2.8f * this.density
-                    thumbFresnelPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.55f * this.density)
+                    // Pass 3: Pillowy 360-Degree Frosted Sea-Glass Bevel + Fine Sand-Grain Texture
+                    thumbFresnelPaint.strokeWidth = 5.2f * this.density
+                    thumbFresnelPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(2.0f * this.density)
                     thumbFresnelPaint.shader = android.graphics.LinearGradient(
+                        w * 0.5f,
                         0f,
-                        0f,
-                        w,
+                        w * 0.5f,
                         h,
                         intArrayOf(
-                            0xEBFFFFFF.toInt(),
-                            0x42FFFFFF,
-                            0x68E8FAFF,
-                            0xE0FFFFFF.toInt()
+                            0x98FFFFFF.toInt(),
+                            0x68FFFFFF,
+                            0xDCFFFFFF.toInt()
                         ),
-                        floatArrayOf(0.0f, 0.40f, 0.74f, 1.0f),
+                        floatArrayOf(0.0f, 0.45f, 1.0f),
                         Shader.TileMode.CLAMP
                     )
                     nCanvas.drawPath(thumbPath, thumbFresnelPaint)
 
+                    val grainScale = (this.density * 0.38f).coerceIn(0.78f, 1.22f)
+                    trackGrainMatrix.reset()
+                    trackGrainMatrix.setScale(grainScale, grainScale)
+                    trackGrainPaint.shader?.setLocalMatrix(trackGrainMatrix)
+                    trackGrainPaint.alpha = (activeCoarseness.coerceIn(0f, 1f) * 125f).toInt().coerceIn(0, 140)
+                    if (trackGrainPaint.alpha > 4) {
+                        nCanvas.drawRect(0f, 0f, w, h, trackGrainPaint)
+                    }
+
+                    // Soft tumbled outer rim lip
                     thumbRimPaint.strokeWidth = 1.2f * this.density
-                    thumbRimPaint.maskFilter = null
+                    thumbRimPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(0.45f * this.density)
                     thumbRimPaint.shader = android.graphics.LinearGradient(
+                        w * 0.5f,
                         0f,
-                        0f,
-                        w,
+                        w * 0.5f,
                         h,
                         intArrayOf(
-                            0xF8FFFFFF.toInt(),
-                            0x58FFFFFF,
-                            0xEEFFFFFF.toInt()
+                            0x88FFFFFF.toInt(),
+                            0x52FFFFFF,
+                            0xCCFFFFFF.toInt()
                         ),
                         floatArrayOf(0.0f, 0.48f, 1.0f),
                         Shader.TileMode.CLAMP
                     )
                     nCanvas.drawPath(thumbPath, thumbRimPaint)
                     nCanvas.restore()
-
-                    // Pass 4: Curved Upper-Left Convex Lens Specular Reflection Crescent + Lower-Right Glint
-                    val arcInset = 2.7.dp.toPx()
-                    val arcW = (w - arcInset * 2f).coerceAtLeast(2f)
-                    val arcH = (h - arcInset * 2f).coerceAtLeast(2f)
-                    drawArc(
-                        color = Color.White.copy(alpha = 0.90f),
-                        startAngle = 196f,
-                        sweepAngle = 64f,
-                        useCenter = false,
-                        topLeft = Offset(arcInset, arcInset),
-                        size = Size(arcW, arcH),
-                        style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                    drawArc(
-                        color = Color.White.copy(alpha = 0.58f),
-                        startAngle = 18f,
-                        sweepAngle = 48f,
-                        useCenter = false,
-                        topLeft = Offset(arcInset, arcInset),
-                        size = Size(arcW, arcH),
-                        style = Stroke(width = 1.1.dp.toPx(), cap = StrokeCap.Round)
-                    )
                 }
         )
     }
