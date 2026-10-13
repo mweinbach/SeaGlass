@@ -242,6 +242,7 @@ fun SeaGlassMorphContainer(
                 Box(
                     contentAlignment = Alignment.TopCenter,
                     modifier = Modifier
+                        .seaGlassEtchedSiblingContent(material.tintColorArgb, material.coarseness)
                         .drawWithContent {
                             if (contentAlpha <= 0.005f) return@drawWithContent
                             val cW = clipHolder.curW
@@ -886,29 +887,17 @@ fun SeaGlassSheetGroup(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val contentColor = LocalContentColor.current
-    val isDark = contentColor.red > 0.7f
-    val topFill = if (isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.42f)
-    val botFill = if (isDark) Color.White.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.28f)
-    val topRim = if (isDark) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.68f)
-    val midRim = if (isDark) Color.White.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.28f)
-    val botRim = if (isDark) Color.White.copy(alpha = 0.26f) else Color.White.copy(alpha = 0.76f)
+    // Light ink means a dark sheet. Luminance is robust to tinted inks.
+    val isDark = (0.2126f * contentColor.red + 0.7152f * contentColor.green + 0.0722f * contentColor.blue) > 0.5f
+    val fillAlpha = if (isDark) 0.10f else 0.06f
+    val borderAlpha = if (isDark) 0.14f else 0.10f
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(22.dp))
-            .background(
-                androidx.compose.ui.graphics.Brush.verticalGradient(
-                    colors = listOf(topFill, botFill)
-                )
-            )
-            .border(
-                width = 1.dp,
-                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                    colors = listOf(topRim, midRim, botRim)
-                ),
-                shape = RoundedCornerShape(22.dp)
-            ),
+            .background(contentColor.copy(alpha = fillAlpha))
+            .border(0.8.dp, contentColor.copy(alpha = borderAlpha), RoundedCornerShape(22.dp)),
         content = content
     )
 }
@@ -1011,11 +1000,7 @@ fun SeaGlassSheetToggleSection(
     modifier: Modifier = Modifier,
     caption: String? = null,
     checkedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
-    uncheckedMaterial: SeaGlassMaterial = dev.seaglass.core.SeaGlassPalette.RoseQuartzShell.primaryGlass.copy(
-        tintColorArgb = 0xFFF06E6A.toInt(),
-        tintDensity = 0.74f,
-        coarseness = 0.48f
-    ),
+    uncheckedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
     checkedTrackColor: Color? = null,
     uncheckedTrackColor: Color? = null
 ) {

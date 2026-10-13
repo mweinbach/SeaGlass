@@ -98,8 +98,8 @@ data class SeaGlassPalette(
             transparency = 0.62f
         ),
         accentRimArgb = 0xFFE8FFF9.toInt(),
-        onPrimaryGlassArgb = 0xFF0A4236.toInt(),
-        onSurfaceGlassArgb = 0xFF0E4A3D.toInt()
+        onPrimaryGlassArgb = 0xFF06261E.toInt(),
+        onSurfaceGlassArgb = 0xFF092E25.toInt()
     )
 
     val CobaltTide = SeaGlassPalette(

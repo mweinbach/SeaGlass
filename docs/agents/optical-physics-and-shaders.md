@@ -143,3 +143,15 @@ Given a normalized directional light vector $\mathbf{L} = \text{normalize}(-0.55
    $$
 4. **Sanded Micro-Grain Sparkle**:
    A subtle chalky micro-facet modulation proportional to $\text{coarseness} \cdot \xi(\mathbf{p})$ gives the surface the unmistakable tactile feel of dry, ocean-tumbled sea glass.
+
+---
+
+## 7. Content Roles: Quiet Chrome vs. Optical Lenses (Compose)
+
+`Modifier.seaGlass(contentRole = ...)` picks how much relief a surface carries.
+
+- **`PURE_OPTICAL_LENS`** draws the full tumbled treatment: pillow bevel, frosted rind, pinpoint pitting (`SeaGlassSandGrainTexture`, `OVERLAY`), bevel stipple, the lower caustic pool, a blurred grounding shadow plus caustic shadow, and the AGSL intaglio etch on its content.
+- **`TEXT_AND_ICONS` and `NAVIGATION_CHROME`** are *quiet chrome* for dense UI (bars, sheets, menus, cards). They keep a gentle Beer-Lambert `Modulate` absorption (dark glass keeps the full filter), the tinted body scatter, a soft `SrcOver` velvet grain (`SeaGlassVelvetGrainTexture`), a faint unblurred two-step bevel, an unblurred edge lip and a tight 1.5 dp contact shadow. They skip the rind, stipple, caustic pool and blur mask filters, which read as milky and gritty on text-heavy surfaces and cost blurred strokes every frame.
+- Quiet chrome etches content only when the glass is dark (Oklab L < 0.48), where the ink is light, at 70% strength. Light glass skips the etch pass and does not build its `RuntimeShader`.
+- Floating sheets draw their content beside the glass rather than inside it, so `SeaGlassFloatingSheet` applies the same etch to the content layer through `seaGlassEtchedSiblingContent` as a layer `RenderEffect`.
+- `SeaGlassSheetGroup` uses a quiet `contentColor` fill (6% light, 10% dark) and a hairline border; dark detection uses the content color's luminance. `SeaGlassSwitch` and `SeaGlassSheetToggleSection` default to the palette's `surfaceGlass` when off.

@@ -467,8 +467,10 @@ fun Modifier.seaGlass(
     val uniformBlock = remember { SeaGlassUniformBlock() }
     val outerAndroidPath = remember { Path() }
     val etchedContentLayer = rememberGraphicsLayer()
-    val etchedRuntimeShader = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    // Chrome etches only light ink on dark glass; light glass chrome skips the etch pass entirely.
+    val materialIsDarkGlass = SeaGlassColorMath.argbToOklab(material.tintColorArgb).l < 0.48f
+    val etchedRuntimeShader = remember(contentRole, materialIsDarkGlass) {
+        if ((!contentRole.isQuietChrome() || materialIsDarkGlass) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             try {
                 android.graphics.RuntimeShader(AGSL_ETCHED_CONTENT_SHADER_SOURCE)
             } catch (_: Throwable) {
@@ -699,9 +701,18 @@ fun Modifier.seaGlass(
                 .toInt()
                 .coerceIn(18, 86)
             ambientShadowPaint.color = (shadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
-            ambientShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(
-                (2.4f + 4.2f * shadowDepthScale) * density
-            )
+            if (contentRole.isQuietChrome()) {
+                val quietShadowAlpha = ((0.06f + sandWear * 0.10f) * 255f).toInt().coerceIn(8, 36)
+                ambientShadowPaint.style = AndroidPaint.Style.STROKE
+                ambientShadowPaint.strokeWidth = 2.5f * density
+                ambientShadowPaint.color = (quietShadowAlpha shl 24) or (shadowColorArgb and 0x00FFFFFF)
+                ambientShadowPaint.maskFilter = null
+            } else {
+                ambientShadowPaint.style = AndroidPaint.Style.FILL
+                ambientShadowPaint.maskFilter = SeaGlassShaderProgramCache.obtainBlurMaskFilter(
+                    (2.4f + 4.2f * shadowDepthScale) * density
+                )
+            }
 
             val causticShadowArgb = SeaGlassColorMath.lerpOklab(
                 secondaryTintArgb,
@@ -820,7 +831,11 @@ fun Modifier.seaGlass(
             rindStipplePaint.strokeWidth = (min(minDimPx * 0.30f, 15.0f * density) * bevelScale)
                 .coerceAtLeast(4.0f * density)
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && etchedRuntimeShader != null) {
+            val quietChromeRole = contentRole.isQuietChrome()
+            val etchContent = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                etchedRuntimeShader != null &&
+                (!quietChromeRole || SeaGlassColorMath.argbToOklab(primaryTintArgb).l < 0.48f)
+            if (etchContent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && etchedRuntimeShader != null) {
                 val isDarkGlass = SeaGlassColorMath.argbToOklab(primaryTintArgb).l < 0.48f
                 val tR = ((primaryTintArgb ushr 16) and 0xFF) / 255f
                 val tG = ((primaryTintArgb ushr 8) and 0xFF) / 255f
@@ -829,7 +844,8 @@ fun Modifier.seaGlass(
                 val lR = ((lipArgb ushr 16) and 0xFF) / 255f
                 val lG = ((lipArgb ushr 8) and 0xFF) / 255f
                 val lB = (lipArgb and 0xFF) / 255f
-                val etchStrength = (0.45f + 0.55f * bevelScale).coerceIn(0.42f, 1.0f)
+                val etchStrength = (0.45f + 0.55f * bevelScale).coerceIn(0.42f, 1.0f) *
+                    (if (quietChromeRole) 0.70f else 1.0f)
 
                 etchedRuntimeShader.setFloatUniform(
                     "uStepPx",
@@ -879,14 +895,18 @@ fun Modifier.seaGlass(
 
                 // Pass 0: Grounding elevation drop shadow + warm/cool transmitted caustic glow beneath bottom rim
                 nCanvas.save()
-                nCanvas.translate(
-                    -combinedTiltX * 1.6f * shadowDepthScale * density,
-                    (1.8f + 4.0f * shadowDepthScale - combinedTiltY * 1.4f * shadowDepthScale) * density
-                )
+                if (contentRole.isQuietChrome()) {
+                    nCanvas.translate(0f, 1.5f * density)
+                } else {
+                    nCanvas.translate(
+                        -combinedTiltX * 1.6f * shadowDepthScale * density,
+                        (1.8f + 4.0f * shadowDepthScale - combinedTiltY * 1.4f * shadowDepthScale) * density
+                    )
+                }
                 nCanvas.drawPath(outerAndroidPath, ambientShadowPaint)
                 nCanvas.restore()
 
-                if (causticShadowAlpha > 4) {
+                if (causticShadowAlpha > 4 && !contentRole.isQuietChrome()) {
                     nCanvas.save()
                     nCanvas.translate(
                         -combinedTiltX * 0.8f * shadowDepthScale * density,
@@ -989,7 +1009,7 @@ fun Modifier.seaGlass(
 
                 // Pass 3: Foreground UI content etched into the glass contour
                 clipPath(composeOuterPath) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && etchedRuntimeShader != null) {
+                    if (etchContent && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && etchedRuntimeShader != null) {
                         val intW = widthPx.toInt().coerceAtLeast(1)
                         val intH = heightPx.toInt().coerceAtLeast(1)
                         etchedContentLayer.record(size = IntSize(intW, intH)) {
@@ -1044,6 +1064,15 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
         )
     } else {
         Offset(widthPx * 0.85f, heightPx)
+    }
+
+    if (contentRole.isQuietChrome()) {
+        drawQuietChromeSeaGlassOptics(
+            composeOuterPath, outerAndroidPath, material, primaryTintArgb, secondaryTintArgb,
+            gradStart, gradEnd, widthPx, heightPx, sandWear, contentRole,
+            innerSlopeChromaticPaint, outerContactLipPaint, sandGrainPaint, shaderLocalMatrix
+        )
+        return
     }
 
     // 1. Volumetric Beer-Lambert Absorption, Pastel Body Chroma, & Lower Subsurface Caustic Pool:
@@ -1157,8 +1186,9 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
             val subsurfaceCaustic = Color(
                 SeaGlassColorMath.computeSubsurfaceCausticColor(secondaryTintArgb, material.coarseness)
             )
-            val coreAlpha = (bodyAlpha * (0.38f + 0.24f * material.tintDensity)).coerceIn(0.0f, 0.60f)
-            val causticPoolAlpha = (bodyAlpha * (0.62f + 0.28f * material.rimChalkiness)).coerceIn(0.0f, 0.86f)
+            val quiet = contentRole.isQuietChrome()
+            val coreAlpha = (bodyAlpha * (0.38f + 0.24f * material.tintDensity) * (if (quiet) 0.7f else 1f)).coerceIn(0.0f, 0.60f)
+            val causticPoolAlpha = (bodyAlpha * (0.62f + 0.28f * material.rimChalkiness) * (if (quiet) 0.3f else 1f)).coerceIn(0.0f, 0.86f)
 
             drawPath(
                 path = composeOuterPath,
@@ -1203,16 +1233,18 @@ private fun DrawScope.drawWaterDropSeaGlassOptics(
     val slopeAlpha = ((0.50f + 0.42f * max(sandWear, material.rimChalkiness * 0.60f)) * 225f)
         .toInt()
         .coerceIn(105, 232)
-    innerSlopeChromaticPaint.alpha = slopeAlpha
+    val quietChrome = contentRole.isQuietChrome()
+    innerSlopeChromaticPaint.alpha = if (quietChrome) (slopeAlpha * 0.45f).toInt() else slopeAlpha
     nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
+    midFrostRindPaint.alpha = if (quietChrome) 110 else 255
     nCanvas.drawPath(outerAndroidPath, midFrostRindPaint)
 
     // Pass 2B: Crisp pinpoint sea-glass pitting & crystalline sand grain across body and bevel
-    if (grainAlpha > 2) {
+    if (grainAlpha > 2 && !quietChrome) {
         sandGrainPaint.alpha = grainAlpha
         nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
     }
-    if (bevelStippleAlpha > 4) {
+    if (bevelStippleAlpha > 4 && !quietChrome) {
         rindStipplePaint.alpha = bevelStippleAlpha
         nCanvas.drawPath(outerAndroidPath, rindStipplePaint)
     }
@@ -1398,3 +1430,197 @@ fun Modifier.seaGlassEtched(
     tintColorArgb: Int = LocalSeaGlassPalette.current.primaryGlass.tintColorArgb,
     coarseness: Float = 0.45f
 ): Modifier = this
+
+/**
+ * Light etch for content drawn as a sibling of its glass (floating sheet rows, for example): carves
+ * light ink into dark glass with the same AGSL etch as Pass 3, at chrome strength. No-op on light
+ * glass and below Android 13. Applied as a layer render effect, so the content recording is reused.
+ */
+@Composable
+internal fun Modifier.seaGlassEtchedSiblingContent(
+    tintColorArgb: Int,
+    coarseness: Float
+): Modifier {
+    val isDarkGlass = remember(tintColorArgb) { SeaGlassColorMath.argbToOklab(tintColorArgb).l < 0.48f }
+    if (!isDarkGlass || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return this
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val effect = remember(tintColorArgb, coarseness, density) {
+        try {
+            val shader = android.graphics.RuntimeShader(AGSL_ETCHED_CONTENT_SHADER_SOURCE)
+            val lipArgb = SeaGlassColorMath.computeEtchedCatchLightColor(tintColorArgb, coarseness)
+            val strength = 0.70f
+            shader.setFloatUniform("uStepPx", 0.34f * density * strength, 0.78f * density * strength)
+            shader.setFloatUniform(
+                "uGlassTint",
+                ((tintColorArgb ushr 16) and 0xFF) / 255f,
+                ((tintColorArgb ushr 8) and 0xFF) / 255f,
+                (tintColorArgb and 0xFF) / 255f,
+                1f
+            )
+            shader.setFloatUniform(
+                "uLipColor",
+                ((lipArgb ushr 16) and 0xFF) / 255f,
+                ((lipArgb ushr 8) and 0xFF) / 255f,
+                (lipArgb and 0xFF) / 255f,
+                strength
+            )
+            AndroidRenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+        } catch (_: Throwable) {
+            null
+        }
+    } ?: return this
+    return this.graphicsLayer {
+        renderEffect = effect
+        compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+    }
+}
+
+/**
+ * Text, icon and navigation chrome keeps the glass quiet: no pitting grain, bevel stipple or transmitted
+ * caustic shadow, and a lighter bevel. It etches only light ink on dark glass, at reduced strength. Only pure
+ * optical lenses carry the full tumbled sea-glass relief.
+ */
+private fun SeaGlassContentRole.isQuietChrome(): Boolean = this != SeaGlassContentRole.PURE_OPTICAL_LENS
+
+/**
+ * Calm optics for app chrome (bars, sheets, menus, cards): tinted body, light grain and a faint
+ * two-step bevel. Skips the pillow bevel, frosted rind, stipple and caustic pool, which read as
+ * milky and gritty on dense UI and cost extra blurred strokes per frame.
+ */
+private fun DrawScope.drawQuietChromeSeaGlassOptics(
+    composeOuterPath: ComposePath,
+    outerAndroidPath: Path,
+    material: SeaGlassMaterial,
+    primaryTintArgb: Int,
+    secondaryTintArgb: Int,
+    gradStart: Offset,
+    gradEnd: Offset,
+    widthPx: Float,
+    heightPx: Float,
+    sandWear: Float,
+    contentRole: SeaGlassContentRole,
+    innerSlopeChromaticPaint: AndroidPaint,
+    outerContactLipPaint: AndroidPaint,
+    sandGrainPaint: AndroidPaint,
+    shaderLocalMatrix: AndroidMatrix
+) {
+    val isDarkGlass = SeaGlassColorMath.argbToOklab(primaryTintArgb).l < 0.48f
+    if (isDarkGlass) {
+        val filterStrength = ((0.18f + material.tintDensity * 0.46f + sandWear * 0.28f) *
+            (0.25f + 0.75f * max(sandWear, material.tintDensity))).coerceIn(0.04f, 0.88f)
+        drawPath(
+            path = composeOuterPath,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), primaryTintArgb, filterStrength)),
+                    Color(SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), secondaryTintArgb, filterStrength))
+                ),
+                start = gradStart,
+                end = gradEnd
+            ),
+            blendMode = BlendMode.Modulate
+        )
+        val darkBodyAlpha = (sandWear * 0.66f + material.tintDensity * (0.14f + 0.26f * sandWear))
+            .coerceIn(0.02f, 0.90f)
+        drawPath(
+            path = composeOuterPath,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(primaryTintArgb).copy(alpha = darkBodyAlpha),
+                    Color(secondaryTintArgb).copy(alpha = darkBodyAlpha)
+                ),
+                start = gradStart,
+                end = gradEnd
+            )
+        )
+    } else {
+        // Gentle Beer-Lambert absorption so the backdrop is tinted through the glass, not washed over.
+        val absorbStrength = ((0.26f + material.tintDensity * 0.42f) * (0.35f + 0.65f * sandWear))
+            .coerceIn(0.04f, 0.68f) * 0.35f
+        drawPath(
+            path = composeOuterPath,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    Color(SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), primaryTintArgb, absorbStrength)),
+                    Color(SeaGlassColorMath.lerpOklab(0xFFFFFFFF.toInt(), secondaryTintArgb, absorbStrength))
+                ),
+                start = gradStart,
+                end = gradEnd
+            ),
+            blendMode = BlendMode.Modulate
+        )
+        val screenAlpha = (sandWear * 0.32f + material.tintDensity * 0.20f * (0.20f + 0.80f * sandWear))
+            .coerceIn(0.0f, 0.50f)
+        if (screenAlpha > 0.01f) {
+            drawPath(
+                path = composeOuterPath,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(primaryTintArgb).copy(alpha = screenAlpha),
+                        Color(secondaryTintArgb).copy(alpha = screenAlpha)
+                    ),
+                    start = gradStart,
+                    end = gradEnd
+                ),
+                blendMode = BlendMode.Screen
+            )
+        }
+        val roleWeight = if (contentRole == SeaGlassContentRole.NAVIGATION_CHROME) 1.06f else 1.00f
+        val bodyAlpha = ((sandWear * 0.68f + material.tintDensity * (0.12f + 0.26f * sandWear)) * roleWeight)
+            .coerceIn(0.0f, 0.90f)
+        if (bodyAlpha > 0.01f) {
+            drawPath(
+                path = composeOuterPath,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        Color(primaryTintArgb).copy(alpha = bodyAlpha),
+                        Color(secondaryTintArgb).copy(alpha = bodyAlpha)
+                    ),
+                    start = gradStart,
+                    end = gradEnd
+                )
+            )
+        }
+    }
+
+    val grainScale = (density * 0.42f).coerceIn(0.65f, 1.65f)
+    val velvetShader = dev.seaglass.core.SeaGlassVelvetGrainTexture.obtainShader()
+    shaderLocalMatrix.reset()
+    shaderLocalMatrix.setScale(grainScale, grainScale)
+    velvetShader.setLocalMatrix(shaderLocalMatrix)
+    val velvetProgress = material.coarseness.coerceIn(0f, 1f).pow(0.85f)
+    val grainAlpha = (velvetProgress * (0.38f + 0.62f * sandWear) * 155f).toInt().coerceIn(0, 155)
+
+    val nCanvas = drawContext.canvas.nativeCanvas
+    nCanvas.save()
+    nCanvas.clipPath(outerAndroidPath)
+    if (grainAlpha > 2) {
+        val savedShader = sandGrainPaint.shader
+        val savedXfermode = sandGrainPaint.xfermode
+        sandGrainPaint.shader = velvetShader
+        sandGrainPaint.xfermode = null
+        sandGrainPaint.alpha = grainAlpha
+        nCanvas.drawRect(0f, 0f, widthPx, heightPx, sandGrainPaint)
+        sandGrainPaint.shader = savedShader
+        sandGrainPaint.xfermode = savedXfermode
+    }
+
+    val savedWidth = innerSlopeChromaticPaint.strokeWidth
+    val savedAlpha = innerSlopeChromaticPaint.alpha
+    val savedMask = innerSlopeChromaticPaint.maskFilter
+    innerSlopeChromaticPaint.maskFilter = null
+    innerSlopeChromaticPaint.strokeWidth = 7.5f * density
+    innerSlopeChromaticPaint.alpha = 22
+    nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
+    innerSlopeChromaticPaint.strokeWidth = 3.5f * density
+    innerSlopeChromaticPaint.alpha = 36
+    nCanvas.drawPath(outerAndroidPath, innerSlopeChromaticPaint)
+    innerSlopeChromaticPaint.strokeWidth = savedWidth
+    innerSlopeChromaticPaint.alpha = savedAlpha
+    innerSlopeChromaticPaint.maskFilter = savedMask
+    val savedLipMask = outerContactLipPaint.maskFilter
+    outerContactLipPaint.maskFilter = null
+    nCanvas.drawPath(outerAndroidPath, outerContactLipPaint)
+    outerContactLipPaint.maskFilter = savedLipMask
+    nCanvas.restore()
+}

@@ -1180,11 +1180,7 @@ fun SeaGlassSwitch(
     stageState: SeaGlassStageState?,
     modifier: Modifier = Modifier,
     checkedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
-    uncheckedMaterial: SeaGlassMaterial = SeaGlassPalette.RoseQuartzShell.primaryGlass.copy(
-        tintColorArgb = 0xFFF06E6A.toInt(),
-        tintDensity = 0.74f,
-        coarseness = 0.48f
-    ),
+    uncheckedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass,
     checkedTrackColor: Color? = null,
     uncheckedTrackColor: Color? = null
 ) {
