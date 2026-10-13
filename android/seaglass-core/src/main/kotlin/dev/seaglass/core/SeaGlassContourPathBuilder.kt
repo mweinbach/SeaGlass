@@ -88,7 +88,11 @@ object SeaGlassContourPathBuilder {
     ) {
         outPath.reset()
         if (nodes.isEmpty()) return
-        if (nodes.size == 1 || smoothRadiusPx <= 0.5f) {
+        if (nodes.size == 1) {
+            buildSingleNodePath(nodes[0], outPath, insetPx)
+            return
+        }
+        if (smoothRadiusPx <= 0.5f) {
             val single = Path()
             for (n in nodes) {
                 buildSingleNodePath(n, single, insetPx)

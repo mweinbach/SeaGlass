@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,15 +48,18 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -73,6 +77,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -101,6 +106,7 @@ import dev.seaglass.core.SeaGlassShapeMorph
 import dev.seaglass.core.backend.SeaGlassShaderProgramCache
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -911,11 +917,12 @@ fun SeaGlassSearchBar(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
-    val focusProgress by animateFloatAsState(
+    val rawFocusProgress by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0f,
         animationSpec = motion.fastEffects,
         label = "searchFocus"
     )
+    val focusProgress = SeaGlassShapeMorph.sCurve(rawFocusProgress)
 
     val activeMaterial = remember(material, focusProgress) {
         material.copy(
@@ -1063,16 +1070,18 @@ fun SeaGlassTextField(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
-    val focusProgress by animateFloatAsState(
+    val rawFocusProgress by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0f,
         animationSpec = motion.fastEffects,
         label = "textFieldFocus"
     )
-    val cornerRadius by animateFloatAsState(
-        targetValue = if (isFocused) 24f else 18f,
+    val focusProgress = SeaGlassShapeMorph.sCurve(rawFocusProgress)
+    val rawCornerProgress by animateFloatAsState(
+        targetValue = if (isFocused) 1f else 0f,
         animationSpec = motion.fastSpatial,
         label = "textFieldCorner"
     )
+    val cornerRadius = 18f + 6f * SeaGlassShapeMorph.physicsSCurve(rawCornerProgress, overshootGain = 0.35f)
 
     val fieldMaterial = remember(material, focusProgress, cornerRadius) {
         material.copy(
@@ -1183,21 +1192,24 @@ fun SeaGlassSwitch(
     val density = LocalDensity.current
 
     val targetSwitchVal = if (checked) 1f else 0f
-    val leadThumb by animateFloatAsState(
+    val rawLeadThumb by animateFloatAsState(
         targetValue = targetSwitchVal,
         animationSpec = spring(dampingRatio = 0.66f, stiffness = 560f),
         label = "switchLeadThumb"
     )
-    val trailThumb by animateFloatAsState(
+    val rawTrailThumb by animateFloatAsState(
         targetValue = targetSwitchVal,
         animationSpec = spring(dampingRatio = 0.74f, stiffness = 320f),
         label = "switchTrailThumb"
     )
-    val tintProgress by animateFloatAsState(
+    val rawTintProgress by animateFloatAsState(
         targetValue = targetSwitchVal,
         animationSpec = motion.defaultEffects,
         label = "switchTintEffects"
     )
+    val leadThumb = SeaGlassShapeMorph.physicsSCurve(rawLeadThumb, overshootGain = 0.45f)
+    val trailThumb = SeaGlassShapeMorph.physicsSCurve(rawTrailThumb, overshootGain = 0.45f)
+    val tintProgress = SeaGlassShapeMorph.sCurve(rawTintProgress)
 
     val leftThumbFrac = min(leadThumb, trailThumb).coerceIn(-0.04f, 1.04f)
     val rightThumbFrac = max(leadThumb, trailThumb).coerceIn(-0.04f, 1.04f)
@@ -1489,16 +1501,18 @@ fun SeaGlassCheckbox(
     uncheckedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
 ) {
     val motion = LocalSeaGlassMotionScheme.current
-    val progress by animateFloatAsState(
+    val rawProgress by animateFloatAsState(
         targetValue = if (checked) 1f else 0f,
         animationSpec = motion.fastSpatial,
         label = "checkboxMorph"
     )
-    val tintProgress by animateFloatAsState(
+    val rawTintProgress by animateFloatAsState(
         targetValue = if (checked) 1f else 0f,
         animationSpec = motion.defaultEffects,
         label = "checkboxTint"
     )
+    val progress = SeaGlassShapeMorph.physicsSCurve(rawProgress, overshootGain = 0.50f)
+    val tintProgress = SeaGlassShapeMorph.sCurve(rawTintProgress)
 
     val mat = remember(checkedMaterial, uncheckedMaterial, tintProgress) {
         SeaGlassMaterial.lerp(uncheckedMaterial, checkedMaterial, tintProgress.coerceIn(0f, 1f)).copy(
@@ -1573,16 +1587,18 @@ fun SeaGlassRadioButton(
     unselectedMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
 ) {
     val motion = LocalSeaGlassMotionScheme.current
-    val progress by animateFloatAsState(
+    val rawProgress by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = motion.fastSpatial,
         label = "radioSpatial"
     )
-    val tintProgress by animateFloatAsState(
+    val rawTintProgress by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
         animationSpec = motion.defaultEffects,
         label = "radioTint"
     )
+    val progress = SeaGlassShapeMorph.physicsSCurve(rawProgress, overshootGain = 0.45f)
+    val tintProgress = SeaGlassShapeMorph.sCurve(rawTintProgress)
 
     val mat = remember(selectedMaterial, unselectedMaterial, tintProgress) {
         SeaGlassMaterial.lerp(unselectedMaterial, selectedMaterial, tintProgress.coerceIn(0f, 1f)).copy(
@@ -1648,16 +1664,20 @@ fun SeaGlassSegmentedButtonRow(
     val count = options.size.coerceAtLeast(1)
 
     val targetSegFloat = selectedIndex.coerceIn(0, count - 1).toFloat()
-    val leadSegIndex by animateFloatAsState(
+    val rawLeadSegIndex by animateFloatAsState(
         targetValue = targetSegFloat,
-        animationSpec = spring(dampingRatio = 0.68f, stiffness = 540f),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 520f),
         label = "segmentedLeadEdge"
     )
-    val trailSegIndex by animateFloatAsState(
+    val rawTrailSegIndex by animateFloatAsState(
         targetValue = targetSegFloat,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 320f),
+        animationSpec = spring(dampingRatio = 0.76f, stiffness = 340f),
         label = "segmentedTrailEdge"
     )
+    val leadSegBase = floor(rawLeadSegIndex)
+    val leadSegIndex = leadSegBase + SeaGlassShapeMorph.physicsSCurve(rawLeadSegIndex - leadSegBase, overshootGain = 0.35f)
+    val trailSegBase = floor(rawTrailSegIndex)
+    val trailSegIndex = trailSegBase + SeaGlassShapeMorph.physicsSCurve(rawTrailSegIndex - trailSegBase, overshootGain = 0.35f)
     var barWidthPx by remember { mutableFloatStateOf(800f) }
 
     val contentColor = remember(containerMaterial.tintColorArgb, containerMaterial.tintDensity) {
@@ -1706,7 +1726,7 @@ fun SeaGlassSegmentedButtonRow(
         ).copy(alpha = 0.84f)
     }
 
-    val segStretchMalleability = abs(leadSegIndex - trailSegIndex).coerceIn(0f, 1f) * 0.78f
+    val segStretchMalleability = SeaGlassShapeMorph.sCurve(abs(leadSegIndex - trailSegIndex)) * 0.78f
     val activeSegMaterial = remember(containerMaterial, segStretchMalleability) {
         containerMaterial.copy(cornerRadiusDp = 23f, thicknessDp = 15f).deaged(segStretchMalleability)
     }
@@ -1801,6 +1821,7 @@ fun SeaGlassFilterChip(
         unselectedMaterial.copy(cornerRadiusDp = 14f, thicknessDp = 10f)
     }
 
+    val motion = LocalSeaGlassMotionScheme.current
     SeaGlassButton(
         onClick = onClick,
         stageState = stageState,
@@ -1810,8 +1831,10 @@ fun SeaGlassFilterChip(
     ) {
         AnimatedVisibility(
             visible = selected,
-            enter = expandHorizontally() + fadeIn(),
-            exit = shrinkHorizontally() + fadeOut()
+            enter = expandHorizontally(animationSpec = spring(dampingRatio = 0.80f, stiffness = 500f)) +
+                fadeIn(animationSpec = tween(180, easing = SeaGlassPhysicsSCurveEasing)),
+            exit = shrinkHorizontally(animationSpec = spring(dampingRatio = 0.88f, stiffness = 580f)) +
+                fadeOut(animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing))
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SeaGlassIcon(
@@ -1898,16 +1921,23 @@ fun SeaGlassExtendedFab(
     modifier: Modifier = Modifier,
     material: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass
 ) {
+    val motion = LocalSeaGlassMotionScheme.current
+    val rawExpand by animateFloatAsState(
+        targetValue = if (expanded) 1f else 0f,
+        animationSpec = if (expanded) motion.morphOpenSpatial else motion.morphCloseSpatial,
+        label = "extendedFabMorph"
+    )
+    val expandEase = SeaGlassShapeMorph.physicsSCurve(rawExpand, overshootGain = 0.35f).coerceIn(0f, 1.08f)
     SeaGlassButton(
         onClick = onClick,
         stageState = stageState,
         material = material.copy(
-            cornerRadiusDp = if (expanded) 28f else 20f,
+            cornerRadiusDp = 20f + 8f * expandEase.coerceIn(0f, 1f),
             thicknessDp = 20f,
             rimChalkiness = 0.88f
         ),
         contentPadding = PaddingValues(
-            horizontal = if (expanded) 20.dp else 16.dp,
+            horizontal = (16f + 4f * expandEase.coerceIn(0f, 1f)).dp,
             vertical = 15.dp
         ),
         modifier = modifier.height(56.dp)
@@ -1919,8 +1949,10 @@ fun SeaGlassExtendedFab(
         )
         AnimatedVisibility(
             visible = expanded,
-            enter = expandHorizontally() + fadeIn(),
-            exit = shrinkHorizontally() + fadeOut()
+            enter = expandHorizontally(animationSpec = spring(dampingRatio = 0.80f, stiffness = 500f)) +
+                fadeIn(animationSpec = tween(180, easing = SeaGlassPhysicsSCurveEasing)),
+            exit = shrinkHorizontally(animationSpec = spring(dampingRatio = 0.88f, stiffness = 580f)) +
+                fadeOut(animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing))
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Spacer(modifier = Modifier.width(10.dp))
@@ -1959,11 +1991,13 @@ fun SeaGlassFloatingToolbar(
     val heightDp = 58.dp
     val heightPx = with(density) { heightDp.toPx() }
 
-    val gapDp by animateDpAsState(
-        targetValue = if (fabDetached) 18.dp else (-6).dp,
-        animationSpec = spring(dampingRatio = 0.62f, stiffness = 380f),
+    val rawDetachedProgress by animateFloatAsState(
+        targetValue = if (fabDetached) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 400f),
         label = "toolbarFabGap"
     )
+    val detachedProgress = SeaGlassShapeMorph.physicsSCurve(rawDetachedProgress, overshootGain = 0.45f)
+    val gapDp = ((-6f) + 24f * detachedProgress).dp
     val gapPx = with(density) { gapDp.toPx() }
     var totalWidthPx by remember { mutableFloatStateOf(960f) }
 
@@ -2012,7 +2046,7 @@ fun SeaGlassFloatingToolbar(
         )
     }
 
-    val toolbarGapMalleability = (abs(gapDp.value - (if (fabDetached) 18f else -6f)) / 14f).coerceIn(0f, 1f)
+    val toolbarGapMalleability = SeaGlassShapeMorph.sCurveBell(rawDetachedProgress)
     val activeToolbarMaterial = remember(barMaterial, toolbarGapMalleability) {
         barMaterial.deaged(toolbarGapMalleability)
     }
@@ -3061,8 +3095,10 @@ fun SeaGlassCascadedModelMorph(
         val h2 = p2.maxOfOrNull { it.height }?.coerceAtLeast(48) ?: 320
 
         val isUpperSegment = effectsStage > 1.0f || (stage == 2 && spatialStage > 0.85f)
-        val localSpatial = if (isUpperSegment) (spatialStage - 1f) else spatialStage
-        val localEffects = if (isUpperSegment) (effectsStage - 1f).coerceIn(0f, 1f) else effectsStage.coerceIn(0f, 1f)
+        val rawLocalSpatial = if (isUpperSegment) (spatialStage - 1f) else spatialStage
+        val rawLocalEffects = if (isUpperSegment) (effectsStage - 1f).coerceIn(0f, 1f) else effectsStage.coerceIn(0f, 1f)
+        val localSpatial = SeaGlassShapeMorph.physicsSCurve(rawLocalSpatial, overshootGain = 0.45f)
+        val localEffects = SeaGlassShapeMorph.sCurve(rawLocalEffects)
 
         val startW = if (isUpperSegment) w1 else w0
         val startH = if (isUpperSegment) h1 else h0
@@ -3071,7 +3107,7 @@ fun SeaGlassCascadedModelMorph(
 
         val animatedWidthPx = (startW + (endW - startW) * localSpatial).roundToInt().coerceAtLeast(36)
         val animatedHeightPx = (startH + (endH - startH) * localSpatial).roundToInt().coerceAtLeast(32)
-        val inFlightEnergy = (4f * localEffects * (1f - localEffects)).coerceIn(0f, 1f)
+        val inFlightEnergy = SeaGlassShapeMorph.sCurveBell(rawLocalEffects)
 
         val activeMaterial = SeaGlassShapeMorph.computeDynamicFlexMaterial(
             startMaterial = if (isUpperSegment) popoverMaterial else pillMaterial,
@@ -3102,10 +3138,11 @@ fun SeaGlassCascadedModelMorph(
                             touchIntensity = inFlightEnergy * 0.85f
                         )
                 ) {
-                    val alphaA = (1f - localEffects * 1.45f).coerceIn(0f, 1f)
-                    val alphaB = ((localEffects - 0.06f) * 1.12f).coerceIn(0f, 1f)
-                    val blurAPx = (localEffects * 14f * density.density).coerceAtLeast(0f)
-                    val blurBPx = ((1f - localEffects) * (1f - localEffects) * 16f * density.density)
+                    val alphaA = 1f - SeaGlassShapeMorph.sCurveWindow(rawLocalEffects, 0.0f, 0.62f)
+                    val alphaB = SeaGlassShapeMorph.sCurveWindow(rawLocalEffects, 0.10f, 0.88f)
+                    val blurAPx = (SeaGlassShapeMorph.sCurveWindow(rawLocalEffects, 0.0f, 0.72f) * 14f * density.density).coerceAtLeast(0f)
+                    val defocusB = 1f - SeaGlassShapeMorph.sCurveWindow(rawLocalEffects, 0.14f, 0.96f)
+                    val blurBPx = (defocusB * defocusB * 16f * density.density)
                         .coerceAtLeast(0f)
 
                     if (alphaA > 0.01f) {

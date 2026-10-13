@@ -532,7 +532,8 @@ class SeaGlassCoreTest {
 
         assertTrue(
             "Mid velvet glass must have intermediate sandWear (${midVelvet.effectiveSandWear})",
-            midVelvet.effectiveSandWear in 0.35f..0.75f
+            // The transmission gate keeps half-transparent velvet glass lighter than its coarseness alone implies.
+            midVelvet.effectiveSandWear in 0.28f..0.75f
         )
         assertTrue(
             "Opaque sand-tumbled glass must reach high sandWear (${opaqueGlass.effectiveSandWear})",

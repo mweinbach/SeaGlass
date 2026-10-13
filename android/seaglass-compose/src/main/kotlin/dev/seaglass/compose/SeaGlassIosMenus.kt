@@ -3,6 +3,7 @@ package dev.seaglass.compose
 import android.graphics.Shader
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -64,6 +65,7 @@ import dev.seaglass.core.SeaGlassColorMath
 import dev.seaglass.core.SeaGlassCornerAdaptationMode
 import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassMaterial
+import dev.seaglass.core.SeaGlassShapeMorph
 import dev.seaglass.core.backend.SeaGlassShaderProgramCache
 
 /**
@@ -122,25 +124,23 @@ fun SeaGlassContextMenuOverlay(
     items: List<SeaGlassContextMenuItem> = defaultIosContextMenuItems()
 ) {
     val density = LocalDensity.current
+    val motion = LocalSeaGlassMotionScheme.current
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
 
     val targetProgress = if (visible) 1f else 0f
-    val spatialProgress by animateFloatAsState(
+    val rawSpatialProgress by animateFloatAsState(
         targetValue = targetProgress,
-        animationSpec = spring(dampingRatio = 0.68f, stiffness = 420f),
+        animationSpec = if (visible) motion.morphOpenSpatial else motion.morphCloseSpatial,
         label = "iosContextMenuSpatial"
     )
-    val effectsProgress by animateFloatAsState(
-        targetValue = targetProgress,
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 540f),
-        label = "iosContextMenuEffects"
-    )
+    val spatialProgress = SeaGlassShapeMorph.physicsSCurve(rawSpatialProgress, overshootGain = 0.45f)
+    val effectsProgress = SeaGlassShapeMorph.sCurve(rawSpatialProgress)
 
     if (effectsProgress <= 0.005f && !visible) {
         return
     }
 
-    val inFlightMalleability = (4f * effectsProgress * (1f - effectsProgress)).coerceIn(0f, 1f)
+    val inFlightMalleability = SeaGlassShapeMorph.sCurveBell(rawSpatialProgress)
     val activeMenuMaterial = remember(material, inFlightMalleability) {
         material.deaged(inFlightMalleability)
     }
@@ -344,14 +344,15 @@ fun SeaGlassContextMenuCard(
     ),
     onItemSelected: (SeaGlassContextMenuItem) -> Unit = {}
 ) {
+    val motion = LocalSeaGlassMotionScheme.current
     var activeSubmenuParent by remember { mutableStateOf<SeaGlassContextMenuItem?>(null) }
 
-    val submenuMorphProgress by animateFloatAsState(
+    val rawSubmenuMorph by animateFloatAsState(
         targetValue = if (activeSubmenuParent != null) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.68f, stiffness = 400f),
+        animationSpec = motion.subPageSpatial,
         label = "contextSubmenuMorph"
     )
-    val submenuMalleability = (4f * submenuMorphProgress * (1f - submenuMorphProgress)).coerceIn(0f, 1f)
+    val submenuMalleability = SeaGlassShapeMorph.sCurveBell(rawSubmenuMorph)
     val activeMaterial = remember(material, submenuMalleability) {
         material.deaged(submenuMalleability)
     }
@@ -365,13 +366,15 @@ fun SeaGlassContextMenuCard(
         AnimatedContent(
             targetState = activeSubmenuParent,
             transitionSpec = {
-                (fadeIn(animationSpec = tween(190)) +
+                (fadeIn(animationSpec = tween(200, easing = SeaGlassPhysicsSCurveEasing)) +
                     scaleIn(
-                        initialScale = 0.94f,
-                        animationSpec = spring(dampingRatio = 0.72f, stiffness = 420f)
+                        initialScale = 0.93f,
+                        animationSpec = motion.subPageSpatial
                     )).togetherWith(
-                    fadeOut(animationSpec = tween(130)) +
-                        scaleOut(targetScale = 0.96f, animationSpec = tween(130))
+                    fadeOut(animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing)) +
+                        scaleOut(targetScale = 0.95f, animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing))
+                ).using(
+                    SizeTransform(clip = true) { _, _ -> motion.subPageSpatialSpec() }
                 )
             },
             label = "iosMenuSubmenuContent"
@@ -573,24 +576,22 @@ fun SeaGlassActionSheet(
         thicknessDp = 20f
     )
 ) {
+    val motion = LocalSeaGlassMotionScheme.current
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
     val targetProgress = if (visible) 1f else 0f
-    val spatialProgress by animateFloatAsState(
+    val rawSpatialProgress by animateFloatAsState(
         targetValue = targetProgress,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 400f),
+        animationSpec = if (visible) motion.morphOpenSpatial else motion.morphCloseSpatial,
         label = "actionSheetSpatial"
     )
-    val effectsProgress by animateFloatAsState(
-        targetValue = targetProgress,
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 520f),
-        label = "actionSheetEffects"
-    )
+    val spatialProgress = SeaGlassShapeMorph.physicsSCurve(rawSpatialProgress, overshootGain = 0.40f)
+    val effectsProgress = SeaGlassShapeMorph.sCurve(rawSpatialProgress)
 
     if (effectsProgress <= 0.005f && !visible) {
         return
     }
 
-    val malleability = (4f * effectsProgress * (1f - effectsProgress)).coerceIn(0f, 1f)
+    val malleability = SeaGlassShapeMorph.sCurveBell(rawSpatialProgress)
     val activeMaterial = remember(material, malleability) {
         material.deaged(malleability)
     }

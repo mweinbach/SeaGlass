@@ -139,46 +139,50 @@ fun SeaGlassTwoElementMorph(
     val density = LocalDensity.current
     val motion = LocalSeaGlassMotionScheme.current
 
-    // Lead-lag dual spatial springs: horizontal and vertical axes expand/collapse with
-    // slightly staggered spring dynamics so the glass swells with organic liquid inertia
-    // rather than scaling like a rigid rectangle.
-    val spatialWidthProgress by animateFloatAsState(
+    // Lead-lag dual spatial springs shaped through physics S-curves: horizontal and vertical
+    // axes expand/collapse with staggered S-curve ease-in/ease-out dynamics so the glass swells
+    // with organic liquid inertia rather than scaling like a rigid rectangle.
+    val rawSpatialWidth by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.68f, stiffness = 420f),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 440f),
         label = "twoElementSpatialWidthMorph"
     )
-    val spatialHeightProgress by animateFloatAsState(
+    val rawSpatialHeight by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.64f, stiffness = 340f),
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 360f),
         label = "twoElementSpatialHeightMorph"
     )
+    val spatialWidthProgress = SeaGlassShapeMorph.physicsSCurve(rawSpatialWidth, overshootGain = 0.50f)
+    val spatialHeightProgress = SeaGlassShapeMorph.physicsSCurve(rawSpatialHeight, overshootGain = 0.50f)
     val spatialProgress = (spatialWidthProgress + spatialHeightProgress) * 0.5f
 
-    // Effects spring (critically damped, zero overshoot for optical material & cross-fade)
-    val effectsProgress by animateFloatAsState(
+    // Effects spring shaped through a C2 S-curve (zero overshoot for optical material & cross-fade)
+    val rawEffectsProgress by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
         animationSpec = motion.defaultEffects,
         label = "twoElementEffectsMorph"
     )
+    val effectsProgress = SeaGlassShapeMorph.sCurve(rawEffectsProgress)
 
     var collapsedMeasuredSize by remember { mutableStateOf(IntSize(420, 150)) }
     var expandedMeasuredSize by remember { mutableStateOf(IntSize(900, 380)) }
 
     var touchOffset by remember { mutableStateOf<Offset?>(null) }
     var isPressed by remember { mutableStateOf(false) }
-    val pressFraction by animateFloatAsState(
+    val rawPressFraction by animateFloatAsState(
         targetValue = if (isPressed) 1f else 0f,
         animationSpec = motion.fastSpatial,
         label = "morphPress"
     )
+    val pressFraction = SeaGlassShapeMorph.physicsSCurve(rawPressFraction, overshootGain = 0.40f)
 
     // Compute dynamic area expansion ratio and flex material (boosts lensing & dispersion mid-morph!)
     val collapsedArea = max(1f, (collapsedMeasuredSize.width * collapsedMeasuredSize.height).toFloat())
     val expandedArea = max(1f, (expandedMeasuredSize.width * expandedMeasuredSize.height).toFloat())
     val currentAreaRatio = 1f + (expandedArea / collapsedArea - 1f) * effectsProgress
 
-    // Parabolic mid-flight energy (peaks at progress = 0.5)
-    val inFlightEnergy = (4f * effectsProgress * (1f - effectsProgress)).coerceIn(0f, 1f)
+    // Smooth S-curve bell mid-flight energy (peaks at progress = 0.5)
+    val inFlightEnergy = SeaGlassShapeMorph.sCurveBell(rawEffectsProgress)
 
     val flexMaterial = remember(
         collapsedMaterial,
@@ -408,12 +412,14 @@ fun SeaGlassTwoElementMorph(
                             customContourPathBuilder = polygonBuilder
                         )
                 ) {
-                    val collapsedAlpha = (1f - effectsProgress * 1.65f).coerceIn(0f, 1f)
-                    val expandedAlpha = ((effectsProgress - 0.08f) * 1.15f).coerceIn(0f, 1f)
+                    val collapsedAlpha = 1f - SeaGlassShapeMorph.sCurveWindow(rawEffectsProgress, start = 0.0f, end = 0.58f)
+                    val expandedAlpha = SeaGlassShapeMorph.sCurveWindow(rawEffectsProgress, start = 0.12f, end = 0.88f)
 
                     // In-flight Gaussian content defocus (peaks mid-morph, resolves to 0px at rest!)
-                    val collapsedBlurPx = (effectsProgress * 12f * density.density).coerceAtLeast(0f)
-                    val expandedBlurPx = ((1f - effectsProgress) * (1f - effectsProgress) * 14f * density.density)
+                    val collapsedBlurPx = (SeaGlassShapeMorph.sCurveWindow(rawEffectsProgress, 0.0f, 0.72f) * 12f * density.density)
+                        .coerceAtLeast(0f)
+                    val expandedDefocus = 1f - SeaGlassShapeMorph.sCurveWindow(rawEffectsProgress, 0.16f, 0.96f)
+                    val expandedBlurPx = (expandedDefocus * expandedDefocus * 14f * density.density)
                         .coerceAtLeast(0f)
 
                     if (collapsedAlpha > 0.01f) {
@@ -1043,11 +1049,12 @@ fun SeaGlassBuddingCluster(
 ) {
     val density = LocalDensity.current
 
-    val expandProgress by animateFloatAsState(
+    val rawExpandProgress by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.56f, stiffness = 320f),
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 360f),
         label = "budClusterExpand"
     )
+    val expandProgress = SeaGlassShapeMorph.physicsSCurve(rawExpandProgress, overshootGain = 0.45f)
 
     var containerWidthPx by remember { mutableFloatStateOf(960f) }
     val clusterHeight = 96.dp
@@ -1066,6 +1073,7 @@ fun SeaGlassBuddingCluster(
     val activeNodes = remember(
         containerWidthPx,
         clusterHeightPx,
+        rawExpandProgress,
         expandProgress,
         anchorMaterial,
         satelliteMaterial,
@@ -1086,8 +1094,13 @@ fun SeaGlassBuddingCluster(
         )
         if (expandProgress > 0.02f) {
             for (i in 0 until count) {
-                val stagger = ((expandProgress - i * 0.08f) / (1f - i * 0.08f)).coerceIn(0f, 1f)
-                val r = satRadiusPx * (0.45f + 0.55f * stagger)
+                val stagger = SeaGlassShapeMorph.sCurveWindow(
+                    progress = rawExpandProgress,
+                    start = i * 0.08f,
+                    end = 1f,
+                    overshootGain = 0.45f
+                ).coerceIn(0f, 1.12f)
+                val r = satRadiusPx * (0.45f + 0.55f * stagger.coerceIn(0f, 1f))
                 val cx = anchorCenterX + stepSpanPx * (i + 1) * stagger
                 list.add(
                     SeaGlassSdfEngine.SdfNode(
@@ -1119,8 +1132,7 @@ fun SeaGlassBuddingCluster(
         )
     }
 
-    val budInFlightEnergy = (4f * expandProgress.coerceIn(0f, 1f) * (1f - expandProgress.coerceIn(0f, 1f)))
-        .coerceIn(0f, 1f)
+    val budInFlightEnergy = SeaGlassShapeMorph.sCurveBell(rawExpandProgress)
     val activeClusterMaterial = remember(anchorMaterial, budInFlightEnergy) {
         anchorMaterial.deaged(budInFlightEnergy)
     }
@@ -1174,9 +1186,15 @@ fun SeaGlassBuddingCluster(
         // Budding Satellite Droplets
         if (expandProgress > 0.12f) {
             for (i in 0 until count) {
-                val stagger = ((expandProgress - i * 0.08f) / (1f - i * 0.08f)).coerceIn(0f, 1f)
+                val stagger = SeaGlassShapeMorph.sCurveWindow(
+                    progress = rawExpandProgress,
+                    start = i * 0.08f,
+                    end = 1f,
+                    overshootGain = 0.45f
+                ).coerceIn(0f, 1.12f)
                 val cx = anchorCenterX + stepSpanPx * (i + 1) * stagger
                 val item = items[i]
+                val satAlpha = SeaGlassShapeMorph.sCurveWindow(rawExpandProgress, i * 0.08f + 0.10f, 0.88f)
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -1190,7 +1208,7 @@ fun SeaGlassBuddingCluster(
                             width = with(density) { (satRadiusPx * 2.36f).toDp() },
                             height = with(density) { (satRadiusPx * 2f).toDp() }
                         )
-                        .alpha(stagger.coerceIn(0f, 1f))
+                        .alpha(satAlpha)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -1242,11 +1260,12 @@ fun SeaGlassLiquidSlider(
     var trackWidthPx by remember { mutableFloatStateOf(600f) }
     var isDragging by remember { mutableStateOf(false) }
 
-    val dragBoost by animateFloatAsState(
+    val rawDragBoost by animateFloatAsState(
         targetValue = if (isDragging) 1f else 0f,
         animationSpec = motion.fastSpatial,
         label = "sliderDragBoost"
     )
+    val dragBoost = SeaGlassShapeMorph.physicsSCurve(rawDragBoost, overshootGain = 0.40f)
 
     val labelColor = LocalContentColor.current
 
@@ -1523,21 +1542,18 @@ fun Modifier.seaGlassMorphGlass(
     val palette = LocalSeaGlassPalette.current
     val baseMaterial = material ?: palette.surfaceGlass
 
+    val motion = LocalSeaGlassMotionScheme.current
     val targetProgress = if (expanded) 1f else 0f
     val morphProgress by animateFloatAsState(
         targetValue = targetProgress,
         animationSpec = if (expanded) {
-            spring(dampingRatio = 0.70f, stiffness = 380f)
+            motion.morphOpenSpatial
         } else {
-            spring(dampingRatio = 0.86f, stiffness = 460f)
+            motion.morphCloseSpatial
         },
         label = "seaGlassMorphGlassProgress"
     )
-    val effectsProgress by animateFloatAsState(
-        targetValue = targetProgress,
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 500f),
-        label = "seaGlassMorphGlassEffects"
-    )
+    val effectsProgress = SeaGlassShapeMorph.sCurve(morphProgress)
 
     if (effectsProgress <= 0.005f && !expanded) {
         return@composed this.layout { _, _ ->
@@ -1550,11 +1566,12 @@ fun Modifier.seaGlassMorphGlass(
     val triggerRect = seaGlassMorphAnchor(anchorId)
 
     val p = morphProgress.coerceAtLeast(0f)
-    val grown = (p / 0.50f).coerceIn(0f, 1f)
-    val rawTravel = (p / 0.86f).coerceIn(0f, 1f)
-    val travel = rawTravel * rawTravel * (3f - 2f * rawTravel)
-    val spread = ((p - 0.22f) / 0.78f).coerceIn(0f, 1f)
-    val shaped = spread
+    val grown = SeaGlassShapeMorph.sCurveLead(p, until = 0.54f, overshootGain = 0.35f)
+    val travelX = SeaGlassShapeMorph.sCurveWindow(p, start = 0.02f, end = 0.88f, overshootGain = 0.35f)
+    val travelY = SeaGlassShapeMorph.sCurveWindow(p, start = 0.0f, end = 0.86f, overshootGain = 0.35f)
+    val spreadW = SeaGlassShapeMorph.sCurveWindow(p, start = 0.14f, end = 0.96f, overshootGain = 0.35f)
+    val spreadH = SeaGlassShapeMorph.sCurveWindow(p, start = 0.18f, end = 1.00f, overshootGain = 0.35f)
+    val shaped = SeaGlassShapeMorph.sCurveWindow(p, start = 0.16f, end = 0.96f)
     val bounce = 1f + (p - 1f).coerceIn(-0.03f, 0.03f)
 
     val endW = restingSize.width.toFloat().coerceAtLeast(1f)
@@ -1567,18 +1584,18 @@ fun Modifier.seaGlassMorphGlass(
     val midH = startH + (dropDiameter - startH) * grown
     val maxW = max(28f, endW * 1.12f)
     val maxH = max(28f, endH * 1.12f)
-    val curW = ((midW + (endW - midW) * spread) * bounce).coerceIn(28f, maxW)
-    val curH = ((midH + (endH - midH) * spread) * bounce).coerceIn(28f, maxH)
+    val curW = ((midW + (endW - midW) * spreadW) * bounce).coerceIn(28f, maxW)
+    val curH = ((midH + (endH - midH) * spreadH) * bounce).coerceIn(28f, maxH)
 
     val endCx = restingOriginInRoot.x + endW * 0.5f
     val endCy = restingOriginInRoot.y + endH * 0.5f
     val startCx = triggerRect?.center?.x ?: endCx
     val startCy = triggerRect?.center?.y ?: (endCy - 60f * density.density)
 
-    val translateX = if (restingSize.width > 0) (startCx - endCx) * (1f - travel) else 0f
-    val translateY = if (restingSize.height > 0) (startCy - endCy) * (1f - travel) else 0f
-    val morphScaleX = if (restingSize.width > 0) (curW / endW).coerceIn(0.15f, 1.08f) else (0.6f + 0.4f * p)
-    val morphScaleY = if (restingSize.height > 0) (curH / endH).coerceIn(0.15f, 1.08f) else (0.6f + 0.4f * p)
+    val translateX = if (restingSize.width > 0) (startCx - endCx) * (1f - travelX) else 0f
+    val translateY = if (restingSize.height > 0) (startCy - endCy) * (1f - travelY) else 0f
+    val morphScaleX = if (restingSize.width > 0) (curW / endW).coerceIn(0.15f, 1.08f) else (0.6f + 0.4f * shaped)
+    val morphScaleY = if (restingSize.height > 0) (curH / endH).coerceIn(0.15f, 1.08f) else (0.6f + 0.4f * shaped)
     val blurPx = ((1f - effectsProgress) * (1f - effectsProgress) * 14f * density.density).coerceAtLeast(0f)
 
     val baseCorner = if (cornerRadiusDp < 0f) 999f else cornerRadiusDp
@@ -1597,7 +1614,7 @@ fun Modifier.seaGlassMorphGlass(
             this.translationY = translateY
             this.scaleX = morphScaleX
             this.scaleY = morphScaleY
-            this.alpha = (effectsProgress * 1.35f).coerceIn(0f, 1f)
+            this.alpha = SeaGlassShapeMorph.sCurveWindow(p, 0.0f, 0.52f)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurPx > 0.6f) {
                 this.compositingStrategy = CompositingStrategy.Offscreen
                 this.renderEffect = SeaGlassShaderProgramCache

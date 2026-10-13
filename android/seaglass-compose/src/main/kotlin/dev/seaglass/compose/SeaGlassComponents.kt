@@ -77,6 +77,8 @@ import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
 import dev.seaglass.core.SeaGlassSdfEngine
+import dev.seaglass.core.SeaGlassShapeMorph
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -186,28 +188,26 @@ fun SeaGlassSurface(
     var surfaceOriginInRoot by remember { mutableStateOf(Offset.Zero) }
     var surfaceSize by remember { mutableStateOf(IntSize.Zero) }
 
-    // Only expand when this surface itself is an interactive button (onClick != null);
-    // dragging sliders or grabber bars inside a sheet/card must never scale or tint the container.
     val isActiveInteraction = onClick != null && isClickablePressed
-    val pressFraction by animateFloatAsState(
-        targetValue = if (isActiveInteraction) 1f else 0f,
-        animationSpec = motion.fastSpatial,
-        label = "surfacePress"
-    )
-
-    val effectiveMaterial by animateSeaGlassMaterialAsState(
-        targetMaterial = material,
-        motionScheme = motion
-    )
+    val pressFraction = if (onClick != null) {
+        val animated by animateFloatAsState(
+            targetValue = if (isActiveInteraction) 1f else 0f,
+            animationSpec = motion.fastSpatial,
+            label = "surfacePress"
+        )
+        SeaGlassShapeMorph.physicsSCurve(animated, overshootGain = 0.35f)
+    } else {
+        0f
+    }
 
     // Uniform 2D expansion on active button press that snaps back cleanly (zero 3D rotation).
     val expandScale = 1f + 0.024f * pressFraction
 
-    val contentColor = remember(effectiveMaterial.tintColorArgb, effectiveMaterial.tintDensity) {
+    val contentColor = remember(material.tintColorArgb, material.tintDensity) {
         Color(
             SeaGlassColorMath.optimalContentColorFor(
-                tintArgb = effectiveMaterial.tintColorArgb,
-                tintDensity = effectiveMaterial.tintDensity
+                tintArgb = material.tintColorArgb,
+                tintDensity = material.tintDensity
             )
         )
     }
@@ -222,129 +222,36 @@ fun SeaGlassSurface(
         Modifier
     }
 
-    val parentScope = LocalSeaGlassContainerCornerScope.current
-
-    val containerScope = remember(
-        surfaceOriginInRoot,
-        surfaceSize,
-        effectiveMaterial.cornerRadiusDp,
-        deviceCornerSpec,
-        parentScope,
-        cornerAdaptationMode,
-        cornerMask,
-        cornerProximityThresholdDp,
-        cornerFullMatchDistanceDp,
-        cornerAdaptationStrength,
-        allowAsymmetricCorners,
-        adaptToParentContainer
-    ) {
-        val wPx = surfaceSize.width.toFloat().coerceAtLeast(1f)
-        val hPx = surfaceSize.height.toFloat().coerceAtLeast(1f)
-        val baseCornerPx = min(effectiveMaterial.cornerRadiusDp * density.density, min(wPx, hPx) * 0.5f)
-        val stageW = (stageState?.backdropSize?.width?.toFloat()
-            ?: context.resources.displayMetrics.widthPixels.toFloat()).coerceAtLeast(1f)
-        val stageH = (stageState?.backdropSize?.height?.toFloat()
-            ?: context.resources.displayMetrics.heightPixels.toFloat()).coerceAtLeast(1f)
-        val stageOrigin = stageState?.backdropOriginInRoot ?: Offset.Zero
-        val leftInStage = surfaceOriginInRoot.x - stageOrigin.x
-        val topInStage = surfaceOriginInRoot.y - stageOrigin.y
-
-        val deviceSolved = SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
-            elementLeftPx = leftInStage,
-            elementTopPx = topInStage,
-            elementRightPx = leftInStage + wPx,
-            elementBottomPx = topInStage + hPx,
-            containerWidthPx = stageW,
-            containerHeightPx = stageH,
-            containerCornersPx = deviceCornerSpec.toRadiiPx(),
-            baseCornerRadiusPx = baseCornerPx,
-            minCornerFloorPx = 8f * density.density,
-            influenceDistancePx = cornerProximityThresholdDp.coerceAtLeast(0f) * density.density,
-            fullMatchDistancePx = cornerFullMatchDistanceDp.coerceAtLeast(0f) * density.density,
-            adaptationStrength = cornerAdaptationStrength,
-            mode = cornerAdaptationMode,
-            cornerMask = cornerMask,
-            allowAsymmetricCorners = allowAsymmetricCorners
-        )
-
-        val solvedRadii = if (
-            (adaptToParentContainer || cornerAdaptationMode == SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) &&
-            parentScope != null &&
-            parentScope.widthPx > wPx + 4f &&
-            parentScope.heightPx > hPx + 4f &&
-            cornerAdaptationMode != SeaGlassCornerAdaptationMode.FIXED &&
-            !cornerMask.isNone
-        ) {
-            val relLeft = surfaceOriginInRoot.x - parentScope.originInRoot.x
-            val relTop = surfaceOriginInRoot.y - parentScope.originInRoot.y
-            SeaGlassCornerAdaptationSolver.solveElementCornerRadiiPx(
-                elementLeftPx = relLeft,
-                elementTopPx = relTop,
-                elementRightPx = relLeft + wPx,
-                elementBottomPx = relTop + hPx,
-                containerWidthPx = parentScope.widthPx,
-                containerHeightPx = parentScope.heightPx,
-                containerCornersPx = parentScope.cornerRadiiPx,
-                baseCornerRadiusPx = baseCornerPx,
-                minCornerFloorPx = 7f * density.density,
-                influenceDistancePx = cornerProximityThresholdDp.coerceAtLeast(0f) * density.density,
-                fullMatchDistancePx = cornerFullMatchDistanceDp.coerceAtLeast(0f) * density.density,
-                adaptationStrength = cornerAdaptationStrength,
-                mode = cornerAdaptationMode,
-                cornerMask = cornerMask,
-                allowAsymmetricCorners = allowAsymmetricCorners
-            )
-        } else {
-            deviceSolved
-        }
-
-        SeaGlassContainerCornerScope(
-            originInRoot = surfaceOriginInRoot,
-            widthPx = wPx,
-            heightPx = hPx,
-            cornerRadiiPx = solvedRadii
-        )
-    }
-
-    val effectivePadding = if (cornerAdaptationMode == SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED) {
-        val layoutDir = androidx.compose.ui.platform.LocalLayoutDirection.current
-        val baseL = with(density) { contentPadding.calculateLeftPadding(layoutDir).toPx() }
-        val baseT = with(density) { contentPadding.calculateTopPadding().toPx() }
-        val baseR = with(density) { contentPadding.calculateRightPadding(layoutDir).toPx() }
-        val baseB = with(density) { contentPadding.calculateBottomPadding().toPx() }
-        val safe = SeaGlassCornerAdaptationSolver.computeCornerSafePaddingPx(
-            corners = containerScope.cornerRadiiPx,
-            baseLeftPx = baseL,
-            baseTopPx = baseT,
-            baseRightPx = baseR,
-            baseBottomPx = baseB
-        )
-        PaddingValues(
-            start = with(density) { safe.leftPx.toDp() },
-            top = with(density) { safe.topPx.toDp() },
-            end = with(density) { safe.rightPx.toDp() },
-            bottom = with(density) { safe.bottomPx.toDp() }
-        )
-    } else {
-        contentPadding
-    }
+    val needsCornerScope = cornerAdaptationMode == SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED || adaptToParentContainer
 
     ProvideSeaGlassLegibleContent(contentColor = contentColor) {
         Box(
             contentAlignment = contentAlignment,
             modifier = modifier
-                .onGloballyPositioned { coords ->
-                    surfaceOriginInRoot = coords.positionInRoot()
-                    surfaceSize = coords.size
-                }
-                .graphicsLayer {
-                    this.scaleX = expandScale
-                    this.scaleY = expandScale
-                }
+                .then(
+                    if (needsCornerScope) {
+                        Modifier.onGloballyPositioned { coords ->
+                            surfaceOriginInRoot = coords.positionInRoot()
+                            surfaceSize = coords.size
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
+                .then(
+                    if (expandScale != 1f) {
+                        Modifier.graphicsLayer {
+                            this.scaleX = expandScale
+                            this.scaleY = expandScale
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
                 .then(clickableModifier)
                 .seaGlass(
                     stageState = stageState,
-                    material = effectiveMaterial,
+                    material = material,
                     contentRole = SeaGlassContentRole.TEXT_AND_ICONS,
                     cornerAdaptationMode = cornerAdaptationMode,
                     cornerMask = cornerMask,
@@ -354,12 +261,9 @@ fun SeaGlassSurface(
                     allowAsymmetricCorners = allowAsymmetricCorners,
                     adaptToParentContainer = adaptToParentContainer
                 )
-                .padding(effectivePadding)
-        ) {
-            CompositionLocalProvider(LocalSeaGlassContainerCornerScope provides containerScope) {
-                content()
-            }
-        }
+                .padding(contentPadding),
+            content = content
+        )
     }
 }
 
@@ -387,11 +291,12 @@ fun SeaGlassButton(
     var isPointerDown by remember { mutableStateOf(false) }
 
     val isPressed = isClickablePressed || isPointerDown
-    val pressFraction by animateFloatAsState(
+    val rawPressFraction by animateFloatAsState(
         targetValue = if (isPressed) 1f else 0f,
         animationSpec = motion.fastSpatial,
         label = "buttonPress"
     )
+    val pressFraction = SeaGlassShapeMorph.physicsSCurve(rawPressFraction, overshootGain = 0.35f)
 
     val animatedMaterial by animateSeaGlassMaterialAsState(
         targetMaterial = material.pressed(pressFraction),
@@ -741,22 +646,27 @@ fun SeaGlassFluidBar(
     val density = LocalDensity.current
 
     val targetTabFloat = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)).toFloat()
-    val leadIndex by animateFloatAsState(
+    val rawLeadIndex by animateFloatAsState(
         targetValue = targetTabFloat,
-        animationSpec = spring(dampingRatio = 0.68f, stiffness = 540f),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 520f),
         label = "fluidBarLeadEdge"
     )
-    val trailIndex by animateFloatAsState(
+    val rawTrailIndex by animateFloatAsState(
         targetValue = targetTabFloat,
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 310f),
+        animationSpec = spring(dampingRatio = 0.76f, stiffness = 340f),
         label = "fluidBarTrailEdge"
     )
+    val leadBase = floor(rawLeadIndex)
+    val leadIndex = leadBase + SeaGlassShapeMorph.physicsSCurve(rawLeadIndex - leadBase, overshootGain = 0.35f)
+    val trailBase = floor(rawTrailIndex)
+    val trailIndex = trailBase + SeaGlassShapeMorph.physicsSCurve(rawTrailIndex - trailBase, overshootGain = 0.35f)
 
-    val actionSeparationDp by animateDpAsState(
-        targetValue = if (actionDetached) 18.dp else 0.dp,
-        animationSpec = spring(dampingRatio = 0.54f, stiffness = 300f),
+    val rawActionDetached by animateFloatAsState(
+        targetValue = if (actionDetached) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 340f),
         label = "actionOrbSeparation"
     )
+    val actionSeparationDp = (18f * SeaGlassShapeMorph.physicsSCurve(rawActionDetached, overshootGain = 0.45f)).dp
 
     var totalWidthPx by remember { mutableFloatStateOf(0f) }
     var totalHeightPx by remember { mutableFloatStateOf(0f) }
@@ -836,7 +746,7 @@ fun SeaGlassFluidBar(
         }
     }
 
-    val barInFlightMalleability = kotlin.math.abs(leadIndex - trailIndex).coerceIn(0f, 1f) * 0.72f
+    val barInFlightMalleability = SeaGlassShapeMorph.sCurve(kotlin.math.abs(leadIndex - trailIndex)) * 0.72f
     val activeBarMaterial = remember(barMaterial, barInFlightMalleability) {
         barMaterial.copy(
             cornerRadiusDp = 34f,

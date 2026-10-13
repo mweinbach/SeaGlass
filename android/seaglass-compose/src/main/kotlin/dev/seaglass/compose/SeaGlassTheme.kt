@@ -1,5 +1,6 @@
 package dev.seaglass.compose
 
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.animateFloatAsState
@@ -33,7 +34,15 @@ import dev.seaglass.core.SeaGlassDeviceHardwareProfile
 import dev.seaglass.core.SeaGlassDeviceTier
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassPalette
+import dev.seaglass.core.SeaGlassShapeMorph
 import dev.seaglass.core.backend.SeaGlassShaderProgramCache
+
+/**
+ * Physics-based C2 S-curve (ease-in / ease-out) [Easing] backed by [SeaGlassShapeMorph.physicsSCurve].
+ */
+val SeaGlassPhysicsSCurveEasing: Easing = Easing { fraction ->
+    SeaGlassShapeMorph.physicsSCurve(fraction, overshootGain = 0f)
+}
 
 /**
  * Material 3 Expressive dual-spring motion scheme for SeaGlass.
@@ -41,16 +50,22 @@ import dev.seaglass.core.backend.SeaGlassShaderProgramCache
  * Separates **Spatial** springs (under-damped, allowing lively organic bounce for geometry,
  * corner morphing, scale squish, and SDF coalescing bridges) from **Effects** springs
  * (critically damped `dampingRatio = 1.0f` for tint, coarseness, frost radius, and rim glow
- * so optical properties never overshoot).
+ * so optical properties never overshoot), and provides dedicated **Morph** springs paired
+ * with [SeaGlassShapeMorph.physicsSCurve] for trigger-to-card, sheet, and sub-page morphs.
  */
 @Immutable
 data class SeaGlassMotionScheme(
-    val fastSpatial: SpringSpec<Float> = spring(dampingRatio = 0.62f, stiffness = 680f),
-    val defaultSpatial: SpringSpec<Float> = spring(dampingRatio = 0.66f, stiffness = 410f),
-    val slowSpatial: SpringSpec<Float> = spring(dampingRatio = 0.72f, stiffness = 240f),
-    val fastEffects: SpringSpec<Float> = spring(dampingRatio = 1.0f, stiffness = 1100f),
-    val defaultEffects: SpringSpec<Float> = spring(dampingRatio = 1.0f, stiffness = 540f)
-)
+    val fastSpatial: SpringSpec<Float> = spring(dampingRatio = 0.66f, stiffness = 540f),
+    val defaultSpatial: SpringSpec<Float> = spring(dampingRatio = 0.70f, stiffness = 360f),
+    val slowSpatial: SpringSpec<Float> = spring(dampingRatio = 0.74f, stiffness = 240f),
+    val morphOpenSpatial: SpringSpec<Float> = spring(dampingRatio = 0.82f, stiffness = 290f),
+    val morphCloseSpatial: SpringSpec<Float> = spring(dampingRatio = 0.88f, stiffness = 380f),
+    val subPageSpatial: SpringSpec<Float> = spring(dampingRatio = 0.84f, stiffness = 360f),
+    val fastEffects: SpringSpec<Float> = spring(dampingRatio = 1.0f, stiffness = 800f),
+    val defaultEffects: SpringSpec<Float> = spring(dampingRatio = 1.0f, stiffness = 420f)
+) {
+    fun <T> subPageSpatialSpec(): SpringSpec<T> = spring(dampingRatio = 0.84f, stiffness = 360f)
+}
 
 /**
  * Enclosing page or card container bounds and resolved 4 corner radii in root coordinates,
@@ -169,7 +184,9 @@ fun animateSeaGlassMaterialAsState(
             val da = a - labTarget.a
             val db = b - labTarget.b
             val colorDelta = kotlin.math.sqrt(dl * dl + da * da + db * db) * 4.5f
-            val inFlightMalleability = maxOf(cornerDelta, thicknessDelta, colorDelta).coerceIn(0f, 1f)
+            val inFlightMalleability = SeaGlassShapeMorph.sCurve(
+                maxOf(cornerDelta, thicknessDelta, colorDelta)
+            )
 
             SeaGlassMaterial(
                 tintColorArgb = animatedArgb,

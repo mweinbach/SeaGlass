@@ -3,6 +3,7 @@ package dev.seaglass.compose
 import android.graphics.Shader
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -44,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +93,7 @@ import dev.seaglass.core.SeaGlassColorMath
 import dev.seaglass.core.SeaGlassCornerAdaptationMode
 import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassMaterial
+import dev.seaglass.core.SeaGlassShapeMorph
 import dev.seaglass.core.backend.SeaGlassShaderProgramCache
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -131,19 +134,20 @@ data class SeaGlassSheetQuickAction(
  *    proportional to drag displacement, and dismisses cleanly when pulled past threshold.
  */
 private class MorphLensClipHolder {
-    var curW: Float = 0f
-    var curH: Float = 0f
-    var endW: Float = 0f
-    var endH: Float = 0f
+    var curW by mutableFloatStateOf(0f)
+    var curH by mutableFloatStateOf(0f)
+    var endW by mutableFloatStateOf(0f)
+    var endH by mutableFloatStateOf(0f)
+    var animatedCornerDp by mutableFloatStateOf(42f)
+    var glassRootOrigin by mutableStateOf(Offset.Zero)
 }
 
 /**
  * Reusable Trigger-to-Card SeaGlass Lens Morph Container (`SeaGlassMorphContainer`).
  *
  * Measures [content] once at its resting card dimensions `(endW, endH)` so text and rows never
- * reflow, while animating the `SeaGlass` optical lens from [triggerRectInRoot] `(startW, startH)`
- * through a circular water-drop lens `(dropDiameter, dropDiameter)` into the resting card
- * `(endW, endH)`. Clips and blurs the inner content to the exact animated glass contour.
+ * reflow, while animating the `SeaGlass` optical lens directly from [triggerRectInRoot] `(startW, startH)`
+ * into the resting card `(endW, endH)`. Clips the inner content to the exact animated glass contour.
  */
 @Composable
 fun SeaGlassMorphContainer(
@@ -157,6 +161,7 @@ fun SeaGlassMorphContainer(
     dragScale: Float = 1f,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     triggerGhost: (@Composable BoxScope.() -> Unit)? = null,
+    lensOverlay: (@Composable BoxScope.(curW: Float, curH: Float, endW: Float, endH: Float, morphProgress: Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit
 ) {
@@ -166,13 +171,16 @@ fun SeaGlassMorphContainer(
     val clipPath = remember { Path() }
 
     val p = morphProgress.coerceAtLeast(0f)
-    val shaped = ((p - 0.24f) / 0.76f).coerceIn(0f, 1f)
+    val clampedP = SeaGlassShapeMorph.sCurve(p)
+    val shaped = SeaGlassShapeMorph.sCurveWindow(p, start = 0.08f, end = 0.96f)
     val baseCornerDp = material.cornerRadiusDp
-    // Morph corner radius from a true circle/capsule (140dp) during the drop stage to baseCornerDp as it forms the card
-    val animatedCornerDp = 140f + (baseCornerDp - 140f) * shaped
-    val activeMaterial = remember(material, animatedCornerDp) {
-        material.copy(cornerRadiusDp = animatedCornerDp)
+    val startCornerDp = if (triggerRectInRoot != null) {
+        (min(triggerRectInRoot.width, triggerRectInRoot.height) * 0.5f / density.density).coerceIn(18f, 44f)
+    } else {
+        min(baseCornerDp, 32f)
     }
+    val animatedCornerDp = startCornerDp + (baseCornerDp - startCornerDp) * shaped
+    clipHolder.animatedCornerDp = animatedCornerDp
 
     val contentColor = remember(material.tintColorArgb, material.tintDensity) {
         Color(
@@ -183,11 +191,18 @@ fun SeaGlassMorphContainer(
         )
     }
 
-    val contentScale = (0.76f + 0.24f * shaped) * dragScale
-    val contentAlpha = ((effectsProgress - 0.08f) / 0.62f).coerceIn(0f, 1f)
-    val contentBlurPx = ((1f - effectsProgress) * (1f - effectsProgress) * 15f * density.density).coerceAtLeast(0f)
-    val ghostAlpha = (1f - effectsProgress * 2.4f).coerceIn(0f, 1f)
-    val ghostBlurPx = (effectsProgress * 10f * density.density).coerceAtLeast(0f)
+    val contentAlpha = if (triggerGhost != null || lensOverlay != null) {
+        SeaGlassShapeMorph.sCurveWindow(p, start = 0.16f, end = 0.72f)
+    } else {
+        SeaGlassShapeMorph.sCurveWindow(p, start = 0.08f, end = 0.64f)
+    }
+    val ghostAlpha = 1f - SeaGlassShapeMorph.sCurveWindow(p, start = 0.04f, end = 0.34f)
+    val glassAlpha = if (triggerGhost != null && triggerRectInRoot != null) {
+        1f
+    } else {
+        SeaGlassShapeMorph.sCurveWindow(max(p, effectsProgress), start = 0.0f, end = 0.18f)
+    }
+    val topAnchoredContent = lensOverlay == null
 
     ProvideSeaGlassLegibleContent(contentColor = contentColor) {
         Layout(
@@ -195,44 +210,51 @@ fun SeaGlassMorphContainer(
                 restingOriginInRoot = coords.positionInRoot()
             },
             content = {
-                // Child 0: Moving/morphing SeaGlass optical lens
+                // Child 0: Moving/morphing SeaGlass optical lens (keeps material stable so it never recomposes per frame)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            alpha = (effectsProgress * 2.2f).coerceIn(0f, 1f)
+                            alpha = glassAlpha
+                            compositingStrategy = if (glassAlpha < 0.995f) {
+                                CompositingStrategy.Offscreen
+                            } else {
+                                CompositingStrategy.Auto
+                            }
                         }
                         .seaGlass(
                             stageState = stageState,
-                            material = activeMaterial,
-                            cornerAdaptationMode = if (concentricCorners && shaped > 0.65f) {
+                            material = material,
+                            cornerAdaptationMode = if (concentricCorners) {
                                 SeaGlassCornerAdaptationMode.CONCENTRIC_PROXIMITY
                             } else {
                                 SeaGlassCornerAdaptationMode.FIXED
                             },
                             cornerMask = SeaGlassCornerMask.ALL,
                             cornerProximityThresholdDp = 64f,
-                            allowAsymmetricCorners = false
+                            allowAsymmetricCorners = false,
+                            overrideOriginInRoot = { clipHolder.glassRootOrigin },
+                            dynamicCornerRadiusDp = { clipHolder.animatedCornerDp }
                         )
                 )
 
-                // Child 1: Full-size card content, uniformly scaled, blurred in flight, and clipped to the lens contour
+                // Child 1: Full-size card content, scaled and clipped to the exact lens contour
                 Box(
                     contentAlignment = Alignment.TopCenter,
                     modifier = Modifier
                         .drawWithContent {
+                            if (contentAlpha <= 0.005f) return@drawWithContent
                             val cW = clipHolder.curW
                             val cH = clipHolder.curH
                             val eW = clipHolder.endW.coerceAtLeast(1f)
                             val eH = clipHolder.endH.coerceAtLeast(1f)
                             if (cW > 1f && cH > 1f) {
-                                val invScale = 1f / contentScale.coerceAtLeast(0.25f)
-                                val localClipW = min(eW, cW * invScale)
-                                val localClipH = min(eH, cH * invScale)
+                                val localClipW = min(eW, cW)
+                                val localClipH = min(eH, cH)
                                 val left = (eW - localClipW) * 0.5f
-                                val top = (eH - localClipH) * 0.5f
+                                val top = if (topAnchoredContent) 0f else (eH - localClipH) * 0.5f
                                 val cornerPx = min(
-                                    animatedCornerDp * density.density * invScale,
+                                    clipHolder.animatedCornerDp * density.density,
                                     min(localClipW, localClipH) * 0.5f
                                 )
                                 clipPath.reset()
@@ -253,44 +275,54 @@ fun SeaGlassMorphContainer(
                             }
                         }
                         .graphicsLayer {
-                            alpha = contentAlpha
-                            scaleX = contentScale
-                            scaleY = contentScale
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && contentBlurPx > 0.6f) {
-                                compositingStrategy = CompositingStrategy.Offscreen
-                                renderEffect = SeaGlassShaderProgramCache
-                                    .obtainBlurRenderEffect(contentBlurPx, Shader.TileMode.DECAL)
-                                    .asComposeRenderEffect()
+                            val eW = clipHolder.endW.coerceAtLeast(1f)
+                            val eH = clipHolder.endH.coerceAtLeast(1f)
+                            val fitW = (clipHolder.curW / eW).coerceIn(0.16f, 1.05f)
+                            val fitH = (clipHolder.curH / eH).coerceIn(0.16f, 1.05f)
+                            transformOrigin = if (topAnchoredContent) {
+                                TransformOrigin(0.5f, 0f)
                             } else {
-                                renderEffect = null
+                                TransformOrigin(0.5f, 0.5f)
                             }
+                            alpha = contentAlpha
+                            scaleX = fitW
+                            scaleY = if (topAnchoredContent) max(fitW, fitH) else fitW
                         }
                         .padding(contentPadding),
                     content = content
                 )
 
-                // Child 2 (optional): Trigger ghost glyph/ring riding inside the lens during launch/return
-                if (triggerGhost != null) {
+                // Child 2 (optional): Trigger ghost glyph or continuous lens overlay riding inside the glass bounds
+                if (triggerGhost != null || lensOverlay != null) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer {
-                                alpha = ghostAlpha
-                                val s = 1f + 0.28f * effectsProgress
-                                scaleX = s
-                                scaleY = s
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ghostBlurPx > 0.6f) {
-                                    compositingStrategy = CompositingStrategy.Offscreen
-                                    renderEffect = SeaGlassShaderProgramCache
-                                        .obtainBlurRenderEffect(ghostBlurPx, Shader.TileMode.DECAL)
-                                        .asComposeRenderEffect()
-                                } else {
-                                    renderEffect = null
-                                }
-                            },
-                        content = triggerGhost
-                    )
+                                alpha = glassAlpha
+                            }
+                    ) {
+                        if (triggerGhost != null && ghostAlpha > 0.005f) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        alpha = ghostAlpha
+                                    },
+                                content = triggerGhost
+                            )
+                        }
+                        if (lensOverlay != null) {
+                            lensOverlay(
+                                clipHolder.curW,
+                                clipHolder.curH,
+                                clipHolder.endW,
+                                clipHolder.endH,
+                                p
+                            )
+                        }
+                    }
                 }
             }
         ) { measurables, constraints ->
@@ -298,35 +330,23 @@ fun SeaGlassMorphContainer(
             val endW = contentPlaceable.width.toFloat().coerceAtLeast(1f)
             val endH = contentPlaceable.height.toFloat().coerceAtLeast(1f)
 
-            val grown = (p / 0.50f).coerceIn(0f, 1f)
-            val rawTravel = (p / 0.86f).coerceIn(0f, 1f)
-            val travel = rawTravel * rawTravel * (3f - 2f * rawTravel)
-            val spread = ((p - 0.22f) / 0.78f).coerceIn(0f, 1f)
-            val bounce = 1f + (p - 1f).coerceIn(-0.03f, 0.03f)
+            val travelX = SeaGlassShapeMorph.sCurveWindow(p, start = 0.0f, end = 0.94f, overshootGain = 0.28f)
+            val travelY = SeaGlassShapeMorph.sCurveWindow(p, start = 0.0f, end = 0.92f, overshootGain = 0.28f)
+            val spreadW = SeaGlassShapeMorph.sCurveWindow(p, start = 0.0f, end = 0.96f, overshootGain = 0.26f)
+            val spreadH = SeaGlassShapeMorph.sCurveWindow(p, start = 0.04f, end = 1.00f, overshootGain = 0.30f)
+            val bounce = 1f + (p - 1f).coerceIn(-0.02f, 0.02f)
 
-            val startW = triggerRectInRoot?.width?.coerceAtLeast(28f) ?: (endW * 0.28f).coerceAtLeast(42f * density.density)
-            val startH = triggerRectInRoot?.height?.coerceAtLeast(28f) ?: (endH * 0.18f).coerceAtLeast(42f * density.density)
-            val dropDiameter = min(max(startW, startH) * 1.90f, min(endW, endH))
-
-            val midW = startW + (dropDiameter - startW) * grown
-            val midH = startH + (dropDiameter - startH) * grown
-            val maxW = max(28f, endW * 1.12f)
-            val maxH = max(28f, endH * 1.12f)
-            val curW = ((midW + (endW - midW) * spread) * dragScale * bounce).coerceIn(28f, maxW)
-            val curH = ((midH + (endH - midH) * spread) * dragScale * bounce).coerceIn(28f, maxH)
+            val startW = triggerRectInRoot?.width?.coerceAtLeast(28f) ?: (endW * 0.88f).coerceAtLeast(48f * density.density)
+            val startH = triggerRectInRoot?.height?.coerceAtLeast(28f) ?: (endH * 0.72f).coerceAtLeast(48f * density.density)
+            val maxW = max(28f, endW * 1.08f)
+            val maxH = max(28f, endH * 1.08f)
+            val curW = ((startW + (endW - startW) * spreadW) * dragScale * bounce).coerceIn(28f, maxW)
+            val curH = ((startH + (endH - startH) * spreadH) * dragScale * bounce).coerceIn(28f, maxH)
 
             clipHolder.curW = curW
             clipHolder.curH = curH
             clipHolder.endW = endW
             clipHolder.endH = endH
-
-            val endCx = restingOriginInRoot.x + endW * 0.5f
-            val endCy = restingOriginInRoot.y + endH * 0.5f
-            val startCx = triggerRectInRoot?.center?.x ?: endCx
-            val startCy = triggerRectInRoot?.center?.y ?: (endCy + 140f * density.density)
-
-            val curCx = startCx + (endCx - startCx) * travel
-            val curCy = startCy + (endCy - startCy) * travel + extraTranslationY
 
             val glassWInt = curW.roundToInt().coerceAtLeast(1)
             val glassHInt = curH.roundToInt().coerceAtLeast(1)
@@ -335,12 +355,31 @@ fun SeaGlassMorphContainer(
                 measurables[2].measure(Constraints.fixed(glassWInt, glassHInt))
             } else null
 
-            val glassX = (curCx - restingOriginInRoot.x - curW * 0.5f).roundToInt()
-            val glassY = (curCy - restingOriginInRoot.y - curH * 0.5f).roundToInt()
-            val contentX = (curCx - restingOriginInRoot.x - endW * 0.5f).roundToInt()
-            val contentY = (curCy - restingOriginInRoot.y - endH * 0.5f).roundToInt()
-
             layout(contentPlaceable.width, contentPlaceable.height) {
+                val liveOrigin = coordinates?.positionInRoot()?.also {
+                    if (it.x != restingOriginInRoot.x || it.y != restingOriginInRoot.y) {
+                        restingOriginInRoot = it
+                    }
+                } ?: restingOriginInRoot
+
+                val endCx = liveOrigin.x + endW * 0.5f
+                val endCy = liveOrigin.y + endH * 0.5f
+                val startCx = triggerRectInRoot?.center?.x ?: endCx
+                val startCy = triggerRectInRoot?.center?.y ?: (endCy + extraTranslationY + 140f * density.density)
+
+                val curCx = startCx + (endCx - startCx) * travelX
+                val curCy = startCy + (endCy + extraTranslationY - startCy) * travelY
+                clipHolder.glassRootOrigin = Offset(curCx - curW * 0.5f, curCy - curH * 0.5f)
+
+                val glassX = (curCx - liveOrigin.x - curW * 0.5f).roundToInt()
+                val glassY = (curCy - liveOrigin.y - curH * 0.5f).roundToInt()
+                val contentX = (curCx - liveOrigin.x - endW * 0.5f).roundToInt()
+                val contentY = if (topAnchoredContent) {
+                    glassY
+                } else {
+                    (curCy - liveOrigin.y - endH * 0.5f).roundToInt()
+                }
+
                 glassPlaceable.place(glassX, glassY)
                 contentPlaceable.place(contentX, contentY)
                 ghostPlaceable?.place(glassX, glassY)
@@ -372,34 +411,33 @@ fun SeaGlassFloatingSheet(
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues()
 
     var isFullPage by remember { mutableStateOf(false) }
+    var dismissedBySwipe by remember { mutableStateOf(false) }
+    val expansion = remember { Animatable(0f) }
+    val dismissDrag = remember { Animatable(0f) }
+
     androidx.compose.runtime.LaunchedEffect(visible) {
-        if (!visible) isFullPage = false
+        if (visible) {
+            isFullPage = false
+            dismissedBySwipe = false
+            expansion.snapTo(0f)
+            dismissDrag.snapTo(0f)
+        }
     }
 
+    val motion = LocalSeaGlassMotionScheme.current
     val targetProgress = if (visible) 1f else 0f
     val morphProgress by animateFloatAsState(
         targetValue = targetProgress,
         animationSpec = if (visible) {
-            spring(dampingRatio = 0.70f, stiffness = 380f)
+            motion.morphOpenSpatial
         } else {
-            spring(dampingRatio = 0.86f, stiffness = 460f)
+            motion.morphCloseSpatial
         },
         label = "floatingSheetMorph"
     )
-    val effectsProgress by animateFloatAsState(
-        targetValue = targetProgress,
-        animationSpec = spring(dampingRatio = 1.0f, stiffness = 500f),
-        label = "floatingSheetEffects"
-    )
-    val fullPageProgress by animateFloatAsState(
-        targetValue = if (isFullPage) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.78f, stiffness = 360f),
-        label = "floatingSheetFullPage"
-    )
+    val effectsProgress = SeaGlassShapeMorph.sCurve(morphProgress)
 
-    val dragOffsetY = remember { Animatable(0f) }
-
-    if (effectsProgress <= 0.005f && !visible) {
+    if (morphProgress <= 0.04f && !visible) {
         return
     }
 
@@ -407,80 +445,83 @@ fun SeaGlassFloatingSheet(
     val expandThresholdPx = with(density) { 48.dp.toPx() }
     val expandSpanPx = with(density) { 210.dp.toPx() }
 
-    val dragUpExpansion = if (!isFullPage && dragOffsetY.value < 0f) {
-        (-dragOffsetY.value / expandSpanPx).coerceIn(0f, 1f)
-    } else 0f
-    val dragDownCollapse = if (isFullPage && dragOffsetY.value > 0f) {
-        (dragOffsetY.value / expandSpanPx).coerceIn(0f, 1f)
-    } else 0f
-    val liveExpansion = (fullPageProgress + dragUpExpansion - dragDownCollapse).coerceIn(0f, 1f)
-
-    val dismissDragPx = if (!isFullPage && dragOffsetY.value > 0f) {
-        dragOffsetY.value
-    } else if (isFullPage && dragOffsetY.value > expandSpanPx) {
-        dragOffsetY.value - expandSpanPx
-    } else 0f
+    val liveExpansion = SeaGlassShapeMorph.sCurve(expansion.value.coerceIn(0f, 1f))
+    val dismissDragPx = dismissDrag.value.coerceAtLeast(0f)
     val dragFraction = (dismissDragPx / dismissThresholdPx).coerceIn(0f, 1f)
-    val dragExpand = 1f + 0.016f * (abs(dragOffsetY.value) / expandSpanPx).coerceIn(0f, 1f)
 
-    fun settleDrag(velocityY: Float = 0f) {
-        val currentDrag = dragOffsetY.value
-        if (!isFullPage) {
-            when {
-                currentDrag < -expandThresholdPx || velocityY < -520f -> {
-                    isFullPage = true
-                    scope.launch {
-                        dragOffsetY.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = 420f))
-                    }
+    fun applyVerticalDrag(dy: Float) {
+        if (dy == 0f || !visible) return
+        scope.launch {
+            if (dy < 0f) {
+                var remainingUp = -dy
+                if (dismissDrag.value > 0f) {
+                    val pullBack = min(dismissDrag.value, remainingUp * 0.88f)
+                    dismissDrag.snapTo((dismissDrag.value - pullBack).coerceAtLeast(0f))
+                    remainingUp -= pullBack / 0.88f
                 }
-                currentDrag > dismissThresholdPx || (currentDrag > expandThresholdPx * 0.5f && velocityY > 650f) -> {
-                    scope.launch {
-                        dragOffsetY.snapTo(0f)
-                        onDismissRequest()
-                    }
+                if (remainingUp > 0f) {
+                    val deltaExp = (remainingUp * 0.88f) / expandSpanPx
+                    expansion.snapTo((expansion.value + deltaExp).coerceIn(0f, 1f))
                 }
-                else -> {
-                    scope.launch {
-                        dragOffsetY.animateTo(0f, spring(dampingRatio = 0.72f, stiffness = 420f))
-                    }
+            } else {
+                var remainingDown = dy
+                if (expansion.value > 0f) {
+                    val deltaExp = (remainingDown * 0.88f) / expandSpanPx
+                    val usedExp = min(expansion.value, deltaExp)
+                    expansion.snapTo((expansion.value - usedExp).coerceIn(0f, 1f))
+                    remainingDown -= (usedExp * expandSpanPx) / 0.88f
                 }
-            }
-        } else {
-            when {
-                currentDrag > expandThresholdPx || velocityY > 420f -> {
-                    isFullPage = false
-                    scope.launch {
-                        dragOffsetY.animateTo(0f, spring(dampingRatio = 0.78f, stiffness = 420f))
-                    }
-                }
-                else -> {
-                    scope.launch {
-                        dragOffsetY.animateTo(0f, spring(dampingRatio = 0.74f, stiffness = 420f))
-                    }
+                if (remainingDown > 0f) {
+                    dismissDrag.snapTo((dismissDrag.value + remainingDown * 0.85f).coerceAtLeast(0f))
                 }
             }
         }
     }
 
-    val nestedScrollConnection = remember(isFullPage, onDismissRequest) {
+    fun settleDrag(velocityY: Float = 0f) {
+        if (!visible) return
+        val curDismiss = dismissDrag.value
+        val curExp = expansion.value
+        when {
+            curDismiss > 0f -> {
+                if (curDismiss > dismissThresholdPx || (curDismiss > expandThresholdPx * 0.5f && velocityY > 650f)) {
+                    dismissedBySwipe = true
+                    onDismissRequest()
+                } else {
+                    scope.launch {
+                        dismissDrag.animateTo(0f, spring(dampingRatio = 0.84f, stiffness = 560f))
+                    }
+                }
+            }
+            else -> {
+                val expandThresholdFrac = (expandThresholdPx / expandSpanPx).coerceIn(0.14f, 0.35f)
+                val nextFullPage = if (!isFullPage) {
+                    curExp >= expandThresholdFrac || velocityY < -520f
+                } else {
+                    !(curExp <= 1f - expandThresholdFrac || velocityY > 420f)
+                }
+                isFullPage = nextFullPage
+                val targetExp = if (nextFullPage) 1f else 0f
+                scope.launch {
+                    expansion.animateTo(targetExp, spring(dampingRatio = 0.84f, stiffness = 520f))
+                }
+            }
+        }
+    }
+
+    val nestedScrollConnection = remember(visible, onDismissRequest) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                if (source != NestedScrollSource.UserInput || !visible) return Offset.Zero
                 val dy = available.y
-                // Swiping up while compact or while mid-drag: expand the sheet toward full page first
-                if (dy < 0f && (!isFullPage || dragOffsetY.value > 0f)) {
-                    scope.launch {
-                        val next = (dragOffsetY.value + dy * 0.88f).coerceAtLeast(-expandSpanPx * 1.15f)
-                        dragOffsetY.snapTo(next)
-                    }
+                // Swiping up while compact or while pulled down: return to compact / expand toward full page first
+                if (dy < 0f && (dismissDrag.value > 0f || expansion.value < 0.995f)) {
+                    applyVerticalDrag(dy)
                     return Offset(0f, dy)
                 }
-                // Swiping down while already pulling the sheet (dragOffsetY != 0): continue moving the sheet
-                if (dy > 0f && dragOffsetY.value < 0f) {
-                    scope.launch {
-                        val next = (dragOffsetY.value + dy * 0.88f).coerceAtMost(0f)
-                        dragOffsetY.snapTo(next)
-                    }
+                // Swiping down while mid-expansion or already pulling down: move the sheet first
+                if (dy > 0f && (dismissDrag.value > 0f || (expansion.value > 0.005f && expansion.value < 0.995f))) {
+                    applyVerticalDrag(dy)
                     return Offset(0f, dy)
                 }
                 return Offset.Zero
@@ -491,29 +532,23 @@ fun SeaGlassFloatingSheet(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
-                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                if (source != NestedScrollSource.UserInput || !visible) return Offset.Zero
                 val dy = available.y
                 // Unconsumed downward scroll (user is at top of scroll view and pulls down)
                 if (dy > 0f) {
-                    scope.launch {
-                        val next = dragOffsetY.value + dy * 0.85f
-                        dragOffsetY.snapTo(next)
-                    }
+                    applyVerticalDrag(dy)
                     return Offset(0f, dy)
                 }
-                // Unconsumed upward scroll while compact
-                if (dy < 0f && !isFullPage) {
-                    scope.launch {
-                        val next = (dragOffsetY.value + dy * 0.85f).coerceAtLeast(-expandSpanPx * 1.15f)
-                        dragOffsetY.snapTo(next)
-                    }
+                // Unconsumed upward scroll while not yet full page
+                if (dy < 0f && expansion.value < 0.995f) {
+                    applyVerticalDrag(dy)
                     return Offset(0f, dy)
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (abs(dragOffsetY.value) > 4f) {
+                if (dismissDrag.value > 2f || (expansion.value > 0.005f && expansion.value < 0.995f)) {
                     settleDrag(available.y)
                     return available
                 }
@@ -521,31 +556,13 @@ fun SeaGlassFloatingSheet(
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (abs(dragOffsetY.value) > 2f || (!isFullPage && available.y < -520f)) {
+                if (dismissDrag.value > 1f || (expansion.value > 0.005f && expansion.value < 0.995f) || (!isFullPage && available.y < -520f)) {
                     settleDrag(available.y)
                     return available
                 }
                 return Velocity.Zero
             }
         }
-    }
-
-    val baseSurface = MaterialTheme.colorScheme.surface
-    val tintColor = Color(material.tintColorArgb)
-    val fullPageTintBackdrop = remember(baseSurface, tintColor) {
-        Color(
-            red = (baseSurface.red * 0.36f + tintColor.red * 0.64f).coerceIn(0f, 1f),
-            green = (baseSurface.green * 0.36f + tintColor.green * 0.64f).coerceIn(0f, 1f),
-            blue = (baseSurface.blue * 0.36f + tintColor.blue * 0.64f).coerceIn(0f, 1f),
-            alpha = 1f
-        )
-    }
-    val activeMaterial = remember(material, liveExpansion) {
-        if (liveExpansion <= 0.005f) material
-        else material.copy(
-            tintDensity = (material.tintDensity + (0.86f - material.tintDensity) * liveExpansion).coerceIn(0f, 1f),
-            transparency = (material.transparency * (1f - 0.62f * liveExpansion)).coerceIn(0.08f, 1f)
-        )
     }
 
     BoxWithConstraints(
@@ -560,19 +577,21 @@ fun SeaGlassFloatingSheet(
         val compactMaxHeight = (maxHeight * 0.72f).coerceAtLeast(320.dp)
         val currentMaxHeight = compactMaxHeight + (fullSheetHeight - compactMaxHeight) * liveExpansion
         val currentMinHeight = fullSheetHeight * liveExpansion
+        val screenHeightPx = with(density) { maxHeight.toPx() }
+        // When dismissed via downward swipe, never reverse upward into a top-bar trigger icon.
+        val effectiveTriggerRect = if (dismissedBySwipe && (triggerRectInRoot == null || triggerRectInRoot.center.y < screenHeightPx * 0.65f)) {
+            null
+        } else {
+            triggerRectInRoot
+        }
 
-        // 1. Interactive backdrop scrim + iOS-style full background tint wash as sheet expands to full page
+        // 1. Interactive backdrop scrim
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Color.Black.copy(
                         alpha = (scrimMaxAlpha * effectsProgress * (1f - dragFraction * 0.5f)).coerceIn(0f, 0.6f)
-                    )
-                )
-                .background(
-                    fullPageTintBackdrop.copy(
-                        alpha = (liveExpansion * 0.94f * effectsProgress).coerceIn(0f, 0.96f)
                     )
                 )
                 .clickable(
@@ -594,17 +613,13 @@ fun SeaGlassFloatingSheet(
                     bottom = bottomBarPad + activeInsetDp
                 )
                 .nestedScroll(nestedScrollConnection)
-                .pointerInput(isFullPage, onDismissRequest) {
+                .pointerInput(visible, onDismissRequest) {
                     detectVerticalDragGestures(
                         onDragEnd = { settleDrag(0f) },
                         onDragCancel = { settleDrag(0f) },
                         onVerticalDrag = { change, dragAmount ->
                             change.consume()
-                            scope.launch {
-                                val next = (dragOffsetY.value + dragAmount * 0.88f)
-                                    .coerceAtLeast(-expandSpanPx * 1.15f)
-                                dragOffsetY.snapTo(next)
-                            }
+                            applyVerticalDrag(dragAmount)
                         }
                     )
                 }
@@ -617,14 +632,14 @@ fun SeaGlassFloatingSheet(
             SeaGlassMorphContainer(
                 morphProgress = if (enableMorphAnimation) morphProgress else 1f,
                 effectsProgress = if (enableMorphAnimation) effectsProgress else 1f,
-                triggerRectInRoot = triggerRectInRoot,
+                triggerRectInRoot = effectiveTriggerRect,
                 stageState = stageState,
-                material = activeMaterial,
+                material = material,
                 concentricCorners = true,
                 extraTranslationY = dismissDragPx,
-                dragScale = dragExpand,
+                dragScale = 1f,
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-                triggerGhost = triggerGhost,
+                triggerGhost = if (effectiveTriggerRect != null) triggerGhost else null,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(
@@ -644,7 +659,16 @@ fun SeaGlassFloatingSheet(
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = { isFullPage = !isFullPage }
+                                onClick = {
+                                    val next = !isFullPage
+                                    isFullPage = next
+                                    scope.launch {
+                                        expansion.animateTo(
+                                            if (next) 1f else 0f,
+                                            spring(dampingRatio = 0.84f, stiffness = 520f)
+                                        )
+                                    }
+                                }
                             )
                             .padding(horizontal = 24.dp, vertical = 4.dp)
                     ) {
@@ -1149,16 +1173,19 @@ fun SeaGlassInspectorSheetContent(
         )
     }
 
+    val motion = LocalSeaGlassMotionScheme.current
     AnimatedContent(
         targetState = activeSubPage,
         transitionSpec = {
-            (fadeIn(animationSpec = tween(210)) +
+            (fadeIn(animationSpec = tween(200, easing = SeaGlassPhysicsSCurveEasing)) +
                 scaleIn(
                     initialScale = 0.94f,
-                    animationSpec = spring(dampingRatio = 0.72f, stiffness = 400f)
+                    animationSpec = motion.subPageSpatial
                 )).togetherWith(
-                fadeOut(animationSpec = tween(140)) +
-                    scaleOut(targetScale = 0.96f, animationSpec = tween(140))
+                fadeOut(animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing)) +
+                    scaleOut(targetScale = 0.96f, animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing))
+            ).using(
+                SizeTransform(clip = true) { _, _ -> motion.subPageSpatialSpec() }
             )
         },
         modifier = modifier.fillMaxWidth(),

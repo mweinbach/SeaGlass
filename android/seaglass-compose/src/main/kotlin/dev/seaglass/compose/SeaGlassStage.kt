@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -229,17 +230,29 @@ class SeaGlassStageState internal constructor(
     var hasRecordedBackdrop: Boolean by mutableStateOf(false)
         internal set
 
+    private var rawRecordTick: Int = 0
+
     var recordTick: Int by mutableIntStateOf(0)
         internal set
 
-    var requestedFrostPx: Float by mutableFloatStateOf(72f)
+    internal fun notifyBackdropRecorded() {
+        rawRecordTick += 1
+        recordTick = rawRecordTick
+    }
+
+    var requestedFrostPx: Float = 72f
         internal set
 
     var needsDispersionLayers: Boolean = false
         internal set
 
-    private var appliedFrostPx: Float = -1f
+    internal var appliedFrostPx: Float = -1f
     private var appliedDispersionBlurPx: Float = -1f
+
+    fun updateStageBlur(frostPx: Float) {
+        requestedFrostPx = frostPx
+        ensureStageBlurUpdated(frostPx)
+    }
 
     internal fun ensureStageBlurUpdated(frostPx: Float) {
         val target = frostPx.coerceAtLeast(1.0f)
@@ -250,7 +263,7 @@ class SeaGlassStageState internal constructor(
                     .obtainBlurRenderEffect(target, Shader.TileMode.CLAMP)
                     .asComposeRenderEffect()
 
-                frostedBackdropLayer.clip = true
+                frostedBackdropLayer.clip = false
                 frostedBackdropLayer.compositingStrategy = CompositingStrategy.Auto
                 frostedBackdropLayer.renderEffect = cachedMainBlur
                 frostedBackdropLayer.compositingStrategy = CompositingStrategy.Offscreen
@@ -366,6 +379,7 @@ fun SeaGlassStageHost(
  */
 fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
     return this
+        .graphicsLayer()
         .onGloballyPositioned { coordinates ->
             stageState.backdropOriginInRoot = coordinates.positionInRoot()
             stageState.backdropSize = coordinates.size
@@ -396,8 +410,10 @@ fun Modifier.seaGlassBackdrop(stageState: SeaGlassStageState): Modifier {
                     drawLayer(stageState.backdropLayer)
                 }
             }
-            stageState.hasRecordedBackdrop = true
-            stageState.recordTick++
+            if (!stageState.hasRecordedBackdrop) {
+                stageState.hasRecordedBackdrop = true
+            }
+            stageState.notifyBackdropRecorded()
             drawLayer(stageState.backdropLayer)
         }
 }
@@ -435,6 +451,8 @@ fun Modifier.seaGlass(
     cornerAdaptationStrength: Float = LocalSeaGlassCornerAdaptationConfig.current.strength,
     allowAsymmetricCorners: Boolean = LocalSeaGlassCornerAdaptationConfig.current.allowAsymmetricCorners,
     adaptToParentContainer: Boolean = LocalSeaGlassCornerAdaptationConfig.current.adaptToParentContainer,
+    overrideOriginInRoot: (() -> Offset?)? = null,
+    dynamicCornerRadiusDp: (() -> Float)? = null,
     customContourPathBuilder: ((widthPx: Float, heightPx: Float, outPath: Path) -> Unit)? = null
 ): Modifier {
     val context = LocalContext.current
@@ -519,6 +537,7 @@ fun Modifier.seaGlass(
     var elementOriginInRoot by remember { mutableStateOf(Offset.Zero) }
 
     return this
+        .graphicsLayer()
         .onGloballyPositioned { coordinates ->
             elementOriginInRoot = coordinates.positionInRoot()
         }
@@ -526,7 +545,8 @@ fun Modifier.seaGlass(
             val widthPx = size.width.coerceAtLeast(1f)
             val heightPx = size.height.coerceAtLeast(1f)
             val minDimPx = min(widthPx, heightPx)
-            val cornerPx = min(material.cornerRadiusDp * density, minDimPx * 0.5f)
+            val rawCornerDp = dynamicCornerRadiusDp?.invoke() ?: material.cornerRadiusDp
+            val cornerPx = min(rawCornerDp * density, minDimPx * 0.5f)
             val thicknessPx = material.thicknessDp * density
             val smoothRadiusPx = smoothRadiusDp * density
 
@@ -556,9 +576,19 @@ fun Modifier.seaGlass(
                     ?: context.resources.displayMetrics.widthPixels.toFloat()).coerceAtLeast(1f)
                 val stageH = (stageState?.backdropSize?.height?.toFloat()
                     ?: context.resources.displayMetrics.heightPixels.toFloat()).coerceAtLeast(1f)
+                // Use symmetric horizontal inset for concentric proximity when corners are uniform
+                // so vertical sheet dragging never rebuilds the path cache or warps corners mid-drag.
+                val needsLivePositionForCorners = allowAsymmetricCorners ||
+                    adaptToParentContainer ||
+                    cornerAdaptationMode == SeaGlassCornerAdaptationMode.FLUSH_CORNER_EMBED
                 val stageOrigin = stageState?.backdropOriginInRoot ?: Offset.Zero
-                val elemLeftInStage = elementOriginInRoot.x - stageOrigin.x
-                val elemTopInStage = elementOriginInRoot.y - stageOrigin.y
+                val effectiveOrigin = if (needsLivePositionForCorners) {
+                    overrideOriginInRoot?.invoke() ?: elementOriginInRoot
+                } else {
+                    Offset((stageW - widthPx) * 0.5f + stageOrigin.x, stageH - heightPx - (stageW - widthPx) * 0.5f + stageOrigin.y)
+                }
+                val elemLeftInStage = effectiveOrigin.x - stageOrigin.x
+                val elemTopInStage = effectiveOrigin.y - stageOrigin.y
 
                 // 1. Solve concentric corner radii against physical device display corners
                 // using developer-configured mode, cornerMask, and proximityThresholdDp.
@@ -820,10 +850,12 @@ fun Modifier.seaGlass(
             val useDispersionChannels = dispPx > 0.35f && sandWear < 0.28f
 
             onDrawWithContent {
-                val tick = stageState?.recordTick ?: 0
-                val hasBackdrop = stageState?.hasRecordedBackdrop == true && tick >= 0
+                val recordTick = stageState?.recordTick ?: 0
+                val hasBackdrop = stageState?.hasRecordedBackdrop == true && recordTick >= 0
+                val trackedOrigin = elementOriginInRoot
+                val effectiveOrigin = overrideOriginInRoot?.invoke() ?: trackedOrigin
                 val relOffset = if (stageState != null) {
-                    elementOriginInRoot - stageState.backdropOriginInRoot
+                    effectiveOrigin - stageState.backdropOriginInRoot
                 } else {
                     Offset.Zero
                 }
@@ -832,26 +864,16 @@ fun Modifier.seaGlass(
                     if (useDispersionChannels) {
                         stageState.needsDispersionLayers = true
                     }
-                    stageState.requestedFrostPx = effectiveFrostPx
-                    stageState.ensureStageBlurUpdated(effectiveFrostPx)
+                    // Initialize the stage blur once so multiple surfaces with different radii never
+                    // thrash frostedBackdropLayer.renderEffect inside the same draw pass!
+                    if (stageState.appliedFrostPx < 0f) {
+                        stageState.requestedFrostPx = effectiveFrostPx
+                        stageState.ensureStageBlurUpdated(effectiveFrostPx)
+                    }
                 }
 
                 val combinedTiltX = tiltState.tiltX.coerceIn(-1f, 1f)
                 val combinedTiltY = tiltState.tiltY.coerceIn(-1f, 1f)
-
-                uniformBlock.pack(
-                    widthPx = widthPx,
-                    heightPx = heightPx,
-                    backdropOffsetX = relOffset.x,
-                    backdropOffsetY = relOffset.y,
-                    material = material,
-                    density = density,
-                    nodes = activeNodes,
-                    smoothRadiusPx = smoothRadiusPx,
-                    lightDirX = combinedTiltX,
-                    lightDirY = combinedTiltY,
-                    lightDirZ = 0.52f
-                )
 
                 val nCanvas = drawContext.canvas.nativeCanvas
 

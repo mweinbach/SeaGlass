@@ -121,6 +121,99 @@ object SeaGlassShapeMorph {
     private val targetBounds = RectF()
 
     /**
+     * Cubic Hermite S-curve (`3u^2 - 2u^3`) on `[0..1]`, providing zero initial and terminal
+     * slope (`f'(0) = 0`, `f'(1) = 0`) for smooth ease-in / ease-out transitions.
+     */
+    @JvmStatic
+    fun sCurve(t: Float): Float {
+        val u = t.coerceIn(0f, 1f)
+        return u * u * (3f - 2f * u)
+    }
+
+    /**
+     * Quintic C2-continuous S-curve (`6u^5 - 15u^4 + 10u^3`) on `[0..1]`, with zero first AND
+     * second derivatives at both endpoints (`f'(0) = f''(0) = f'(1) = f''(1) = 0`) so inertia
+     * builds and settles without initial jerk.
+     */
+    @JvmStatic
+    fun smootherStep(t: Float): Float {
+        val u = t.coerceIn(0f, 1f)
+        return u * u * u * (u * (u * 6f - 15f) + 10f)
+    }
+
+    /**
+     * Physics-based S-curve (ease-in / ease-out) transfer function:
+     * - Inside `[0..1]`, blends linear momentum (`0.52 * u`) with Cubic Hermite smoothstep
+     *   (`0.48 * u^2 * (3 - 2u)`). Because [physicsSCurve] is driven by a 2nd-order physical
+     *   spring `s(t)` (which already starts at `O(t^2)` from rest), a pure cubic/quintic curve
+     *   would compound to `O(t^4..t^6)` at the start and compress the middle into a 3-frame cliff.
+     *   This damped Hermite S-curve keeps initial motion truly quadratic (`O(t^2)` ease-in from
+     *   Frame 1), limits peak midpoint slope to `1.24x` (~12% per 60Hz frame / 6% per 120Hz frame),
+     *   and smoothly cushions the ease-out landing.
+     * - Symmetric under reversal (`physicsSCurve(1 - u) == 1 - physicsSCurve(u)`), so closing
+     *   morphs (`1 -> 0`) get the exact same ease-in detachment and ease-out landing as opening
+     *   morphs (`0 -> 1`).
+     * - Outside `[0..1]`, preserves damped physical spring overshoot/undershoot scaled by
+     *   [overshootGain].
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun physicsSCurve(progress: Float, overshootGain: Float = 0.52f): Float {
+        return when {
+            progress < 0f -> progress * overshootGain
+            progress > 1f -> 1f + (progress - 1f) * overshootGain
+            else -> {
+                val h3 = progress * progress * (3f - 2f * progress)
+                0.52f * progress + 0.48f * h3
+            }
+        }
+    }
+
+    /**
+     * Evaluates a physics-based S-curve over the sub-window `[start..end]` of [progress],
+     * eliminating the C1 velocity kinks of linear window slicing `((progress - start) / (end - start)).coerceIn(0f, 1f)`.
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun sCurveWindow(
+        progress: Float,
+        start: Float,
+        end: Float,
+        overshootGain: Float = 0f
+    ): Float {
+        val span = (end - start).coerceAtLeast(1e-4f)
+        val raw = (progress - start) / span
+        return physicsSCurve(raw, overshootGain = overshootGain)
+    }
+
+    /**
+     * Eases from `0` to `1` over `[0..until]` along a physics S-curve and holds at `1`
+     * while still carrying any spring overshoot past `progress > 1f` scaled by [overshootGain].
+     */
+    @JvmStatic
+    @JvmOverloads
+    fun sCurveLead(
+        progress: Float,
+        until: Float,
+        overshootGain: Float = 0.45f
+    ): Float {
+        val base = sCurveWindow(progress, 0f, until.coerceAtLeast(1e-4f), overshootGain = 0f)
+        val excess = if (progress > 1f) (progress - 1f) * overshootGain else 0f
+        return base + excess
+    }
+
+    /**
+     * Smooth C2 bell curve peaking at `1.0` when `progress == 0.5` and easing to `0.0` at both
+     * endpoints (`0.0` and `1.0`), used for in-flight optical energy, liquid meniscus swell,
+     * and temporal de-aging.
+     */
+    @JvmStatic
+    fun sCurveBell(progress: Float): Float {
+        val s = sCurve(progress)
+        return (4f * s * (1f - s)).coerceIn(0f, 1f)
+    }
+
+    /**
      * Returns a cached, normalized `[0..1]` [RoundedPolygon] for [kind] and [aspectRatio].
      */
     fun obtainNormalizedPolygon(
@@ -344,14 +437,14 @@ object SeaGlassShapeMorph {
         val aspect = (widthPx / max(heightPx, 1f)).coerceIn(0.4f, 4.0f)
         val cached = obtainCachedMorph(startKind, endKind, aspect)
 
-        // Allow elastic spatial spring overshoot (-0.25..+1.25) so lobes/vertices physically bounce!
-        val elasticProgress = progress.coerceIn(-0.25f, 1.25f)
+        // Shape progress with a physics S-curve while preserving elastic spatial spring overshoot (-0.25..+1.25)!
+        val elasticProgress = physicsSCurve(progress, overshootGain = 0.72f).coerceIn(-0.25f, 1.25f)
         outPath.reset()
         cached.morph.toPath(progress = elasticProgress, path = outPath)
 
-        // Use the clamped [0..1] rest reference bounds for the scale-to-fit transform so
+        // Use the S-curve [0..1] rest reference bounds for the scale-to-fit transform so
         // elastic vertex overshoot (> 1.0 or < 0.0) genuinely expands/flexes past the rest frame!
-        val refT = progress.coerceIn(0f, 1f)
+        val refT = sCurve(progress)
         val refLeft = cached.startBounds.left + (cached.endBounds.left - cached.startBounds.left) * refT
         val refTop = cached.startBounds.top + (cached.endBounds.top - cached.startBounds.top) * refT
         val refRight = cached.startBounds.right + (cached.endBounds.right - cached.startBounds.right) * refT
@@ -443,39 +536,43 @@ object SeaGlassShapeMorph {
                 activeStart = startStage.shape
                 activeEnd = SeaGlassShapeKind.Circle
                 val rawU = (progress / pivot).coerceIn(-0.25f, 1.0f)
-                // Smooth ease-in toward the circle pinch point
-                subProgress = if (rawU >= 0f) rawU * rawU * (3f - 2f * rawU) else rawU
+                // Physics S-curve ease-in/ease-out toward the circle pinch point
+                subProgress = physicsSCurve(rawU, overshootGain = 0.55f).coerceIn(-0.25f, 1.0f)
             } else {
                 activeStart = SeaGlassShapeKind.Circle
                 activeEnd = endStage.shape
-                // Preserve full spring overshoot (e.g. progress = 1.14 -> subProgress = 1.24!)
-                subProgress = ((progress - pivot) / (1f - pivot)).coerceIn(0f, 1.28f)
+                // Physics S-curve bloom out from Circle while preserving spring overshoot
+                val rawOut = (progress - pivot) / (1f - pivot)
+                subProgress = physicsSCurve(rawOut, overshootGain = 0.75f).coerceIn(0f, 1.28f)
             }
         } else {
             activeStart = startStage.shape
             activeEnd = endStage.shape
-            subProgress = progress.coerceIn(-0.25f, 1.28f)
+            subProgress = physicsSCurve(progress, overshootGain = 0.72f).coerceIn(-0.25f, 1.28f)
         }
 
+        val shapedProgress = physicsSCurve(progress, overshootGain = 0.65f)
+        val clampedSCurve = sCurve(clamped)
+
         // Base scale interpolation + mid-morph "gather & bloom" pulse + elastic spring overshoot
-        val baseScale = startStage.scale + (endStage.scale - startStage.scale) * progress
+        val baseScale = startStage.scale + (endStage.scale - startStage.scale) * shapedProgress
         val gatherDip = if (useCircleMidpoint) {
-            -0.15f * sin(clamped * PI).toFloat()
+            -0.15f * sin(clampedSCurve * PI).toFloat()
         } else {
-            -0.07f * sin(clamped * PI).toFloat()
+            -0.07f * sin(clampedSCurve * PI).toFloat()
         }
         val effectiveScale = (baseScale + gatherDip + overshoot * 0.18f).coerceIn(0.42f, 1.65f)
 
         val currentAspect = (startStage.aspectRatio +
-            (endStage.aspectRatio - startStage.aspectRatio) * progress).coerceIn(0.55f, 2.2f)
+            (endStage.aspectRatio - startStage.aspectRatio) * shapedProgress).coerceIn(0.55f, 2.2f)
 
         val scaleX = effectiveScale * sqrt(currentAspect)
         val scaleY = effectiveScale / sqrt(currentAspect)
 
         val rotation = startStage.rotationDegrees +
-            (endStage.rotationDegrees - startStage.rotationDegrees) * progress
+            (endStage.rotationDegrees - startStage.rotationDegrees) * shapedProgress
 
-        val energy = (sin(clamped * PI).toFloat() + abs(overshoot) * 2.2f).coerceIn(0f, 1f)
+        val energy = (sin(clampedSCurve * PI).toFloat() + abs(overshoot) * 2.2f).coerceIn(0f, 1f)
 
         return ChoreographedShapeTransform(
             scaleX = scaleX,
@@ -596,7 +693,8 @@ object SeaGlassShapeMorph {
         }
         val lutB = obtainPolarLut(endKind)
         val rB = samplePolarLut(lutB, angleRad)
-        return (rA + (rB - rA) * progress.coerceIn(-0.25f, 1.25f)).coerceIn(0.35f, 1.15f)
+        val shapedP = physicsSCurve(progress, overshootGain = 0.65f).coerceIn(-0.25f, 1.25f)
+        return (rA + (rB - rA) * shapedP).coerceIn(0.35f, 1.15f)
     }
 
     private fun obtainPolarLut(kind: SeaGlassShapeKind): FloatArray {
@@ -691,10 +789,10 @@ object SeaGlassShapeMorph {
         velocityPxPerSec: Float = 0f,
         areaExpansionRatio: Float = 1f
     ): SeaGlassMaterial {
-        val p = progress.coerceIn(0f, 1f)
+        val p = sCurve(progress)
         val base = SeaGlassMaterial.lerp(startMaterial, endMaterial, p)
 
-        val morphEnergy = (4f * p * (1f - p)).coerceIn(0f, 1f)
+        val morphEnergy = sCurveBell(progress)
         val velocityEnergy = (abs(velocityPxPerSec) / 1800f).coerceIn(0f, 1f)
         val totalEnergy = max(morphEnergy, velocityEnergy * 0.75f).coerceIn(0f, 1f)
 

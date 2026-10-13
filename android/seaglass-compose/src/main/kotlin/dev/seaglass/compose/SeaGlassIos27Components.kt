@@ -1,6 +1,7 @@
 package dev.seaglass.compose
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -67,10 +68,12 @@ import dev.seaglass.core.SeaGlassCornerAdaptationMode
 import dev.seaglass.core.SeaGlassCornerMask
 import dev.seaglass.core.SeaGlassMaterial
 import dev.seaglass.core.SeaGlassSdfEngine
+import dev.seaglass.core.SeaGlassShapeMorph
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -109,11 +112,12 @@ fun SeaGlassMagnifierScrubber(
     var previewPinned by remember { mutableStateOf(true) }
     val showLoupe = isDragging || previewPinned
 
-    val loupeLiftProgress by animateFloatAsState(
+    val rawLoupeLiftProgress by animateFloatAsState(
         targetValue = if (showLoupe) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.62f, stiffness = 420f),
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 420f),
         label = "ios27LoupeLift"
     )
+    val loupeLiftProgress = SeaGlassShapeMorph.physicsSCurve(rawLoupeLiftProgress, overshootGain = 0.45f)
 
     var containerWidthPx by remember { mutableFloatStateOf(900f) }
     val totalHeightDp = 112.dp
@@ -357,13 +361,14 @@ fun SeaGlassNotificationStack(
     primaryMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass,
     surfaceMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.surfaceGlass
 ) {
-    val expandProgress by animateFloatAsState(
+    val motion = LocalSeaGlassMotionScheme.current
+    val rawExpandProgress by animateFloatAsState(
         targetValue = if (expanded) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.66f, stiffness = 360f),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 420f),
         label = "ios27NotifStackExpand"
     )
-    val inFlightMalleability = (4f * expandProgress.coerceIn(0f, 1f) * (1f - expandProgress.coerceIn(0f, 1f)))
-        .coerceIn(0f, 1f)
+    val expandProgress = SeaGlassShapeMorph.physicsSCurve(rawExpandProgress, overshootGain = 0.40f)
+    val inFlightMalleability = SeaGlassShapeMorph.sCurveBell(rawExpandProgress)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -398,63 +403,91 @@ fun SeaGlassNotificationStack(
             )
         }
 
-        if (expandProgress < 0.5f && !expanded) {
-            // Rolled-up 3D Perspective Stack (back cards peek out underneath the front card)
-            Box(
-                contentAlignment = Alignment.TopCenter,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(126.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { onExpandedChange(true) }
+        AnimatedContent(
+            targetState = expanded,
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(200, easing = SeaGlassPhysicsSCurveEasing)) +
+                    scaleIn(initialScale = 0.94f, animationSpec = motion.subPageSpatial))
+                    .togetherWith(
+                        fadeOut(animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing)) +
+                            scaleOut(targetScale = 0.96f, animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing))
                     )
-            ) {
-                items.take(3).asReversed().forEachIndexed { revIdx, item ->
-                    val depthIndex = (items.take(3).size - 1) - revIdx // 0 = front, 1 = mid, 2 = back
-                    val cardScale = 1f - depthIndex * 0.065f * (1f - expandProgress)
-                    val topOffsetDp = (depthIndex * 14).dp
-
-                    Box(
-                        modifier = Modifier
-                            .padding(top = topOffsetDp)
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                scaleX = cardScale
-                                scaleY = cardScale
-                                alpha = (1f - depthIndex * 0.22f).coerceIn(0.4f, 1f)
-                            }
-                            .zIndex((10 - depthIndex).toFloat())
-                    ) {
-                        Ios27NotificationCard(
-                            item = item,
-                            stageState = stageState,
-                            material = surfaceMaterial.copy(
-                                cornerRadiusDp = 28f,
-                                thicknessDp = (18f - depthIndex * 3f).coerceAtLeast(10f)
-                            ).deaged(inFlightMalleability),
+                    .using(SizeTransform(clip = false) { _, _ -> motion.subPageSpatialSpec() })
+            },
+            label = "ios27NotifStackMorph"
+        ) { isExpanded ->
+            if (!isExpanded) {
+                // Rolled-up 3D Perspective Stack (back cards peek out underneath the front card)
+                Box(
+                    contentAlignment = Alignment.TopCenter,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(126.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
                             onClick = { onExpandedChange(true) }
                         )
+                ) {
+                    items.take(3).asReversed().forEachIndexed { revIdx, item ->
+                        val depthIndex = (items.take(3).size - 1) - revIdx // 0 = front, 1 = mid, 2 = back
+                        val cardScale = 1f - depthIndex * 0.065f * (1f - expandProgress.coerceIn(0f, 1f))
+                        val topOffsetDp = (depthIndex * 14).dp
+
+                        Box(
+                            modifier = Modifier
+                                .padding(top = topOffsetDp)
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    scaleX = cardScale
+                                    scaleY = cardScale
+                                    alpha = (1f - depthIndex * 0.22f).coerceIn(0.4f, 1f)
+                                }
+                                .zIndex((10 - depthIndex).toFloat())
+                        ) {
+                            Ios27NotificationCard(
+                                item = item,
+                                stageState = stageState,
+                                material = surfaceMaterial.copy(
+                                    cornerRadiusDp = 28f,
+                                    thicknessDp = (18f - depthIndex * 3f).coerceAtLeast(10f)
+                                ).deaged(inFlightMalleability),
+                                onClick = { onExpandedChange(true) }
+                            )
+                        }
                     }
                 }
-            }
-        } else {
-            // Fanned-out Interactive Notification Cards
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items.forEachIndexed { index, item ->
-                    Ios27NotificationCard(
-                        item = item,
-                        stageState = stageState,
-                        material = surfaceMaterial.copy(
-                            cornerRadiusDp = 28f,
-                            thicknessDp = 18f
-                        ).deaged(inFlightMalleability),
-                        onClick = { if (index == 0) onExpandedChange(false) }
-                    )
+            } else {
+                // Fanned-out Interactive Notification Cards
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items.forEachIndexed { index, item ->
+                        val cardStagger = SeaGlassShapeMorph.sCurveWindow(
+                            progress = rawExpandProgress,
+                            start = index * 0.06f,
+                            end = 1f,
+                            overshootGain = 0.35f
+                        )
+                        Box(
+                            modifier = Modifier.graphicsLayer {
+                                val s = 0.94f + 0.06f * cardStagger
+                                scaleX = s
+                                scaleY = s
+                            }
+                        ) {
+                            Ios27NotificationCard(
+                                item = item,
+                                stageState = stageState,
+                                material = surfaceMaterial.copy(
+                                    cornerRadiusDp = 28f,
+                                    thicknessDp = 18f
+                                ).deaged(inFlightMalleability),
+                                onClick = { if (index == 0) onExpandedChange(false) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -596,13 +629,16 @@ fun SeaGlassWheelPicker(
     lensMaterial: SeaGlassMaterial = LocalSeaGlassPalette.current.primaryGlass
 ) {
     val count = items.size.coerceAtLeast(1)
-    val animatedIndex by animateFloatAsState(
+    val rawAnimatedIndex by animateFloatAsState(
         targetValue = selectedIndex.coerceIn(0, count - 1).toFloat(),
-        animationSpec = spring(dampingRatio = 0.72f, stiffness = 380f),
+        animationSpec = spring(dampingRatio = 0.76f, stiffness = 400f),
         label = "ios27WheelIndex"
     )
+    val baseWheelIdx = floor(rawAnimatedIndex)
+    val wheelFrac = rawAnimatedIndex - baseWheelIdx
+    val animatedIndex = baseWheelIdx + SeaGlassShapeMorph.physicsSCurve(wheelFrac, overshootGain = 0.35f)
     var dragAccumulatorPx by remember { mutableFloatStateOf(0f) }
-    val spinMalleability = abs(selectedIndex - animatedIndex).coerceIn(0f, 1f)
+    val spinMalleability = SeaGlassShapeMorph.sCurve(abs(selectedIndex - animatedIndex))
 
     val activeContainerMaterial = remember(containerMaterial, spinMalleability) {
         containerMaterial.copy(cornerRadiusDp = 28f, thicknessDp = 18f).deaged(spinMalleability * 0.65f)
@@ -789,17 +825,20 @@ fun SeaGlassControlCenterGrid(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Left: 2x2 Modular Control Platter (tapping any tile morphs or toggles)
+            val motion = LocalSeaGlassMotionScheme.current
             Box(modifier = Modifier.weight(1f)) {
                 AnimatedContent(
                     targetState = expandedTileIndex,
                     transitionSpec = {
-                        (fadeIn(animationSpec = tween(200)) +
+                        (fadeIn(animationSpec = tween(200, easing = SeaGlassPhysicsSCurveEasing)) +
                             scaleIn(
                                 initialScale = 0.90f,
-                                animationSpec = spring(dampingRatio = 0.68f, stiffness = 420f)
+                                animationSpec = motion.subPageSpatial
                             )).togetherWith(
-                            fadeOut(animationSpec = tween(140)) +
-                                scaleOut(targetScale = 0.94f, animationSpec = tween(140))
+                            fadeOut(animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing)) +
+                                scaleOut(targetScale = 0.94f, animationSpec = tween(140, easing = SeaGlassPhysicsSCurveEasing))
+                        ).using(
+                            SizeTransform(clip = true) { _, _ -> motion.subPageSpatialSpec() }
                         )
                     },
                     label = "controlCenterPlatterMorph"
@@ -1039,16 +1078,18 @@ private fun Ios27VerticalPillSlider(
     var isDragging by remember { mutableStateOf(false) }
     var pillHeightPx by remember { mutableFloatStateOf(420f) }
 
-    val dragStretch by animateFloatAsState(
+    val rawDragStretch by animateFloatAsState(
         targetValue = if (isDragging) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.62f, stiffness = 480f),
+        animationSpec = spring(dampingRatio = 0.68f, stiffness = 480f),
         label = "verticalPillStretch"
     )
-    val animatedFill by animateFloatAsState(
+    val dragStretch = SeaGlassShapeMorph.physicsSCurve(rawDragStretch, overshootGain = 0.40f)
+    val rawAnimatedFill by animateFloatAsState(
         targetValue = fraction.coerceIn(0.08f, 1f),
-        animationSpec = spring(dampingRatio = 0.74f, stiffness = 440f),
+        animationSpec = spring(dampingRatio = 0.76f, stiffness = 440f),
         label = "verticalPillFill"
     )
+    val animatedFill = SeaGlassShapeMorph.physicsSCurve(rawAnimatedFill, overshootGain = 0.25f).coerceIn(0.08f, 1f)
 
     val activeTrackMat = remember(trackMaterial, dragStretch) {
         trackMaterial.copy(cornerRadiusDp = 28f, thicknessDp = 18f).deaged(dragStretch * 0.90f)

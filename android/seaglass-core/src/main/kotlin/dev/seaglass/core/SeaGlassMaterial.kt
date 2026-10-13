@@ -70,7 +70,8 @@ data class SeaGlassMaterial(
         get() {
             val frostOpacity = (1f - transparency).coerceIn(0f, 1f)
             val clearGate = (frostOpacity * 4.5f + coarseness * 3.5f).coerceIn(0f, 1f)
-            return ((coarseness * 0.62f + frostOpacity * 0.58f) * clearGate).coerceIn(0f, 1f)
+            val transmissionGate = (0.16f + 0.84f * frostOpacity).coerceIn(0.16f, 1f)
+            return ((coarseness * 0.62f + frostOpacity * 0.58f) * clearGate * transmissionGate).coerceIn(0f, 1f)
         }
 
     /**
