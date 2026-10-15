@@ -1,0 +1,425 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sg="using:SeaGlass.WinUI">
+
+    <!-- =================================================================== -->
+    <!-- Group 3: Navigation & Bars                                         -->
+    <!-- =================================================================== -->
+
+    <!-- 1. SeaGlassTopAppBar Template -->
+    <ControlTemplate x:Key="SeaGlassTopAppBarTemplate" TargetType="sg:SeaGlassTopAppBar">
+        <Grid x:Name="PART_Root" Height="60">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="30"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="30"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!-- Nav Button (Back) -->
+                    <Button x:Name="PART_NavigationButton"
+                            Content="‹"
+                            Width="36" Height="36"
+                            CornerRadius="18"
+                            FontSize="18"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            VerticalAlignment="Center"
+                            Margin="0,0,12,0" />
+                    <!-- Title and Subtitle -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                        <TextBlock x:Name="PART_TitlePresenter"
+                                   Text="{TemplateBinding Title}"
+                                   FontWeight="SemiBold"
+                                   FontSize="15"
+                                   Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                        <TextBlock x:Name="PART_SubtitlePresenter"
+                                   Text="{TemplateBinding Subtitle}"
+                                   FontSize="12"
+                                   Opacity="0.8"
+                                   Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    </StackPanel>
+                    <!-- Trailing Actions -->
+                    <ItemsControl x:Name="PART_ActionsPresenter"
+                                  Grid.Column="2"
+                                  VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassTopAppBar">
+        <Setter Property="Height" Value="60" />
+        <Setter Property="Padding" Value="12,8,12,8" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassTopAppBarTemplate}" />
+    </Style>
+
+    <!-- 2. SeaGlassFluidBar Template -->
+    <ControlTemplate x:Key="SeaGlassFluidBarTemplate" TargetType="sg:SeaGlassFluidBar">
+        <Grid x:Name="PART_Root" Height="68">
+            <Border x:Name="PART_GlassHost"
+                    Background="Transparent"
+                    BorderThickness="0" />
+            <Border x:Name="PART_BarTrack"
+                    CornerRadius="34"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!-- Nav Tabs with Indicator Lozenge -->
+                    <Grid>
+                        <Border x:Name="PART_IndicatorLozenge"
+                                Height="40"
+                                CornerRadius="20"
+                                Background="{StaticResource SeaGlassToneSeafoamMintBrush}"
+                                Opacity="0.3"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center" />
+                        <ItemsControl x:Name="PART_ItemsPresenter"
+                                      ItemsSource="{TemplateBinding Items}"
+                                      VerticalAlignment="Center">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </Grid>
+                    <!-- Action Orb -->
+                    <Button x:Name="PART_ActionOrb"
+                            Grid.Column="1"
+                            Content="✦"
+                            Width="44" Height="44"
+                            CornerRadius="22"
+                            Background="{ThemeResource SeaGlassToneSeafoamMintBrush}"
+                            Foreground="{ThemeResource SeaGlassOnToneSeafoamMintBrush}"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassFluidBar">
+        <Setter Property="Height" Value="68" />
+        <Setter Property="Padding" Value="12,6,12,6" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassFluidBarTemplate}" />
+    </Style>
+
+    <!-- 3. SeaGlassMiniPlayerBar Template -->
+    <ControlTemplate x:Key="SeaGlassMiniPlayerBarTemplate" TargetType="sg:SeaGlassMiniPlayerBar">
+        <Grid x:Name="PART_Root" Height="68">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="34"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="34"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!-- Artwork Host -->
+                    <Border x:Name="PART_ArtworkHost"
+                            Width="44" Height="44"
+                            CornerRadius="10"
+                            Background="{StaticResource SeaGlassToneCobaltTideBrush}"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Center" />
+                    <!-- Title and Subtitle -->
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock x:Name="PART_TitlePresenter"
+                                   Text="{TemplateBinding TrackTitle}"
+                                   FontWeight="SemiBold"
+                                   FontSize="14"
+                                   Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                        <TextBlock x:Name="PART_SubtitlePresenter"
+                                   Text="{TemplateBinding Artist}"
+                                   FontSize="12"
+                                   Opacity="0.8"
+                                   Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    </StackPanel>
+                    <!-- Play / Pause Button -->
+                    <Button x:Name="PART_PlayPauseButton"
+                            Grid.Column="2"
+                            Content="▶"
+                            Width="36" Height="36"
+                            CornerRadius="18"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Margin="0,0,6,0"
+                            VerticalAlignment="Center" />
+                    <!-- Next Button -->
+                    <Button x:Name="PART_NextButton"
+                            Grid.Column="3"
+                            Content="▶▶"
+                            Width="36" Height="36"
+                            CornerRadius="18"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassMiniPlayerBar">
+        <Setter Property="Height" Value="68" />
+        <Setter Property="Padding" Value="16,8,16,8" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassMiniPlayerBarTemplate}" />
+    </Style>
+
+    <!-- 4. SeaGlassFloatingToolbar Template -->
+    <ControlTemplate x:Key="SeaGlassFloatingToolbarTemplate" TargetType="sg:SeaGlassFloatingToolbar">
+        <Grid x:Name="PART_Root">
+            <Border x:Name="PART_GlassHost"
+                    Background="Transparent"
+                    BorderThickness="0" />
+            <Border x:Name="PART_ToolbarBar"
+                    CornerRadius="24"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <ItemsControl x:Name="PART_ItemsPresenter"
+                                  VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="4" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <Button x:Name="PART_FabOrb"
+                            Content="✦"
+                            Width="40" Height="40"
+                            CornerRadius="20"
+                            Background="{ThemeResource SeaGlassToneSeafoamMintBrush}"
+                            Foreground="{ThemeResource SeaGlassOnToneSeafoamMintBrush}"
+                            Margin="4,0,0,0"
+                            VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassFloatingToolbar">
+        <Setter Property="Height" Value="48" />
+        <Setter Property="Padding" Value="8,4,8,4" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassFloatingToolbarTemplate}" />
+    </Style>
+
+    <!-- 5. SeaGlassPillNavBar Template -->
+    <ControlTemplate x:Key="SeaGlassPillNavBarTemplate" TargetType="sg:SeaGlassPillNavBar">
+        <Grid x:Name="PART_Root" Height="52">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="26"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="26"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Border x:Name="PART_LozengeIndicator"
+                            Height="36"
+                            CornerRadius="18"
+                            Background="{StaticResource SeaGlassToneSeafoamMintBrush}"
+                            Opacity="0.3"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center" />
+                    <ItemsControl x:Name="PART_ItemsPresenter"
+                                  VerticalAlignment="Center">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="6" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassPillNavBar">
+        <Setter Property="Height" Value="52" />
+        <Setter Property="Padding" Value="8,4,8,4" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassPillNavBarTemplate}" />
+    </Style>
+
+    <!-- 6. SeaGlassPromptBar Template -->
+    <ControlTemplate x:Key="SeaGlassPromptBarTemplate" TargetType="sg:SeaGlassPromptBar">
+        <Grid x:Name="PART_Root" Height="56">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="28"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="28"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!-- Plus Button -->
+                    <Button x:Name="PART_PlusButton"
+                            Content="＋"
+                            Width="36" Height="36"
+                            CornerRadius="18"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center" />
+                    <!-- Prompt Text Input -->
+                    <TextBox x:Name="PART_PromptInput"
+                             Grid.Column="1"
+                             Text="{TemplateBinding PromptText}"
+                             PlaceholderText="{TemplateBinding PlaceholderText}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0"
+                             VerticalAlignment="Center"
+                             Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    <!-- Microphone Button -->
+                    <Button x:Name="PART_MicButton"
+                            Grid.Column="2"
+                            Content="🎤"
+                            Width="36" Height="36"
+                            CornerRadius="18"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Margin="4,0,4,0"
+                            VerticalAlignment="Center" />
+                    <!-- Voice Wave Indicator -->
+                    <Border x:Name="PART_VoiceWaveIndicator"
+                            Grid.Column="3"
+                            Width="28" Height="28"
+                            CornerRadius="14"
+                            Background="{StaticResource SeaGlassToneCobaltTideBrush}"
+                            Opacity="0.8"
+                            VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassPromptBar">
+        <Setter Property="Height" Value="56" />
+        <Setter Property="Padding" Value="12,6,12,6" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassPromptBarTemplate}" />
+    </Style>
+
+    <!-- 7. SeaGlassSearchBar Template -->
+    <ControlTemplate x:Key="SeaGlassSearchBarTemplate" TargetType="sg:SeaGlassSearchBar">
+        <Grid x:Name="PART_Root" Height="48">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="24"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="24"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!-- Search Icon (Leading Glyph) -->
+                    <ContentPresenter x:Name="PART_LeadingGlyph"
+                                      Margin="0,0,8,0"
+                                      VerticalAlignment="Center">
+                        <TextBlock Text="⌕" FontSize="16" Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    </ContentPresenter>
+                    <!-- Query Text Box -->
+                    <TextBox x:Name="PART_TextBox"
+                             Grid.Column="1"
+                             Text="{TemplateBinding Query}"
+                             PlaceholderText="{TemplateBinding Placeholder}"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0"
+                             VerticalAlignment="Center"
+                             Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    <!-- Clear Button -->
+                    <Button x:Name="PART_ClearButton"
+                            Grid.Column="2"
+                            Content="✕"
+                            Width="28" Height="28"
+                            CornerRadius="14"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Margin="4,0,4,0"
+                            VerticalAlignment="Center" />
+                    <!-- Trailing Button (Filter / Settings) -->
+                    <Button x:Name="PART_TrailingButton"
+                            Grid.Column="3"
+                            Content="⚙"
+                            Width="28" Height="28"
+                            CornerRadius="14"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+            <Border x:Name="PART_FocusVisual"
+                    CornerRadius="26"
+                    BorderBrush="{StaticResource SeaGlassFocusStrokeBrush}"
+                    BorderThickness="2"
+                    Visibility="Collapsed"
+                    IsHitTestVisible="False" />
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassSearchBar">
+        <Setter Property="Height" Value="48" />
+        <Setter Property="Padding" Value="14,6,14,6" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassSearchBarTemplate}" />
+    </Style>
+
+</ResourceDictionary>

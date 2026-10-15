@@ -45,3 +45,10 @@ cmake_install.cmake
 
 # OpenCode session files
 .opencode/
+/.agents/teamwork
+
+# Teamwork build outputs, logs, and superseded screenshot sets
+artifacts/
+test_output.txt
+windows/screenshots/high_contrast/
+windows/screenshots/scaling_150/

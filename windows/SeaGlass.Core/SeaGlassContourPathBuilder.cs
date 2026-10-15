@@ -262,12 +262,18 @@ public static class SeaGlassContourPathBuilder
         outPath.Reset();
         if (nodes is null || nodes.Count == 0) return;
 
-        if (nodes.Count == 1 || smoothRadiusPx <= 0.5f)
+        if (nodes.Count == 1)
+        {
+            BuildSingleNodePath(nodes[0], outPath, insetPx);
+            return;
+        }
+
+        if (smoothRadiusPx <= 0.5f)
         {
             SeaGlassVectorPath2D single = new();
-            foreach (SeaGlassSdfEngine.SdfNode n in nodes)
+            for (int i = 0; i < nodes.Count; i++)
             {
-                BuildSingleNodePath(n, single, insetPx);
+                BuildSingleNodePath(nodes[i], single, insetPx);
                 outPath.AppendFrom(single);
             }
             return;

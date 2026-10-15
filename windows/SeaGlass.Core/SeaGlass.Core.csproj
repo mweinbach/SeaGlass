@@ -8,11 +8,27 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>SeaGlass.Core</RootNamespace>
     <AssemblyName>SeaGlass.Core</AssemblyName>
+
+    <!-- NuGet Packaging Metadata -->
+    <PackageId>SeaGlass.Core</PackageId>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <Authors>SeaGlass Contributors</Authors>
+    <Company>SeaGlass Project</Company>
+    <Product>SeaGlass Core</Product>
     <Description>SeaGlass Backend-Agnostic Optical Physics, Perceptual Oklab Beer-Lambert Color Math, 2D SDF Liquid Coalescing (sminCubic), 20-Shape Expressive Morphing, Adaptive Corner Optics, 256-Byte cbuffer/std140 ABI, and Multi-Dialect HLSL/Vulkan/GLSL Shader Compiler for Windows and WinUI.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/maxw6/SeaGlass</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/maxw6/SeaGlass</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>seaglass;optics;oklab;beer-lambert;sdf;coalescing;smin;morphing;hlsl;vulkan;glsl;agsl;cbuffer;std140</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="include\seaglass_backend_abi.h" Pack="true" PackagePath="build\native\include\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\..\README.md')" />
   </ItemGroup>
 
 </Project>

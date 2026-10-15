@@ -19,6 +19,16 @@ public enum SeaGlassContentRole
 }
 
 /// <summary>
+/// Theme mode for controls hosted within a <see cref="SeaGlassStage"/>.
+/// </summary>
+public enum SeaGlassContentTheme
+{
+    Auto,
+    Light,
+    Dark
+}
+
+/// <summary>
 /// Zero-copy backdrop capture coordinator and acyclic render-graph stage for WinUI.
 ///
 /// Enforces Rule #4 in <c>AGENTS.md</c>: records background visual content into a dedicated

@@ -13,18 +13,34 @@ namespace SeaGlass.Core;
 /// </summary>
 public sealed record SeaGlassMaterial
 {
-    public int TintColorArgb { get; init; }
-    public float TintDensity { get; init; }
-    public float Coarseness { get; init; }
-    public float FrostRadiusDp { get; init; }
-    public float Ior { get; init; }
-    public float ChromaticDispersion { get; init; }
-    public float RimChalkiness { get; init; }
-    public float ThicknessDp { get; init; }
-    public float CornerRadiusDp { get; init; }
-    public float CornerSmoothing { get; init; }
-    public float AmbientAdaptation { get; init; }
-    public float Transparency { get; init; }
+    public int TintColorArgb { get; set; }
+    public float TintDensity { get; set; }
+    public float Coarseness { get; set; }
+    public float FrostRadiusDp { get; set; }
+    public float Ior { get; set; }
+    public float ChromaticDispersion { get; set; }
+    public float RimChalkiness { get; set; }
+    public float ThicknessDp { get; set; }
+    public float CornerRadiusDp { get; set; }
+    public float CornerSmoothing { get; set; }
+    public float AmbientAdaptation { get; set; }
+    public float Transparency { get; set; }
+
+    public void CopyFrom(SeaGlassMaterial other)
+    {
+        TintColorArgb = other.TintColorArgb;
+        TintDensity = other.TintDensity;
+        Coarseness = other.Coarseness;
+        FrostRadiusDp = other.FrostRadiusDp;
+        Ior = other.Ior;
+        ChromaticDispersion = other.ChromaticDispersion;
+        RimChalkiness = other.RimChalkiness;
+        ThicknessDp = other.ThicknessDp;
+        CornerRadiusDp = other.CornerRadiusDp;
+        CornerSmoothing = other.CornerSmoothing;
+        AmbientAdaptation = other.AmbientAdaptation;
+        Transparency = other.Transparency;
+    }
 
     public SeaGlassMaterial(
         int tintColorArgb,
@@ -113,17 +129,67 @@ public sealed record SeaGlassMaterial
     }
 
     /// <summary>
-    /// Evaluates Temporal De-Aging &amp; Solidification on this material during motion or morphing:
-    /// preserves the glass's exact tint, transparency, and coarseness so dragging or morphing
-    /// a control, slider, or sheet never shifts its tint or opacity.
+    /// Evaluates Temporal De-Aging &amp; Solidification into a pre-allocated target material instance.
     /// </summary>
-    public SeaGlassMaterial Deaged(float malleability) => this;
+    public void DeagedInto(float malleability, SeaGlassMaterial target)
+    {
+        target.CopyFrom(this);
+        float m = Math.Clamp(malleability, 0f, 1f);
+        if (m <= 0.005f) return;
+        float melt = Math.Clamp(m * (1.35f - 0.35f * m), 0f, 1f);
+        float targetClear = MathF.Max(Transparency, 0.92f);
+        target.Coarseness = Math.Clamp(Coarseness * (1f - 0.88f * melt), 0f, 1f);
+        target.Transparency = Math.Clamp(Transparency + (targetClear - Transparency) * 0.80f * melt, 0f, 1f);
+        target.FrostRadiusDp = MathF.Max(0f, FrostRadiusDp * (1f - 0.82f * melt) + 2.0f * melt);
+        target.Ior = Math.Clamp(Ior + 0.10f * melt, 1.0f, 2.0f);
+        target.ChromaticDispersion = Math.Clamp(ChromaticDispersion + 0.22f * melt, 0f, 1f);
+        target.RimChalkiness = Math.Clamp(RimChalkiness + 0.16f * melt, 0f, 1f);
+        target.ThicknessDp = Math.Clamp(ThicknessDp * (1f + 0.20f * melt), 1f, 36f);
+    }
 
     /// <summary>
-    /// Returns the pressed state of this material for touch/pointer press interactions without altering
-    /// its tint density or optical opacity.
+    /// Evaluates Temporal De-Aging &amp; Solidification on this material during motion or morphing:
+    /// while the glass is malleable and moving (<paramref name="malleability"/> -&gt; 1.0), hydrodynamic
+    /// friction melts surface micro-pits toward zero coarseness, clarifies body transparency toward 0.92+,
+    /// and flexes refractive thickness. Settling (<paramref name="malleability"/> -&gt; 0.0) solidifies
+    /// and restores the resting frosted texture.
     /// </summary>
-    public SeaGlassMaterial Pressed(float pressProgress = 1f) => this;
+    public SeaGlassMaterial Deaged(float malleability)
+    {
+        float m = Math.Clamp(malleability, 0f, 1f);
+        if (m <= 0.005f) return this;
+        var result = new SeaGlassMaterial(0);
+        DeagedInto(m, result);
+        return result;
+    }
+
+    /// <summary>
+    /// Evaluates touch/pointer press physical compression into a pre-allocated target material instance.
+    /// </summary>
+    public void PressedInto(float pressProgress, SeaGlassMaterial target)
+    {
+        target.CopyFrom(this);
+        float p = Math.Clamp(pressProgress, 0f, 1f);
+        if (p <= 0f) return;
+        target.TintDensity = Math.Clamp(TintDensity + 0.08f * p, 0f, 1f);
+        target.RimChalkiness = Math.Clamp(RimChalkiness + 0.16f * p, 0f, 1f);
+        target.ThicknessDp = MathF.Min(ThicknessDp * (1f + 0.18f * p), 36f);
+        target.CornerRadiusDp = MathF.Max(CornerRadiusDp * (1f - 0.10f * p), 8f);
+    }
+
+    /// <summary>
+    /// Returns a physically compressed state of this material for touch/pointer press interactions:
+    /// pressing the glass increases volumetric body tint saturation, enhances chalky rim light,
+    /// and expands optical lens thickness.
+    /// </summary>
+    public SeaGlassMaterial Pressed(float pressProgress = 1f)
+    {
+        float p = Math.Clamp(pressProgress, 0f, 1f);
+        if (p <= 0f) return this;
+        var result = new SeaGlassMaterial(0);
+        PressedInto(p, result);
+        return result;
+    }
 
     /// <summary>
     /// Returns an elevated/expanded state of this material with deeper subsurface frost

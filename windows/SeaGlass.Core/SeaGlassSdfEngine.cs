@@ -21,7 +21,7 @@ public static class SeaGlassSdfEngine
     /// <summary>
     /// Single 2D expressive shape node in pixel coordinates relative to the render target origin.
     /// </summary>
-    public sealed record SdfNode(
+    public readonly record struct SdfNode(
         float CenterX,
         float CenterY,
         float HalfWidth,

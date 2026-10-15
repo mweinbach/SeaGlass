@@ -156,8 +156,8 @@ public sealed record SeaGlassPalette(
             cornerSmoothing: 2.6f,
             transparency: 0.60f),
         AccentRimArgb: unchecked((int)0xFFEEF5FF),
-        OnPrimaryGlassArgb: unchecked((int)0xFF1A3876),
-        OnSurfaceGlassArgb: unchecked((int)0xFF1D3E80));
+        OnPrimaryGlassArgb: unchecked((int)0xFF000F5C),
+        OnSurfaceGlassArgb: unchecked((int)0xFF000F5C));
 
     public static readonly SeaGlassPalette BeachAmber = new(
         Id: "beach_amber",

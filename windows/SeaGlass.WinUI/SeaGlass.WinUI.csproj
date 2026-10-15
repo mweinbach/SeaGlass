@@ -1,18 +1,54 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <GenerateLibraryLayout>true</GenerateLibraryLayout>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
     <RootNamespace>SeaGlass.WinUI</RootNamespace>
     <AssemblyName>SeaGlass.WinUI</AssemblyName>
-    <Description>SeaGlass WinUI &amp; Windows Composition UI Kit Foundation with 1:1 Android Compose component, optical, SDF coalescing, 20-shape morphing, and dual-spring motion parity.</Description>
+    <Win2DWarnNoPlatform>false</Win2DWarnNoPlatform>
+
+    <!-- NuGet Packaging Metadata -->
+    <PackageId>SeaGlass.WinUI</PackageId>
+    <Version Condition="'$(Version)' == ''">1.0.0</Version>
+    <Authors>SeaGlass Contributors</Authors>
+    <Company>SeaGlass Project</Company>
+    <Product>SeaGlass WinUI</Product>
+    <Description>Production-quality drop-in WinUI 3 (Windows App SDK) design system and component pack delivering sanded sea-glass optics (Oklab Beer-Lambert tinting, rough-Fresnel rim illumination, sand-grain micro-coarseness), Material 3 Expressive motion (spatial vs effects dual-spring discipline, 20-shape morphing, multi-node SDF coalescing), and Windows 11 platform integration.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/maxw6/SeaGlass</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/maxw6/SeaGlass</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>winui;winui3;windowsappsdk;fluent;glass;frosted;oklab;beer-lambert;sdf;m3-expressive;controls;xaml;csharp;shadcn;swiftui</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SeaGlass.Core\SeaGlass.Core.csproj" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SeaGlass.Core\SeaGlass.Core.csproj" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\..\README.md')" />
+    <None Include="build\**\*" Pack="true" PackagePath="build" />
+    <None Include="buildTransitive\**\*" Pack="true" PackagePath="buildTransitive" />
+  </ItemGroup>
+
+  <Target Name="PackPriAndXbfFiles" BeforeTargets="_GetPackageFiles">
+    <ItemGroup>
+      <None Include="$(TargetDir)$(TargetName).pri" Pack="true" PackagePath="lib\net10.0-windows10.0.26100" Condition="Exists('$(TargetDir)$(TargetName).pri')" />
+      <None Include="$(IntermediateOutputPath)Themes\*.xbf" Pack="true" PackagePath="lib\net10.0-windows10.0.26100\$(TargetName)\Themes" Condition="Exists('$(IntermediateOutputPath)Themes')" />
+    </ItemGroup>
+  </Target>
 
 </Project>

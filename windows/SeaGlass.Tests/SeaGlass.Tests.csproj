@@ -1,27 +1,47 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <UseWPF>true</UseWPF>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <ProjectPriFileName>resources.pri</ProjectPriFileName>
+    <ProjectPriIndexName>testhost</ProjectPriIndexName>
+    <ShouldComputeInputPris>true</ShouldComputeInputPris>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <LangVersion>latest</LangVersion>
     <RootNamespace>SeaGlass.Tests</RootNamespace>
     <AssemblyName>SeaGlass.Tests</AssemblyName>
+    <Win2DWarnNoPlatform>false</Win2DWarnNoPlatform>
+    <NoWarn>$(NoWarn);WIN2D0001;WMC1509</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\SeaGlass.Core\SeaGlass.Core.csproj" />
     <ProjectReference Include="..\SeaGlass.WinUI\SeaGlass.WinUI.csproj" />
-    <ProjectReference Include="..\SeaGlass.Sample\SeaGlass.Sample.csproj" />
+    <ProjectReference Include="..\SeaGlass.Sample\SeaGlass.Sample.csproj" ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
+
+  <!-- E2E test suite authored for Milestone 5 is excluded from M1 unit test execution -->
+  <ItemGroup Condition="'$(IncludeE2E)' != 'true'">
+    <Compile Remove="E2E\Tier*\**" />
+    <None Include="E2E\Tier*\**" />
+  </ItemGroup>
+
+  <Target Name="CopyPriToTesthostPri" AfterTargets="GenerateProjectPriFile">
+    <Copy SourceFiles="$(TargetDir)resources.pri" DestinationFiles="$(TargetDir)testhost.pri" Condition="Exists('$(TargetDir)resources.pri')" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

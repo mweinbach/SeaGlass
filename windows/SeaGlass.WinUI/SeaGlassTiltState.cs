@@ -90,7 +90,7 @@ public sealed class SeaGlassTiltState
             targetY = -0.44f;
         }
 
-        SeaGlassSpringSpec tiltSpring = new(DampingRatio: 0.82f, Stiffness: 280f);
+        SeaGlassSpringSpec tiltSpring = new(DampingRatio: 0.72f, Stiffness: 400f);
         tiltSpring.Step(ref _smoothedTiltX, ref _velX, targetX, dt);
         tiltSpring.Step(ref _smoothedTiltY, ref _velY, targetY, dt);
     }

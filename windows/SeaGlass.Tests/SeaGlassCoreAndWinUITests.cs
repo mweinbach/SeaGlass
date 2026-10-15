@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using SeaGlass.Core;
 using SeaGlass.Core.Backend;
 using SeaGlass.WinUI;
+using SeaGlass.Tests.Controls;
 using Xunit;
 
 namespace SeaGlass.Tests;
@@ -381,30 +382,33 @@ public sealed class SeaGlassCoreAndWinUITests
         Assert.Throws<InvalidOperationException>(() => stage.EnsureAcyclicForegroundSurface("MainBackdropLayer"));
 
         // Verify WinUI components evaluate 256-byte uniform blocks and XAML contour geometry
-        SeaGlassFluidBar fluidBar = new(
-            items: ["Tide", "Shells", "Optics", "Palette"],
-            selectedIndex: 0,
-            onSelect: _ => { },
-            stageState: stage,
-            showActionOrb: true,
-            actionDetached: false);
-        SeaGlassSurfaceFrameState barFrame = fluidBar.StepAndEvaluate(1f / 60f);
-        Assert.StartsWith("F1 M", barFrame.XamlContourPathData);
-        Assert.Equal(2f, barFrame.UniformBlock.ToStd140Struct().LightAndMeta.W, 3);
+        WinUiControlTestHarness.RunOnStaThread(() =>
+        {
+            SeaGlassFluidBar fluidBar = new(
+                items: ["Tide", "Shells", "Optics", "Palette"],
+                selectedIndex: 0,
+                onSelect: _ => { },
+                stageState: stage,
+                showActionOrb: true,
+                actionDetached: false);
+            SeaGlassSurfaceFrameState barFrame = fluidBar.StepAndEvaluate(1f / 60f);
+            Assert.StartsWith("F1 M", barFrame.XamlContourPathData);
+            Assert.Equal(2f, barFrame.UniformBlock.ToStd140Struct().LightAndMeta.W, 3);
 
-        SeaGlassCheckbox checkbox = new(isChecked: false, onCheckedChange: _ => { }, stageState: stage);
-        checkbox.Toggle();
-        Assert.True(checkbox.Checked);
-        SeaGlassSurfaceFrameState checkFrame = checkbox.StepAndEvaluate(0.05f);
-        Assert.StartsWith("F1 M", checkFrame.XamlContourPathData);
+            SeaGlassCheckbox checkbox = new(isChecked: false, onCheckedChange: _ => { }, stageState: stage);
+            checkbox.Toggle();
+            Assert.True(checkbox.Checked);
+            SeaGlassSurfaceFrameState checkFrame = checkbox.StepAndEvaluate(0.05f);
+            Assert.StartsWith("F1 M", checkFrame.XamlContourPathData);
 
-        SeaGlassMorphingContextMenu menu = new(expanded: true, stageState: stage);
-        SeaGlassSurfaceFrameState menuFrame = menu.StepAndEvaluate(0.04f);
-        Assert.NotEmpty(menuFrame.XamlContourPathData);
+            SeaGlassMorphingContextMenu menu = new(expanded: true, stageState: stage);
+            SeaGlassSurfaceFrameState menuFrame = menu.StepAndEvaluate(0.04f);
+            Assert.NotEmpty(menuFrame.XamlContourPathData);
 
-        SeaGlassCascadedModelMorph cascaded = new(stage: 2, stageState: stage);
-        SeaGlassSurfaceFrameState cascadedFrame = cascaded.StepAndEvaluate(0.04f);
-        Assert.NotEmpty(cascadedFrame.XamlContourPathData);
+            SeaGlassCascadedModelMorph cascaded = new(stage: 2, stageState: stage);
+            SeaGlassSurfaceFrameState cascadedFrame = cascaded.StepAndEvaluate(0.04f);
+            Assert.NotEmpty(cascadedFrame.XamlContourPathData);
+        });
     }
 
     [Fact]
@@ -422,7 +426,9 @@ public sealed class SeaGlassCoreAndWinUITests
         }
 
         // 2. Core & UI Kit Controls
-        SeaGlassButton btn = new("Primary Action", () => { }, stage);
+        WinUiControlTestHarness.RunOnStaThread(() =>
+        {
+            SeaGlassButton btn = new("Primary Action", () => { }, stage);
         btn.OnPointerStateChanged(new Vector2(20f, 10f), true);
         SeaGlassSurfaceFrameState btnFrame = btn.EvaluateFrame(0.03f);
         Assert.True(btnFrame.ScaleX > 1.0f);
@@ -565,6 +571,7 @@ public sealed class SeaGlassCoreAndWinUITests
         SeaGlassControlCenterGrid ccGrid = new();
         ccGrid.TogglePlatterExpansion(0);
         Assert.StartsWith("F1 M", ccGrid.StepAndEvaluate(0.04f).XamlContourPathData);
+        });
     }
 
     [Fact]
@@ -759,29 +766,33 @@ public sealed class SeaGlassCoreAndWinUITests
         }
 
         // 2. Verify dual-edge lead-lag liquid lozenge stretch on SeaGlassSegmentedButtonRow & SeaGlassFluidBar
-        SeaGlassSegmentedButtonRow segRow = new(["Controls", "Surfaces", "Overlays"], 0, _ => { });
-        segRow.SelectOption(2);
-        segRow.StepAndEvaluate(1f / 60f);
-        segRow.StepAndEvaluate(1f / 60f);
-        Assert.True(segRow.LeadIndex > segRow.TrailIndex, "LeadIndex (k=540) must lead TrailIndex (k=310) mid-flight");
-        Assert.True(segRow.LozengeSlotSpan > 1.05f, "LozengeSlotSpan must stretch across intermediate slots");
-        Assert.Equal(segRow.IndicatorMaterial.Coarseness, segRow.ActiveIndicatorMaterial.Coarseness, 4);
-        Assert.Equal(segRow.IndicatorMaterial.TintColorArgb, segRow.ActiveIndicatorMaterial.TintColorArgb);
+        WinUiControlTestHarness.RunOnStaThread(() =>
+        {
+            SeaGlassSegmentedButtonRow segRow = new(["Controls", "Surfaces", "Overlays"], 0, _ => { });
+            segRow.SelectOption(2);
+            segRow.StepAndEvaluate(1f / 60f);
+            segRow.StepAndEvaluate(1f / 60f);
+            Assert.True(segRow.LeadIndex > segRow.TrailIndex, "LeadIndex (k=540) must lead TrailIndex (k=310) mid-flight");
+            Assert.True(segRow.LozengeSlotSpan > 1.05f, "LozengeSlotSpan must stretch across intermediate slots");
+            Assert.True(segRow.ActiveIndicatorMaterial.Coarseness < segRow.IndicatorMaterial.Coarseness, "Mid-flight de-aging must melt coarseness");
+            Assert.True(segRow.ActiveIndicatorMaterial.Transparency >= segRow.IndicatorMaterial.Transparency, "Mid-flight de-aging must clarify transparency");
+            Assert.Equal(segRow.IndicatorMaterial.TintColorArgb, segRow.ActiveIndicatorMaterial.TintColorArgb);
 
-        SeaGlassFluidBar fluidBar = new(["Lab", "Kit", "Morph", "Stage"], 0, _ => { });
-        fluidBar.SelectTab(3);
-        fluidBar.StepAndEvaluate(1f / 60f);
-        fluidBar.StepAndEvaluate(1f / 60f);
-        Assert.True(fluidBar.LeadIndex > fluidBar.TrailIndex);
-        Assert.True(fluidBar.LozengeSlotSpan > 1.05f);
+            SeaGlassFluidBar fluidBar = new(["Lab", "Kit", "Morph", "Stage"], 0, _ => { });
+            fluidBar.SelectTab(3);
+            fluidBar.StepAndEvaluate(1f / 60f);
+            fluidBar.StepAndEvaluate(1f / 60f);
+            Assert.True(fluidBar.LeadIndex > fluidBar.TrailIndex);
+            Assert.True(fluidBar.LozengeSlotSpan > 1.05f);
 
-        // 3. Verify lead-lag dual spatial springs on SeaGlassTwoElementMorph (width leads height)
-        SeaGlassTwoElementMorph morph = new(expanded: false);
-        morph.SetExpanded(true);
-        morph.StepAndEvaluate(1f / 60f);
-        morph.StepAndEvaluate(1f / 60f);
-        Assert.True(morph.SpatialWidthProgress > morph.SpatialHeightProgress,
-            "Horizontal width spring (k=420) must lead vertical height spring (k=340) during expansion");
+            // 3. Verify lead-lag dual spatial springs on SeaGlassTwoElementMorph (width leads height)
+            SeaGlassTwoElementMorph morph = new(expanded: false);
+            morph.SetExpanded(true);
+            morph.StepAndEvaluate(1f / 60f);
+            morph.StepAndEvaluate(1f / 60f);
+            Assert.True(morph.SpatialWidthProgress > morph.SpatialHeightProgress,
+                "Horizontal width spring (k=420) must lead vertical height spring (k=340) during expansion");
+        });
 
         // 4. Verify reverse-rim frosted rind, volumetric core, tonal ink, and organic pebble/capsule contours
         int peachTint = unchecked((int)0xFFF7A89A);
@@ -826,20 +837,23 @@ public sealed class SeaGlassCoreAndWinUITests
         Assert.StartsWith("F1 M", capsulePath.ToXamlPathData());
 
         // 5. Verify Concept Reference Triad WinUI components and gesture-bar concentric corner solver
-        SeaGlassPebbleOrb pebbleOrb = new(() => { });
-        Assert.StartsWith("F1 M", pebbleOrb.StepAndEvaluate(1f / 60f).XamlContourPathData);
+        WinUiControlTestHarness.RunOnStaThread(() =>
+        {
+            SeaGlassPebbleOrb pebbleOrb = new(() => { });
+            Assert.StartsWith("F1 M", pebbleOrb.StepAndEvaluate(1f / 60f).XamlContourPathData);
 
-        SeaGlassPillNavBar pillNav = new([(SeaGlassGlyph.PhotoMountain, "Photos"), (null, "Collections"), (null, "Create")], 0, _ => { });
-        pillNav.SelectTab(2);
-        pillNav.StepAndEvaluate(1f / 60f);
-        pillNav.StepAndEvaluate(1f / 60f);
-        Assert.True(pillNav.LeadIndex > pillNav.TrailIndex);
-        Assert.StartsWith("F1 M", pillNav.StepAndEvaluate(1f / 60f).XamlContourPathData);
+            SeaGlassPillNavBar pillNav = new([(SeaGlassGlyph.PhotoMountain, "Photos"), (null, "Collections"), (null, "Create")], 0, _ => { });
+            pillNav.SelectTab(2);
+            pillNav.StepAndEvaluate(1f / 60f);
+            pillNav.StepAndEvaluate(1f / 60f);
+            Assert.True(pillNav.LeadIndex > pillNav.TrailIndex);
+            Assert.StartsWith("F1 M", pillNav.StepAndEvaluate(1f / 60f).XamlContourPathData);
 
-        SeaGlassPromptBar promptBar = new("Ask Gemini", isVoiceActive: false);
-        promptBar.ToggleVoiceActive();
-        Assert.True(promptBar.IsVoiceActive);
-        Assert.StartsWith("F1 M", promptBar.StepAndEvaluate(1f / 60f).XamlContourPathData);
+            SeaGlassPromptBar promptBar = new("Ask Gemini", isVoiceActive: false);
+            promptBar.ToggleVoiceActive();
+            Assert.True(promptBar.IsVoiceActive);
+            Assert.StartsWith("F1 M", promptBar.StepAndEvaluate(1f / 60f).XamlContourPathData);
+        });
 
         SeaGlassCornerRadiiPx pixelBezel = SeaGlassCornerRadiiPx.Uniform(153f);
         SeaGlassCornerRadiiPx sheetRadii = SeaGlassCornerAdaptationSolver.SolveElementCornerRadiiPx(

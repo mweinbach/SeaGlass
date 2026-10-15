@@ -1,0 +1,379 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sg="using:SeaGlass.WinUI">
+
+    <!-- =================================================================== -->
+    <!-- Group 7: iOS 27 & Advanced Overlays                                -->
+    <!-- =================================================================== -->
+
+    <!-- 1. SeaGlassFloatingSheet Template -->
+    <ControlTemplate x:Key="SeaGlassFloatingSheetTemplate" TargetType="sg:SeaGlassFloatingSheet">
+        <Grid x:Name="PART_Root">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="24"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="24"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <!-- Drag Handle -->
+                    <Border x:Name="PART_DragHandle"
+                            Width="36" Height="4"
+                            CornerRadius="2"
+                            Background="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                            HorizontalAlignment="Center"
+                            Margin="0,0,0,10" />
+                    <!-- Quick Action Strip -->
+                    <ItemsControl x:Name="PART_QuickActionStrip"
+                                  Grid.Row="1"
+                                  Margin="0,0,0,12">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <!-- Page Host -->
+                    <ContentPresenter x:Name="PART_PageHost"
+                                      Grid.Row="2"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}" />
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassFloatingSheet">
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassFloatingSheetTemplate}" />
+    </Style>
+
+    <!-- 2. SeaGlassContextMenuOverlay Template -->
+    <ControlTemplate x:Key="SeaGlassContextMenuOverlayTemplate" TargetType="sg:SeaGlassContextMenuOverlay">
+        <Grid x:Name="PART_Root">
+            <Border x:Name="PART_GlassHost"
+                    Background="Transparent"
+                    BorderThickness="0" />
+            <Border x:Name="PART_BackdropDimmer"
+                    Background="#33000000"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border x:Name="PART_MenuCard"
+                    CornerRadius="16"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <ItemsControl x:Name="PART_ItemsPresenter" />
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassContextMenuOverlay">
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassContextMenuOverlayTemplate}" />
+    </Style>
+
+    <!-- 3. SeaGlassActionSheet Template -->
+    <ControlTemplate x:Key="SeaGlassActionSheetTemplate" TargetType="sg:SeaGlassActionSheet">
+        <Grid x:Name="PART_Root">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="20"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="20"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <StackPanel Spacing="10">
+                    <!-- Header Presenter -->
+                    <StackPanel x:Name="PART_HeaderPresenter" Spacing="2">
+                        <TextBlock Text="{TemplateBinding Title}"
+                                   FontWeight="SemiBold"
+                                   FontSize="15"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                        <TextBlock Text="{TemplateBinding Message}"
+                                   FontSize="12"
+                                   Opacity="0.8"
+                                   HorizontalAlignment="Center"
+                                   Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    </StackPanel>
+                    <!-- Actions Host -->
+                    <ItemsControl x:Name="PART_ActionsHost" />
+                    <!-- Cancel Button -->
+                    <Button x:Name="PART_CancelButton"
+                            Content="{TemplateBinding CancelLabel}"
+                            Height="40"
+                            CornerRadius="20"
+                            HorizontalAlignment="Stretch"
+                            Background="Transparent"
+                            BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                            BorderThickness="1" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassActionSheet">
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassActionSheetTemplate}" />
+    </Style>
+
+    <!-- 4. SeaGlassLiveActivityPill Template -->
+    <ControlTemplate x:Key="SeaGlassLiveActivityPillTemplate" TargetType="sg:SeaGlassLiveActivityPill">
+        <Grid x:Name="PART_Root">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="22"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="22"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <!-- Compact View Host -->
+                    <StackPanel x:Name="PART_CompactHost"
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="✦" Foreground="{StaticResource SeaGlassToneSeafoamMintBrush}" />
+                        <TextBlock Text="{TemplateBinding StatusText}"
+                                   FontWeight="Medium"
+                                   FontSize="13"
+                                   Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    </StackPanel>
+                    <!-- Expanded View Host -->
+                    <Grid x:Name="PART_ExpandedHost"
+                          Visibility="Collapsed">
+                        <ContentPresenter Content="{TemplateBinding Content}" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassLiveActivityPill">
+        <Setter Property="Height" Value="44" />
+        <Setter Property="Padding" Value="14,8,14,8" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassLiveActivityPillTemplate}" />
+    </Style>
+
+    <!-- 5. SeaGlassMagnifierScrubber Template -->
+    <ControlTemplate x:Key="SeaGlassMagnifierScrubberTemplate" TargetType="sg:SeaGlassMagnifierScrubber">
+        <Grid x:Name="PART_Root" Height="112">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="20"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="20"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <!-- Timecode Presenter -->
+                    <TextBlock x:Name="PART_TimecodePresenter"
+                               Text="00:00:00"
+                               FontWeight="SemiBold"
+                               FontSize="13"
+                               HorizontalAlignment="Center"
+                               Foreground="{ThemeResource SeaGlassSurfaceForeground}"
+                               Margin="0,0,0,8" />
+                    <!-- Track & Loupe Lens -->
+                    <Grid Grid.Row="1">
+                        <Border x:Name="PART_TrackWell"
+                                Height="8"
+                                CornerRadius="4"
+                                Background="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                                VerticalAlignment="Center" />
+                        <Border x:Name="PART_LoupeLens"
+                                Width="44" Height="44"
+                                CornerRadius="22"
+                                Background="{StaticResource SeaGlassToneSeafoamMintBrush}"
+                                BorderBrush="{StaticResource SeaGlassRimHighlightBrush}"
+                                BorderThickness="2"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassMagnifierScrubber">
+        <Setter Property="Height" Value="112" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassMagnifierScrubberTemplate}" />
+    </Style>
+
+    <!-- 6. SeaGlassNotificationStack Template -->
+    <ControlTemplate x:Key="SeaGlassNotificationStackTemplate" TargetType="sg:SeaGlassNotificationStack">
+        <Grid x:Name="PART_Root" Width="440" Height="112">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="16"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="16"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Canvas x:Name="PART_CardsContainer" />
+                    <StackPanel Spacing="4" VerticalAlignment="Center" Margin="12,0,0,0">
+                        <TextBlock Text="Ocean Sensor Alert" FontWeight="SemiBold" FontSize="14" Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                        <TextBlock Text="Depth monitoring active • 3 stacked alerts" FontSize="12" Opacity="0.8" Foreground="{ThemeResource SeaGlassSurfaceForeground}" />
+                    </StackPanel>
+                    <Border x:Name="PART_FocusVisual" Visibility="Collapsed" IsHitTestVisible="False" />
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassNotificationStack">
+        <Setter Property="Padding" Value="12" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassNotificationStackTemplate}" />
+    </Style>
+
+    <!-- 7. SeaGlassWheelPicker Template -->
+    <ControlTemplate x:Key="SeaGlassWheelPickerTemplate" TargetType="sg:SeaGlassWheelPicker">
+        <Grid x:Name="PART_Root" Height="180">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="20"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="20"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <!-- Center Magnifier Lens Highlight -->
+                    <Border x:Name="PART_CenterMagnifierLens"
+                            Height="40"
+                            CornerRadius="10"
+                            Background="{StaticResource SeaGlassToneSeafoamMintBrush}"
+                            Opacity="0.2"
+                            VerticalAlignment="Center" />
+                    <!-- Drum Wheel Items Presenter -->
+                    <ItemsPresenter x:Name="PART_DrumWheel"
+                                    VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassWheelPicker">
+        <Setter Property="Height" Value="180" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassWheelPickerTemplate}" />
+    </Style>
+
+    <!-- 8. SeaGlassControlCenterGrid Template -->
+    <ControlTemplate x:Key="SeaGlassControlCenterGridTemplate" TargetType="sg:SeaGlassControlCenterGrid">
+        <Grid x:Name="PART_Root">
+            <Border x:Name="PART_GlassHost"
+                    CornerRadius="24"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch" />
+            <Border CornerRadius="24"
+                    Background="{ThemeResource SeaGlassSurfaceBackground}"
+                    BorderBrush="{ThemeResource SeaGlassSurfaceBorderBrush}"
+                    BorderThickness="1"
+                    Padding="{TemplateBinding Padding}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="PART_Tile0"
+                            Grid.Row="0" Grid.Column="0"
+                            Height="64"
+                            CornerRadius="16"
+                            Margin="4"
+                            HorizontalAlignment="Stretch" />
+                    <Button x:Name="PART_Tile1"
+                            Grid.Row="0" Grid.Column="1"
+                            Height="64"
+                            CornerRadius="16"
+                            Margin="4"
+                            HorizontalAlignment="Stretch" />
+                    <Button x:Name="PART_Tile2"
+                            Grid.Row="1" Grid.Column="0"
+                            Height="64"
+                            CornerRadius="16"
+                            Margin="4"
+                            HorizontalAlignment="Stretch" />
+                    <Button x:Name="PART_Tile3"
+                            Grid.Row="1" Grid.Column="1"
+                            Height="64"
+                            CornerRadius="16"
+                            Margin="4"
+                            HorizontalAlignment="Stretch" />
+                </Grid>
+            </Border>
+        </Grid>
+    </ControlTemplate>
+
+    <Style TargetType="sg:SeaGlassControlCenterGrid">
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Template" Value="{StaticResource SeaGlassControlCenterGridTemplate}" />
+    </Style>
+
+    <!-- Overlay Aliases -->
+    <Style TargetType="sg:SeaGlassDetachedCornerPod">
+        <Setter Property="Template" Value="{StaticResource SeaGlassFloatingSheetTemplate}" />
+    </Style>
+    <Style TargetType="sg:SeaGlassConcentricCornerAnchor">
+        <Setter Property="Template" Value="{StaticResource SeaGlassFloatingSheetTemplate}" />
+    </Style>
+    <Style TargetType="sg:SeaGlassSpatialGlowPlate">
+        <Setter Property="Template" Value="{StaticResource SeaGlassFloatingSheetTemplate}" />
+    </Style>
+    <Style TargetType="sg:SeaGlassFluidIslandPill">
+        <Setter Property="Template" Value="{StaticResource SeaGlassLiveActivityPillTemplate}" />
+    </Style>
+    <Style TargetType="sg:SeaGlassLiquidSplitPill">
+        <Setter Property="Template" Value="{StaticResource SeaGlassLiveActivityPillTemplate}" />
+    </Style>
+    <Style TargetType="sg:SeaGlassInteractiveSquirclePlate">
+        <Setter Property="Template" Value="{StaticResource SeaGlassFloatingSheetTemplate}" />
+    </Style>
+
+</ResourceDictionary>

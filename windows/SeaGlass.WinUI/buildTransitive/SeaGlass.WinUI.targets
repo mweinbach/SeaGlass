@@ -1,0 +1,30 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <!-- Ensure SeaGlass.WinUI.pri is copied to output directory of the consuming application -->
+    <None Include="$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100\SeaGlass.WinUI.pri"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100\SeaGlass.WinUI.pri')">
+      <Link>SeaGlass.WinUI.pri</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>False</Visible>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100.0\SeaGlass.WinUI.pri"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100.0\SeaGlass.WinUI.pri') and !Exists('$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100\SeaGlass.WinUI.pri')">
+      <Link>SeaGlass.WinUI.pri</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>False</Visible>
+    </None>
+    <!-- Ensure SeaGlass.WinUI compiled XAML / Themes are copied to output directory -->
+    <None Include="$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100\SeaGlass.WinUI\**\*"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100\SeaGlass.WinUI')">
+      <Link>SeaGlass.WinUI\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>False</Visible>
+    </None>
+    <None Include="$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100.0\SeaGlass.WinUI\**\*"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100.0\SeaGlass.WinUI') and !Exists('$(MSBuildThisFileDirectory)..\lib\net10.0-windows10.0.26100\SeaGlass.WinUI')">
+      <Link>SeaGlass.WinUI\%(RecursiveDir)%(FileName)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>False</Visible>
+    </None>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,63 @@
+<Page
+    x:Class="SeaGlass.ConsumerSample.Views.XamlControlsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sg="using:SeaGlass.WinUI">
+
+    <sg:SeaGlassStage HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <sg:SeaGlassStage.BackdropContent>
+            <!-- Oceanic backdrop with gradient & test patterns -->
+            <Grid>
+                <Grid.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#0D1E2D" Offset="0.0" />
+                        <GradientStop Color="#143D4E" Offset="0.4" />
+                        <GradientStop Color="#1E5C66" Offset="0.75" />
+                        <GradientStop Color="#2C7E83" Offset="1.0" />
+                    </LinearGradientBrush>
+                </Grid.Background>
+                <!-- Geometric high-contrast watermark circles to show refraction and frosted blur -->
+                <Ellipse Width="340" Height="340" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="60,40,0,0" Stroke="#4055B3A6" StrokeThickness="4" />
+                <Ellipse Width="460" Height="460" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,80,60" Fill="#25148076" />
+                <Ellipse Width="220" Height="220" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,80,140,0" Stroke="#30F4A261" StrokeThickness="3" />
+            </Grid>
+        </sg:SeaGlassStage.BackdropContent>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <StackPanel Spacing="20" Padding="28" Width="780" HorizontalAlignment="Center">
+                <!-- 1. SeaGlassTopAppBar -->
+                <sg:SeaGlassTopAppBar x:Name="TopAppBarControl" AutomationProperties.AutomationId="SeaGlassTopAppBar" Title="SeaGlass XAML Consumer" Subtitle="Pure NuGet Integration (11 Controls)" Tone="CobaltTide" Variant="Primary" />
+
+                <!-- 2. SeaGlassCard -->
+                <sg:SeaGlassCard x:Name="CardControl" AutomationProperties.AutomationId="SeaGlassCard" Title="Volumetric Component Showcase" Subtitle="Rendered directly from packed SeaGlass.WinUI package" Tone="SeafoamMint" Variant="Elevated">
+                    <StackPanel Spacing="16" Padding="4">
+                        <!-- Buttons & Chips Row: SeaGlassButton (3), SeaGlassPill (4), SeaGlassBadge (5) -->
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <sg:SeaGlassButton x:Name="ButtonControl" AutomationProperties.AutomationId="SeaGlassButton" Label="Primary Action" Tone="SeafoamMint" Variant="Primary" />
+                            <sg:SeaGlassPill x:Name="PillControl" AutomationProperties.AutomationId="SeaGlassPill" Label="Pro Tier" Tone="SeaLavender" Variant="Tonal" />
+                            <sg:SeaGlassBadge x:Name="BadgeControl" AutomationProperties.AutomationId="SeaGlassBadge" Count="42" Tone="RoseQuartzShell" />
+                        </StackPanel>
+
+                        <!-- Inputs & Toggles: SeaGlassSwitch (6), SeaGlassCheckbox (7) -->
+                        <StackPanel Orientation="Horizontal" Spacing="24">
+                            <sg:SeaGlassSwitch x:Name="SwitchControl" AutomationProperties.AutomationId="SeaGlassSwitch" IsOn="True" Tone="BeachAmber" />
+                            <sg:SeaGlassCheckbox x:Name="CheckboxControl" AutomationProperties.AutomationId="SeaGlassCheckbox" Content="Beer-Lambert Volumetric Absorption" IsChecked="True" Tone="CobaltTide" />
+                        </StackPanel>
+
+                        <!-- SeaGlassLiquidSlider (8) -->
+                        <sg:SeaGlassLiquidSlider x:Name="SliderControl" AutomationProperties.AutomationId="SeaGlassLiquidSlider" Title="Optical Coarseness" Minimum="0" Maximum="100" Value="42" Tone="KelpForest" />
+
+                        <!-- Feedback: SeaGlassLinearProgressIndicator (9), SeaGlassCircularProgressIndicator (10) -->
+                        <StackPanel Spacing="10">
+                            <sg:SeaGlassLinearProgressIndicator x:Name="LinearProgressControl" AutomationProperties.AutomationId="SeaGlassLinearProgressIndicator" Progress="0.68" Tone="BeachAmber" />
+                            <sg:SeaGlassCircularProgressIndicator x:Name="CircularProgressControl" AutomationProperties.AutomationId="SeaGlassCircularProgressIndicator" Progress="0.85" Tone="CobaltTide" />
+                        </StackPanel>
+
+                        <!-- SeaGlassTextField (11) -->
+                        <sg:SeaGlassTextField x:Name="TextFieldControl" AutomationProperties.AutomationId="SeaGlassTextField" Placeholder="Search volumetric archives..." Tone="ObsidianTide" />
+                    </StackPanel>
+                </sg:SeaGlassCard>
+            </StackPanel>
+        </ScrollViewer>
+    </sg:SeaGlassStage>
+</Page>

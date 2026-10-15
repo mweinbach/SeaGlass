@@ -85,6 +85,14 @@ Run `.NET` commands from `windows/` (or pass `windows/SeaGlass.sln`):
   ```bash
   dotnet test windows/SeaGlass.sln
   ```
+- **Run non-interactive test suite (skipping UI tests that require an active interactive desktop)**:
+  ```bash
+  dotnet test windows/SeaGlass.Tests/SeaGlass.Tests.csproj --filter "FullyQualifiedName!~OutOfProcessGalleryUiaTests&FullyQualifiedName!~GalleryScreenshotCaptureTests&FullyQualifiedName!~ConsumerAppProofTests&FullyQualifiedName!~GalleryLaunchAndSmokeTests"
+  ```
+- **Run out-of-process UIA accessibility test suite (COM CUIAutomation8)**:
+  ```bash
+  dotnet test windows/SeaGlass.Tests/SeaGlass.Tests.csproj --filter "FullyQualifiedName~OutOfProcessGalleryUiaTests"
+  ```
 - **Build all Windows libraries and the `SeaGlass.Sample` showcase app**:
   ```bash
   dotnet build windows/SeaGlass.sln
@@ -92,4 +100,18 @@ Run `.NET` commands from `windows/` (or pass `windows/SeaGlass.sln`):
 - **Launch the interactive Windows showcase app**:
   ```bash
   dotnet run --project windows/SeaGlass.Sample/SeaGlass.Sample.csproj
+  ```
+- **Headless and automated gallery verification CLI flags**:
+  ```bash
+  dotnet run --project windows/SeaGlass.Sample/SeaGlass.Sample.csproj -- --self-test
+  dotnet run --project windows/SeaGlass.Sample/SeaGlass.Sample.csproj -- --headless-verify
+  dotnet run --project windows/SeaGlass.Sample/SeaGlass.Sample.csproj -- --verify-catalog
+  ```
+- **Extract standalone component without WinUI package dependency (Own Your Code)**:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File windows/tools/Copy-SeaGlassComponent.ps1 -Component Button -DestinationDirectory C:/MyApp/SeaGlass
+  ```
+- **Launch minimal standalone consumer sample application**:
+  ```bash
+  dotnet run --project windows/SeaGlass.ConsumerSample/SeaGlass.ConsumerSample.csproj
   ```

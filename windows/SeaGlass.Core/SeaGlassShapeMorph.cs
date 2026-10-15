@@ -177,6 +177,68 @@ public static class SeaGlassShapeMorph
         new(SeaGlassShapeKind.Heart, Scale: 1.10f, RotationDegrees: 360f, ViaCircleBridge: true, Label: "Heart Gem")
     ];
 
+    /// <summary>
+    /// Cubic Hermite S-curve (3u^2 - 2u^3) on [0..1], providing zero initial and terminal slope
+    /// for smooth ease-in / ease-out transitions.
+    /// </summary>
+    public static float SCurve(float t)
+    {
+        float u = Math.Clamp(t, 0f, 1f);
+        return u * u * (3f - 2f * u);
+    }
+
+    /// <summary>
+    /// Quintic C2-continuous S-curve (6u^5 - 15u^4 + 10u^3) on [0..1], with zero first and second
+    /// derivatives at both endpoints so inertia builds and settles without initial jerk.
+    /// </summary>
+    public static float SmootherStep(float t)
+    {
+        float u = Math.Clamp(t, 0f, 1f);
+        return u * u * u * (u * (u * 6f - 15f) + 10f);
+    }
+
+    /// <summary>
+    /// Physics-based S-curve (ease-in / ease-out) transfer function:
+    /// Inside [0..1], blends linear momentum (0.52 * u) with Cubic Hermite smoothstep (0.48 * u^2 * (3 - 2u)).
+    /// Preserves damped physical spring overshoot/undershoot outside [0..1] scaled by <paramref name="overshootGain"/>.
+    /// </summary>
+    public static float PhysicsSCurve(float progress, float overshootGain = 0.52f)
+    {
+        if (progress < 0f) return progress * overshootGain;
+        if (progress > 1f) return 1f + (progress - 1f) * overshootGain;
+        float h3 = progress * progress * (3f - 2f * progress);
+        return 0.52f * progress + 0.48f * h3;
+    }
+
+    /// <summary>
+    /// Evaluates a physics-based S-curve over the sub-window [start..end] of <paramref name="progress"/>.
+    /// </summary>
+    public static float SCurveWindow(float progress, float start, float end, float overshootGain = 0f)
+    {
+        float span = MathF.Max(end - start, 1e-4f);
+        float raw = (progress - start) / span;
+        return PhysicsSCurve(raw, overshootGain);
+    }
+
+    /// <summary>
+    /// Eases from 0 to 1 over [0..until] along a physics S-curve and holds at 1 while carrying overshoot.
+    /// </summary>
+    public static float SCurveLead(float progress, float until, float overshootGain = 0.45f)
+    {
+        float baseVal = SCurveWindow(progress, 0f, MathF.Max(until, 1e-4f), overshootGain: 0f);
+        float excess = progress > 1f ? (progress - 1f) * overshootGain : 0f;
+        return baseVal + excess;
+    }
+
+    /// <summary>
+    /// Smooth C2 bell curve peaking at 1.0 when progress == 0.5 and easing to 0.0 at both endpoints (0.0 and 1.0).
+    /// </summary>
+    public static float SCurveBell(float progress)
+    {
+        float s = SCurve(progress);
+        return Math.Clamp(4f * s * (1f - s), 0f, 1f);
+    }
+
     public static SeaGlassNormalizedPolygon ObtainNormalizedPolygon(SeaGlassShapeKind kind, float aspectRatio = 1f)
     {
         int qAspect = (int)MathF.Round(Math.Clamp(aspectRatio, 0.4f, 4.0f) * 20f);
@@ -205,8 +267,8 @@ public static class SeaGlassShapeMorph
         }
         float[] lutB = ObtainPolarLut(endKind);
         float rB = SamplePolarLut(lutB, angleRad);
-        float p = Math.Clamp(progress, -0.25f, 1.25f);
-        return Math.Clamp(rA + (rB - rA) * p, 0.35f, 1.15f);
+        float shapedP = Math.Clamp(PhysicsSCurve(progress, overshootGain: 0.65f), -0.25f, 1.25f);
+        return Math.Clamp(rA + (rB - rA) * shapedP, 0.35f, 1.15f);
     }
 
     public static float EvaluatePolarRadiusScale(SeaGlassShapeKind kind, float angleRad) =>
@@ -229,8 +291,8 @@ public static class SeaGlassShapeMorph
         SeaGlassNormalizedPolygon startPoly = ObtainNormalizedPolygon(startKind, aspect);
         SeaGlassNormalizedPolygon endPoly = ObtainNormalizedPolygon(endKind, aspect);
 
-        float elasticProgress = Math.Clamp(progress, -0.25f, 1.25f);
-        float refT = Math.Clamp(progress, 0f, 1f);
+        float elasticProgress = Math.Clamp(PhysicsSCurve(progress, overshootGain: 0.72f), -0.25f, 1.25f);
+        float refT = SCurve(progress);
         float overshootMarginX = widthPx * 0.04f * MathF.Abs(elasticProgress - refT);
         float overshootMarginY = heightPx * 0.04f * MathF.Abs(elasticProgress - refT);
         float availW = MathF.Max(1f, widthPx - 2f * overshootMarginX);
@@ -344,35 +406,39 @@ public static class SeaGlassShapeMorph
                 activeStart = startStage.Shape;
                 activeEnd = SeaGlassShapeKind.Circle;
                 float rawU = Math.Clamp(progress / pivot, -0.25f, 1.0f);
-                subProgress = rawU >= 0f ? rawU * rawU * (3f - 2f * rawU) : rawU;
+                subProgress = Math.Clamp(PhysicsSCurve(rawU, overshootGain: 0.55f), -0.25f, 1.0f);
             }
             else
             {
                 activeStart = SeaGlassShapeKind.Circle;
                 activeEnd = endStage.Shape;
-                subProgress = Math.Clamp((progress - pivot) / (1f - pivot), 0f, 1.28f);
+                float rawOut = (progress - pivot) / (1f - pivot);
+                subProgress = Math.Clamp(PhysicsSCurve(rawOut, overshootGain: 0.75f), 0f, 1.28f);
             }
         }
         else
         {
             activeStart = startStage.Shape;
             activeEnd = endStage.Shape;
-            subProgress = Math.Clamp(progress, -0.25f, 1.28f);
+            subProgress = Math.Clamp(PhysicsSCurve(progress, overshootGain: 0.72f), -0.25f, 1.28f);
         }
 
-        float baseScale = startStage.Scale + (endStage.Scale - startStage.Scale) * progress;
-        float gatherDip = (useCircleMidpoint ? -0.15f : -0.07f) * MathF.Sin(clamped * MathF.PI);
+        float shapedProgress = PhysicsSCurve(progress, overshootGain: 0.65f);
+        float clampedSCurve = SCurve(clamped);
+
+        float baseScale = startStage.Scale + (endStage.Scale - startStage.Scale) * shapedProgress;
+        float gatherDip = (useCircleMidpoint ? -0.15f : -0.07f) * MathF.Sin(clampedSCurve * MathF.PI);
         float effectiveScale = Math.Clamp(baseScale + gatherDip + overshoot * 0.18f, 0.42f, 1.65f);
 
         float currentAspect = Math.Clamp(
-            startStage.AspectRatio + (endStage.AspectRatio - startStage.AspectRatio) * progress,
+            startStage.AspectRatio + (endStage.AspectRatio - startStage.AspectRatio) * shapedProgress,
             0.55f,
             2.2f);
 
         float scaleX = effectiveScale * MathF.Sqrt(currentAspect);
         float scaleY = effectiveScale / MathF.Sqrt(currentAspect);
-        float rotation = startStage.RotationDegrees + (endStage.RotationDegrees - startStage.RotationDegrees) * progress;
-        float energy = Math.Clamp(MathF.Sin(clamped * MathF.PI) + MathF.Abs(overshoot) * 2.2f, 0f, 1f);
+        float rotation = startStage.RotationDegrees + (endStage.RotationDegrees - startStage.RotationDegrees) * shapedProgress;
+        float energy = Math.Clamp(MathF.Sin(clampedSCurve * MathF.PI) + MathF.Abs(overshoot) * 2.2f, 0f, 1f);
 
         return new ChoreographedShapeTransform(
             ScaleX: scaleX,
@@ -416,10 +482,10 @@ public static class SeaGlassShapeMorph
         float velocityPxPerSec = 0f,
         float areaExpansionRatio = 1f)
     {
-        float p = Math.Clamp(progress, 0f, 1f);
+        float p = SCurve(progress);
         SeaGlassMaterial baseMat = SeaGlassMaterial.Lerp(startMaterial, endMaterial, p);
 
-        float morphEnergy = Math.Clamp(4f * p * (1f - p), 0f, 1f);
+        float morphEnergy = SCurveBell(progress);
         float velocityEnergy = Math.Clamp(MathF.Abs(velocityPxPerSec) / 1800f, 0f, 1f);
         float totalEnergy = Math.Clamp(MathF.Max(morphEnergy, velocityEnergy * 0.75f), 0f, 1f);
         float scaleFactor = MathF.Sqrt(Math.Clamp(areaExpansionRatio, 0.5f, 4.0f));

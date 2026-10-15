@@ -1,0 +1,220 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- =================================================================== -->
+    <!-- 1. Geometric Corner Radii & Sizing Metrics (Theme-Agnostic)        -->
+    <!-- =================================================================== -->
+    <CornerRadius x:Key="ControlCornerRadius">4</CornerRadius>
+    <CornerRadius x:Key="OverlayCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="SeaGlassCornerRadiusCompact">14</CornerRadius>
+    <CornerRadius x:Key="SeaGlassCornerRadiusSmall">16</CornerRadius>
+    <CornerRadius x:Key="SeaGlassCornerRadiusMedium">20</CornerRadius>
+    <CornerRadius x:Key="SeaGlassCornerRadiusLarge">24</CornerRadius>
+    <CornerRadius x:Key="SeaGlassCornerRadiusPill">9999</CornerRadius>
+
+    <!-- Aliases for Sm / Md / Lg -->
+    <CornerRadius x:Key="SeaGlassCornerRadiusSm">16</CornerRadius>
+    <CornerRadius x:Key="SeaGlassCornerRadiusMd">20</CornerRadius>
+    <CornerRadius x:Key="SeaGlassCornerRadiusLg">24</CornerRadius>
+
+    <!-- Sizing Heights -->
+    <x:Double x:Key="SeaGlassControlHeightCompact">28</x:Double>
+    <x:Double x:Key="SeaGlassControlHeightSmall">32</x:Double>
+    <x:Double x:Key="SeaGlassControlHeightMedium">40</x:Double>
+    <x:Double x:Key="SeaGlassControlHeightLarge">48</x:Double>
+    <x:Double x:Key="SeaGlassControlIconDimension">40</x:Double>
+
+    <!-- Sizing Height Aliases -->
+    <x:Double x:Key="SeaGlassControlHeightSm">32</x:Double>
+    <x:Double x:Key="SeaGlassControlHeightMd">40</x:Double>
+    <x:Double x:Key="SeaGlassControlHeightLg">48</x:Double>
+
+    <!-- Standard Paddings -->
+    <Thickness x:Key="SeaGlassPaddingCompact">10,4,10,4</Thickness>
+    <Thickness x:Key="SeaGlassPaddingSmall">12,6,12,6</Thickness>
+    <Thickness x:Key="SeaGlassPaddingMedium">18,10,18,10</Thickness>
+    <Thickness x:Key="SeaGlassPaddingLarge">24,14,24,14</Thickness>
+    <Thickness x:Key="SeaGlassPaddingIcon">8,8,8,8</Thickness>
+
+    <!-- Padding Aliases -->
+    <Thickness x:Key="SeaGlassPaddingSm">12,6,12,6</Thickness>
+    <Thickness x:Key="SeaGlassPaddingMd">18,10,18,10</Thickness>
+    <Thickness x:Key="SeaGlassPaddingLg">24,14,24,14</Thickness>
+
+    <!-- Typography Font Sizes -->
+    <x:Double x:Key="SeaGlassFontSizeCompact">12</x:Double>
+    <x:Double x:Key="SeaGlassFontSizeSmall">13</x:Double>
+    <x:Double x:Key="SeaGlassFontSizeMedium">14</x:Double>
+    <x:Double x:Key="SeaGlassFontSizeLarge">16</x:Double>
+
+    <!-- WinUI 3 Fallback System Metrics (when XamlControlsResources is omitted) -->
+    <x:Double x:Key="TabViewItemAddButtonFontSize">12</x:Double>
+    <x:Double x:Key="TabViewItemScrollButonFontSize">12</x:Double>
+    <x:Double x:Key="ControlFontSize">14</x:Double>
+
+    <!-- Static Palette Colors for XAML Color References -->
+    <Color x:Key="SeaGlassToneSeafoamMintColor">#FF56B89D</Color>
+    <Color x:Key="SeaGlassToneCobaltTideColor">#FF4A82FF</Color>
+    <Color x:Key="SeaGlassToneBeachAmberColor">#FFD89832</Color>
+    <Color x:Key="SeaGlassToneSeaLavenderColor">#FF9670D6</Color>
+    <Color x:Key="SeaGlassToneRoseQuartzShellColor">#FFE07A8B</Color>
+    <Color x:Key="SeaGlassToneKelpForestColor">#FF3E7C4A</Color>
+    <Color x:Key="SeaGlassToneMilkGlassFrostColor">#FFE4ECE8</Color>
+    <Color x:Key="SeaGlassToneObsidianTideColor">#FF2A3236</Color>
+
+    <!-- =================================================================== -->
+    <!-- 2. Theme-Aware Dictionaries (Default=Dark, Light, HighContrast)     -->
+    <!-- =================================================================== -->
+    <ResourceDictionary.ThemeDictionaries>
+
+        <!-- =============================================================== -->
+        <!-- Theme: Default (Dark Theme)                                     -->
+        <!-- =============================================================== -->
+        <ResourceDictionary x:Key="Default">
+            <!-- Glass Foundation Brushes -->
+            <SolidColorBrush x:Key="SeaGlassSurfaceBackground" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="SeaGlassSurfaceForeground" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="SeaGlassSurfaceBorderBrush" Color="#33FFFFFF" />
+            <SolidColorBrush x:Key="SeaGlassRimHighlightBrush" Color="#66FFFFFF" />
+            <SolidColorBrush x:Key="SeaGlassSubtleBorderBrush" Color="#22FFFFFF" />
+            <SolidColorBrush x:Key="SeaGlassFocusStrokeBrush" Color="#FF2EE6B8" />
+
+            <!-- Palette Tone Brushes (Dark / Luminous Glass) -->
+            <SolidColorBrush x:Key="SeaGlassToneSeafoamMintBrush" Color="#FF2EE6B8" />
+            <SolidColorBrush x:Key="SeaGlassOnToneSeafoamMintBrush" Color="#FF042820" />
+
+            <SolidColorBrush x:Key="SeaGlassToneCobaltTideBrush" Color="#FF5B8FFF" />
+            <SolidColorBrush x:Key="SeaGlassOnToneCobaltTideBrush" Color="#FF0D1E42" />
+
+            <SolidColorBrush x:Key="SeaGlassToneBeachAmberBrush" Color="#FFFFA038" />
+            <SolidColorBrush x:Key="SeaGlassOnToneBeachAmberBrush" Color="#FF42150A" />
+
+            <SolidColorBrush x:Key="SeaGlassToneSeaLavenderBrush" Color="#FFD98EFF" />
+            <SolidColorBrush x:Key="SeaGlassOnToneSeaLavenderBrush" Color="#FF340A4A" />
+
+            <SolidColorBrush x:Key="SeaGlassToneRoseQuartzShellBrush" Color="#FFFF82AA" />
+            <SolidColorBrush x:Key="SeaGlassOnToneRoseQuartzShellBrush" Color="#FF440A1A" />
+
+            <SolidColorBrush x:Key="SeaGlassToneKelpForestBrush" Color="#FF2EC47A" />
+            <SolidColorBrush x:Key="SeaGlassOnToneKelpForestBrush" Color="#FF082C18" />
+
+            <SolidColorBrush x:Key="SeaGlassToneMilkGlassFrostBrush" Color="#FFD6EEFC" />
+            <SolidColorBrush x:Key="SeaGlassOnToneMilkGlassFrostBrush" Color="#FF0C2236" />
+
+            <SolidColorBrush x:Key="SeaGlassToneObsidianTideBrush" Color="#FF1D4E82" />
+            <SolidColorBrush x:Key="SeaGlassOnToneObsidianTideBrush" Color="#FFECF5FF" />
+
+            <!-- Fallback Brushes (when XamlControlsResources is absent) -->
+            <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#C5FFFFFF" />
+            <SolidColorBrush x:Key="TextFillColorDisabledBrush" Color="#5DFFFFFF" />
+            <SolidColorBrush x:Key="SubtleFillColorSecondaryBrush" Color="#0FFFFFFF" />
+            <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="#0FFFFFFF" />
+            <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="#18FFFFFF" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#1FFFFFFF" />
+            <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#FF2EE6B8" />
+            <SolidColorBrush x:Key="TabViewButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewButtonForeground" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TabViewScrollButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewScrollButtonForeground" Color="#FFFFFFFF" />
+        </ResourceDictionary>
+
+        <!-- =============================================================== -->
+        <!-- Theme: Light                                                    -->
+        <!-- =============================================================== -->
+        <ResourceDictionary x:Key="Light">
+            <!-- Glass Foundation Brushes -->
+            <SolidColorBrush x:Key="SeaGlassSurfaceBackground" Color="#22000000" />
+            <SolidColorBrush x:Key="SeaGlassSurfaceForeground" Color="#FF111111" />
+            <SolidColorBrush x:Key="SeaGlassSurfaceBorderBrush" Color="#22000000" />
+            <SolidColorBrush x:Key="SeaGlassRimHighlightBrush" Color="#44000000" />
+            <SolidColorBrush x:Key="SeaGlassSubtleBorderBrush" Color="#14000000" />
+            <SolidColorBrush x:Key="SeaGlassFocusStrokeBrush" Color="#FF0A7B62" />
+
+            <!-- Palette Tone Brushes (Light / Pastel Glass with WCAG AA >= 4.5:1 text) -->
+            <SolidColorBrush x:Key="SeaGlassToneSeafoamMintBrush" Color="#FF56B89D" />
+            <SolidColorBrush x:Key="SeaGlassOnToneSeafoamMintBrush" Color="#FF0A4236" />
+
+            <SolidColorBrush x:Key="SeaGlassToneCobaltTideBrush" Color="#FF4A82FF" />
+            <SolidColorBrush x:Key="SeaGlassOnToneCobaltTideBrush" Color="#FF000F5C" />
+
+            <SolidColorBrush x:Key="SeaGlassToneBeachAmberBrush" Color="#FFD89832" />
+            <SolidColorBrush x:Key="SeaGlassOnToneBeachAmberBrush" Color="#FF6C2418" />
+
+            <SolidColorBrush x:Key="SeaGlassToneSeaLavenderBrush" Color="#FF9670D6" />
+            <SolidColorBrush x:Key="SeaGlassOnToneSeaLavenderBrush" Color="#FF561A74" />
+
+            <SolidColorBrush x:Key="SeaGlassToneRoseQuartzShellBrush" Color="#FFE07A8B" />
+            <SolidColorBrush x:Key="SeaGlassOnToneRoseQuartzShellBrush" Color="#FF72162E" />
+
+            <SolidColorBrush x:Key="SeaGlassToneKelpForestBrush" Color="#FF3E7C4A" />
+            <SolidColorBrush x:Key="SeaGlassOnToneKelpForestBrush" Color="#FF104426" />
+
+            <SolidColorBrush x:Key="SeaGlassToneMilkGlassFrostBrush" Color="#FFE4ECE8" />
+            <SolidColorBrush x:Key="SeaGlassOnToneMilkGlassFrostBrush" Color="#FF183652" />
+
+            <SolidColorBrush x:Key="SeaGlassToneObsidianTideBrush" Color="#FF2A3236" />
+            <SolidColorBrush x:Key="SeaGlassOnToneObsidianTideBrush" Color="#FFECF5FF" />
+
+            <!-- Fallback Brushes (when XamlControlsResources is absent) -->
+            <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#9E000000" />
+            <SolidColorBrush x:Key="TextFillColorDisabledBrush" Color="#5C000000" />
+            <SolidColorBrush x:Key="SubtleFillColorSecondaryBrush" Color="#09000000" />
+            <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="#09000000" />
+            <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="#14000000" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#14000000" />
+            <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#FF0A7B62" />
+            <SolidColorBrush x:Key="TabViewButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewButtonForeground" Color="#FF000000" />
+            <SolidColorBrush x:Key="TabViewScrollButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewScrollButtonForeground" Color="#FF000000" />
+        </ResourceDictionary>
+
+        <!-- =============================================================== -->
+        <!-- Theme: HighContrast                                             -->
+        <!-- =============================================================== -->
+        <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="SeaGlassSurfaceBackground" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="SeaGlassSurfaceForeground" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassSurfaceBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassRimHighlightBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassSubtleBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassFocusStrokeBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+
+            <!-- In High Contrast, all tone fills map to system highlight / borders -->
+            <SolidColorBrush x:Key="SeaGlassToneSeafoamMintBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneSeafoamMintBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassToneCobaltTideBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneCobaltTideBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassToneBeachAmberBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneBeachAmberBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassToneSeaLavenderBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneSeaLavenderBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassToneRoseQuartzShellBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneRoseQuartzShellBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassToneKelpForestBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneKelpForestBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassToneMilkGlassFrostBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneMilkGlassFrostBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="SeaGlassToneObsidianTideBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="SeaGlassOnToneObsidianTideBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+
+            <!-- Fallback Brushes (when XamlControlsResources is absent) -->
+            <SolidColorBrush x:Key="TextFillColorPrimaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="TextFillColorDisabledBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+            <SolidColorBrush x:Key="SubtleFillColorSecondaryBrush" Color="{ThemeResource SystemColorButtonFaceColor}" />
+            <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="{ThemeResource SystemColorButtonFaceColor}" />
+            <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TabViewButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewButtonForeground" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="TabViewScrollButtonBackground" Color="Transparent" />
+            <SolidColorBrush x:Key="TabViewScrollButtonForeground" Color="{ThemeResource SystemColorWindowTextColor}" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+
+</ResourceDictionary>

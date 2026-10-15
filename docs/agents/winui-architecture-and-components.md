@@ -114,3 +114,77 @@ Converting the Material 3 Expressive stiffness $k$ and damping ratio $\zeta$ fro
 | **Inputs & Toggles** | `SeaGlassTextField`, `SeaGlassSwitch`, `SeaGlassCheckbox`, `SeaGlassRadioButton`, `SeaGlassLiquidSlider` | `SeaGlassTextField`, `SeaGlassSwitch`, `SeaGlassCheckbox`, `SeaGlassRadioButton`, `SeaGlassLiquidSlider` | 3D water-drop lens thumb with velocity stretch (`scaleX = 1 + 0.28 * stretch`), `Squircle -> Cookie4` clover morphing checkbox, and magnifying slider lens. |
 | **Feedback & Lists** | `SeaGlassLinearProgressIndicator`, `SeaGlassCircularProgressIndicator`, `SeaGlassListItem`, `SeaGlassSnackbar`, `SeaGlassIcon` (`SeaGlassGlyph`) | `SeaGlassLinearProgressIndicator`, `SeaGlassCircularProgressIndicator`, `SeaGlassListItem`, `SeaGlassSnackbar`, `SeaGlassIcon` (`SeaGlassGlyph`) | Oklab gradient progress bars, medallion arc sweep, setting rows, floating toast banners, and 20 vector glyphs. |
 | **Dynamic Morphing** | `SeaGlassTwoElementMorph`, `SeaGlassBuddingCluster`, `SeaGlassMorphingButton`, `SeaGlassChoreographedShapeOrb`, `SeaGlassMultiShapeMorph`, `SeaGlassMorphingContextMenu`, `SeaGlassCascadedModelMorph`, `SeaGlassContextRingMorph` | `SeaGlassTwoElementMorph`, `SeaGlassBuddingCluster`, `SeaGlassMorphingButton`, `SeaGlassChoreographedShapeOrb`, `SeaGlassMultiShapeMorph`, `SeaGlassMorphingContextMenu`, `SeaGlassCascadedModelMorph`, `SeaGlassContextRingMorph` | 2-node teardrop `sminCubic` popover morph, in-flight Gaussian content defocus, 20-shape `RoundedPolygon` morph with circle midpoint bridge (`pivot = 0.42`), and budding action satellites. |
+
+---
+
+## 6. Consumer App Integration & Pure C# Page Hosting Guidance
+
+When consuming SeaGlass via NuGet (`<PackageReference Include="SeaGlass.WinUI" Version="1.0.0" />`):
+
+1. **Theme Registration (`App.xaml`)**:
+   ```xml
+   <ResourceDictionary.MergedDictionaries>
+       <controls:XamlControlsResources />
+       <sg:SeaGlassThemeResources />
+   </ResourceDictionary.MergedDictionaries>
+   ```
+
+2. **Hosting Pure C# (Code-Only) Pages**:
+   - **WinUI 3 Pitfall**: Calling `Frame.Navigate(typeof(PureCSharpPage))` invokes `ABI.Microsoft.UI.Xaml.Controls.INavigateMethods.Navigate`, which queries `IXamlMetadataProvider`. When given a C#-only `Page` subclass without XAML code generation, WinUI 3 native runtime crashes with `0xC0000005` (Access Violation).
+   - **Recommended Pattern**: Host code-only pages via direct content assignment (`ContentControl.Content = new MyFluentPage()` or `ContentFrame.Content = pageInstance`). If `Frame.Navigate` is strictly required, provide a minimal `.xaml` companion file to register `IXamlMetadataProvider`.
+
+---
+
+## 7. 58-Control WinUI 3 Gallery Architecture & Universal Showcase Pattern
+
+The interactive Windows showcase (`windows/SeaGlass.Sample/`) implements the **Universal Showcase Pattern** to present and test all 58 controls across 8 categories:
+
+1. **Category Navigation (`ControlShowcaseCatalog.cs`)**:
+   - **Surfaces & Pods**: `SeaGlassSurface`, `SeaGlassCard`, `SeaGlassAdaptiveCornerLabCard`, `SeaGlassCornerEmbeddedPod`, `SeaGlassSurfaceContainer`
+   - **Buttons & Chips**: `SeaGlassButton`, `SeaGlassIconButton`, `SeaGlassExtendedFab`, `SeaGlassPill`, `SeaGlassFilterChip`, `SeaGlassBadge`, `SeaGlassSegmentedButtonRow`, `SeaGlassSegmentedButtonItem`, `SeaGlassPebbleOrb`
+   - **Navigation & Bars**: `SeaGlassTopAppBar`, `SeaGlassFluidBar`, `SeaGlassMiniPlayerBar`, `SeaGlassFloatingToolbar`, `SeaGlassSearchBar`
+   - **Inputs & Toggles**: `SeaGlassTextField`, `SeaGlassSwitch`, `SeaGlassCheckbox`, `SeaGlassRadioButton`, `SeaGlassLiquidSlider`
+   - **Feedback & Lists**: `SeaGlassLinearProgressIndicator`, `SeaGlassCircularProgressIndicator`, `SeaGlassListItem`, `SeaGlassSnackbar`, `SeaGlassIcon`
+   - **Dynamic Morphing**: `SeaGlassTwoElementMorph`, `SeaGlassBuddingCluster`, `SeaGlassMorphingButton`, `SeaGlassChoreographedShapeOrb`, `SeaGlassMultiShapeMorph`, `SeaGlassMorphingContextMenu`, `SeaGlassCascadedModelMorph`, `SeaGlassContextRingMorph`
+   - **Overlays & Sheets**: `SeaGlassBottomSheetSurface`, `SeaGlassFloatingSheet`, `SeaGlassDialogCard`, `SeaGlassActionSheet`, `SeaGlassContextMenuOverlay`, `SeaGlassLiveActivityPill`, `SeaGlassMagnifierScrubber`, `SeaGlassNotificationStack`, `SeaGlassWheelPicker`, `SeaGlassControlCenterGrid`
+   - **Windows Extras**: `SeaGlassTitleBar`, `SeaGlassNavigationView`, `SeaGlassWindowBackdropHost`, `SeaGlassAppWindowController`, `SeaGlassDropTargetOverlay`, `SeaGlassWindowSnappingGuide`, `SeaGlassWindowTabStrip`, `SeaGlassCompactOverlayPresenter`, `SeaGlassAdaptiveCornerPresenter`, `SeaGlassMultiMonitorCoordinator`, `SeaGlassTaskbarThumbnailPresenter`, `SeaGlassWindowGlowHost`
+2. **Universal Showcase Engine (`ControlShowcasePage.cs`)**:
+   - **Interactive Viewport**: Live specimen hosted within an acyclic `SeaGlassStage` with ocean-gradient refraction backdrop.
+   - **Parameter Tuning Drawer**: Real-time sliders for `coarseness`, `tintDensity`, `thicknessDp`, `ior`, and `rimChalkiness` driving live UBO updates.
+   - **Reactive Snippet Viewer**: Generates copy-pasteable XAML and C# fluent API markup reflecting current live property mutations.
+3. **Automated Headless & Self-Test Verification**:
+   - `--self-test`: Instantiates and stress-tests all 58 control pages, exercises interactive gestures on 10 core controls, and reports telemetry.
+   - `--headless-verify`: Executes full off-screen verification cycle without displaying desktop UI.
+   - `--verify-catalog`: Asserts 100% compliance with `E2ECatalogContractRegistry`.
+
+---
+
+## 8. Accessibility & UIA Automation Peers Architecture
+
+All interactive SeaGlass controls provide complete Microsoft UI Automation (UIA) support via custom `AutomationPeer` implementations in `windows/SeaGlass.WinUI/Automation/`:
+
+- **Modular Standalone Architecture**: Peers are partitioned across 8 per-category source files (`SeaGlassSurfaceAutomationPeers.cs`, `SeaGlassButtonAutomationPeers.cs`, `SeaGlassInputAutomationPeers.cs`, `SeaGlassNavigationAutomationPeers.cs`, `SeaGlassFeedbackAutomationPeers.cs`, `SeaGlassMorphingAutomationPeers.cs`, `SeaGlassOverlayAutomationPeers.cs`, `SeaGlassExtrasAutomationPeers.cs`) to ensure standalone extraction tools (`Copy-SeaGlassComponent.ps1`) compile with 0 missing type references.
+- **Implemented UIA Provider Patterns**:
+  - `IInvokeProvider`: `SeaGlassButton`, `SeaGlassIconButton`, `SeaGlassExtendedFab`, `SeaGlassSegmentedButtonItem`, `SeaGlassListItem`, `SeaGlassSnackbar`, `SeaGlassDialogCard`
+  - `IToggleProvider`: `SeaGlassPill`, `SeaGlassFilterChip`, `SeaGlassSwitch`, `SeaGlassCheckbox`
+  - `IRangeValueProvider`: `SeaGlassLiquidSlider`, `SeaGlassLinearProgressIndicator`, `SeaGlassCircularProgressIndicator`, `SeaGlassMagnifierScrubber`
+  - `IValueProvider`: `SeaGlassTextField`, `SeaGlassWheelPicker`
+  - `IExpandCollapseProvider`: `SeaGlassExtendedFab`, `SeaGlassBottomSheetSurface`, `SeaGlassFloatingSheet`, `SeaGlassActionSheet`, `SeaGlassContextMenuOverlay`, `SeaGlassLiveActivityPill`, `SeaGlassNotificationStack`
+  - `IWindowProvider`: `SeaGlassBottomSheetSurface`, `SeaGlassFloatingSheet`, `SeaGlassDialogCard`, `SeaGlassActionSheet`, `SeaGlassContextMenuOverlay`
+  - `ISelectionProvider` / `ISelectionItemProvider`: `SeaGlassSegmentedButtonRow`, `SeaGlassSegmentedButtonItem`, `SeaGlassPill`, `SeaGlassFilterChip`, `SeaGlassRadioButton`, `SeaGlassListItem`, `SeaGlassWheelPicker`
+
+---
+
+## 9. DWM Window Capture & Optical Variance Verification
+
+To guarantee genuine optical rendering without relying on mock or synthetic assets:
+
+1. **DWM Window Capture (`DwmWindowCapture.cs`)**:
+   - Top-down 32-bit BGRA DIBSection capture using Win32 GDI `BitBlt` with `CAPTUREBLT` flag.
+   - Multi-layer compositing support (`PrintWindow` with `PW_RENDERFULLCONTENT` fallback).
+   - Rejects blank, completely black, or zero-variance uniform buffers to detect unmapped or minimized windows.
+2. **Optical Variance Verifier (`OpticalVarianceVerifier.cs`)**:
+   - Computes perceptual luminance standard deviation across the central refractive aperture, requiring $\sigma_L \ge 1.5$ LSB to verify real sand-grain micro-coarseness and Beer-Lambert volumetric absorption.
+   - Measures rough-Fresnel chalky rim illumination delta between the edge bevel and interior core, requiring $\Delta L_{\text{rim}} \ge 4.0$ LSB to guarantee non-flat rim scatter.
+
+
